@@ -9,6 +9,7 @@ import GHC.Generics (Generic)
 
 -- text
 import Data.Text (Text)
+import Data.Text qualified as T
 
 -- aeson
 import Data.Aeson (FromJSON, ToJSON)
@@ -18,6 +19,9 @@ import Data.OpenApi (ToSchema)
 
 -- containers
 import Data.Set qualified as S
+
+-- universe-base
+import Data.Universe.Class (Universe)
 
 -- shroom
 
@@ -31,7 +35,7 @@ data User = User
   , userEmail :: Text
   -- ^ The user's email address.
   }
-  deriving (Generic, ToJSON, FromJSON, ToSchema)
+  deriving (Eq, Show, Generic, ToJSON, FromJSON, ToSchema)
 
 -- | An integer counter that keeps track of how many times an event has occurred.
 newtype Counter = Counter Int
@@ -49,7 +53,7 @@ data Coordinate = Coordinate
 
 -- | A property of a user that should hold.
 data UserProperty = UserEmailNotEmpty
-  deriving (Bounded, Enum, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
 
 -- We need a new declaration group so TH can reify the types defined above.
 $(pure [])
@@ -57,13 +61,12 @@ $(pure [])
 instance Describe User where
   type Property User = UserProperty
   describeType = $(deriveDescribeType ''User)
-  describeProperties _ UserEmailNotEmpty = "The email address is not empty."
-  failingProperties user
-    | userEmail user == "" = S.singleton UserEmailNotEmpty
-    | otherwise = S.empty
+  describeProperties _ UserEmailNotEmpty = Just "The email address is not empty."
+  propertyHolds user UserEmailNotEmpty = not (T.null (userEmail user))
 
 instance Describe Counter where
   describeType = $(deriveDescribeType ''Counter)
+  examples _ = S.singleton (Counter 0)
 
 instance Describe Coordinate where
   describeType = $(deriveDescribeType ''Coordinate)

@@ -28,16 +28,16 @@ integrationTests apiKey =
   testGroup
     "PromptT integration"
     [ testCase "prompt returns a User" $ do
-        let cfg = PromptConfig {apiKey = apiKey, model = "claude-3-5-haiku-20241022"}
-        result <- runPromptResultTWith cfg $ runPromptT $ do
+        let cfg = AnthropicConfig {apiKey = apiKey, model = "claude-3-5-haiku-20241022"}
+        result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig $ do
           context "Return a JSON object for a user named Alice with email alice@example.com"
           prompt @User
         case result of
           Left err -> assertFailure (show err)
           Right user -> userName user @?= "Alice"
     , testCase "prompt returns a Counter" $ do
-        let cfg = PromptConfig {apiKey = apiKey, model = "claude-3-5-haiku-20241022"}
-        result <- runPromptResultTWith cfg $ runPromptT $ do
+        let cfg = AnthropicConfig {apiKey = apiKey, model = "claude-3-5-haiku-20241022"}
+        result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig $ do
           context "Return a JSON counter object with value 42."
           prompt @Counter
         case result of

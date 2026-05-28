@@ -1,8 +1,15 @@
 cabal-version: 3.0
 name: shroom
 version: 0.1.0.0
--- synopsis:
--- description:
+synopsis: Type-safe structured LLM prompting for Haskell
+description:
+  shroom is a small library for building typed LLM conversations.
+  Write a monadic program using @context@ and @prompt@, choose a backend
+  (Anthropic Claude or a local Ollama model), and get back a typed Haskell
+  value — or a descriptive error.
+  .
+  If the model hallucinates, at least it will be a well-typed hallucination.
+
 license: BSD-3-Clause
 license-file: LICENSE
 author: Manuel Bärenz
@@ -25,12 +32,16 @@ common opts
     base >=4.20 && <4.22,
     claude ^>=1.4.0,
     containers ^>=0.6,
+    directory ^>=1.3,
+    filepath ^>=1.5,
     mtl ^>=2.3,
+    ollama-haskell ^>=0.2,
     openapi3 ^>=3.2,
     operational ^>=0.2,
     template-haskell >=2.22 && <2.25,
     text ^>=2.1.4,
     transformers ^>=0.6,
+    universe-base ^>=1.1,
     witherable,
 
   default-extensions:
@@ -44,6 +55,8 @@ library
   import: opts
   exposed-modules:
     Control.Monad.Prompt
+    Control.Monad.Prompt.FileMock
+    Control.Monad.Prompt.Ollama
     Control.Monad.Prompt.TH
     Data.Describe
 
@@ -56,7 +69,10 @@ test-suite shroom-test
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: Main.hs
-  other-modules: Types
+  other-modules:
+    TestUtils
+    Types
+
   build-depends:
     shroom,
     tasty ^>=1.4,
@@ -73,3 +89,46 @@ test-suite shroom-test-integration
     shroom,
     tasty ^>=1.4,
     tasty-hunit ^>=0.10,
+
+test-suite shroom-test-integration-ollama
+  import: opts
+  default-language: GHC2024
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: OllamaIntegration.hs
+  other-modules:
+    ConferenceTypes
+    Types
+
+  build-depends:
+    shroom,
+    tasty ^>=1.4,
+    tasty-hunit ^>=0.10,
+
+test-suite shroom-test-conference
+  import: opts
+  default-language: GHC2024
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: ConferenceScenario.hs
+  other-modules:
+    ConferenceTypes
+    TestUtils
+
+  build-depends:
+    shroom,
+    tasty ^>=1.4,
+    tasty-hunit ^>=0.10,
+
+executable shroom-dev
+  import: opts
+  default-language: GHC2024
+  hs-source-dirs:
+    app
+    test
+
+  main-is: Main.hs
+  other-modules: ConferenceTypes
+  build-depends:
+    directory ^>=1.3,
+    shroom,
