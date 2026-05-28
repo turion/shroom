@@ -1,0 +1,75 @@
+cabal-version: 3.0
+name: shroom
+version: 0.1.0.0
+-- synopsis:
+-- description:
+license: BSD-3-Clause
+license-file: LICENSE
+author: Manuel Bärenz
+maintainer: programming@manuelbaerenz.de
+-- copyright:
+build-type: Simple
+extra-doc-files: CHANGELOG.md
+-- extra-source-files:
+tested-with:
+  ghc ==9.10
+  ghc ==9.12
+
+common opts
+  ghc-options:
+    -Wall
+    -haddock
+
+  build-depends:
+    aeson ^>=2.2,
+    base >=4.20 && <4.22,
+    claude ^>=1.4.0,
+    containers ^>=0.6,
+    mtl ^>=2.3,
+    openapi3 ^>=3.2,
+    operational ^>=0.2,
+    template-haskell >=2.22 && <2.25,
+    text ^>=2.1.4,
+    transformers ^>=0.6,
+    witherable,
+
+  default-extensions:
+    DefaultSignatures
+    OverloadedLists
+    OverloadedRecordDot
+    OverloadedStrings
+    TypeFamilies
+
+library
+  import: opts
+  exposed-modules:
+    Control.Monad.Prompt
+    Control.Monad.Prompt.TH
+    Data.Describe
+
+  hs-source-dirs: src
+  default-language: GHC2024
+
+test-suite shroom-test
+  import: opts
+  default-language: GHC2024
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Main.hs
+  other-modules: Types
+  build-depends:
+    shroom,
+    tasty ^>=1.4,
+    tasty-hunit ^>=0.10,
+
+test-suite shroom-test-integration
+  import: opts
+  default-language: GHC2024
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Integration.hs
+  other-modules: Types
+  build-depends:
+    shroom,
+    tasty ^>=1.4,
+    tasty-hunit ^>=0.10,
