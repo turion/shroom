@@ -111,7 +111,7 @@ main =
               seenContexts <- newIORef ([] :: [Text])
               let mockCfg = MockConfig seenContexts
 
-              _ <- runPromptResultTWith mockCfg $ runPromptT defaultPromptConfig $ do
+              _ <- runPromptResultTWith mockCfg $ runPromptTNoTools defaultPromptConfig $ do
                 context "global info"
                 _ <- prompt @Counter
                 _ <- prompt @Counter
@@ -125,7 +125,7 @@ main =
               seenContexts <- newIORef ([] :: [Text])
               let mockCfg = MockConfig seenContexts
 
-              _ <- runPromptResultTWith mockCfg $ runPromptT defaultPromptConfig $ do
+              _ <- runPromptResultTWith mockCfg $ runPromptTNoTools defaultPromptConfig $ do
                 context "global"
                 _ <- promptWith @Counter "local only"
                 _ <- prompt @Counter
@@ -147,7 +147,7 @@ main =
               let mockCfg = MockConfig seenContexts
               result <-
                 runPromptResultTWith mockCfg $
-                  runPromptT defaultPromptConfig $
+                  runPromptTNoTools defaultPromptConfig $
                     promptPar (prompt @Counter) (prompt @Counter)
               case result of
                 Left err -> fail (show err)
@@ -157,7 +157,7 @@ main =
           , testCase "promptPar branches both see global context" $ do
               seenContexts <- newIORef ([] :: [Text])
               let mockCfg = MockConfig seenContexts
-              _ <- runPromptResultTWith mockCfg $ runPromptT defaultPromptConfig $ do
+              _ <- runPromptResultTWith mockCfg $ runPromptTNoTools defaultPromptConfig $ do
                 context "shared global"
                 promptPar (prompt @Counter) (prompt @Counter)
               seen <- readIORef seenContexts
@@ -167,7 +167,7 @@ main =
               let mockCfg = MockConfig seenContexts
               _ <-
                 runPromptResultTWith mockCfg $
-                  runPromptT defaultPromptConfig $
+                  runPromptTNoTools defaultPromptConfig $
                     promptPar
                       (context "branch-local" >> prompt @Counter)
                       (prompt @Counter :: PromptT IO Counter)
@@ -177,7 +177,7 @@ main =
           , testCase "context inside promptPar branch does not leak to subsequent sequential prompt" $ do
               seenContexts <- newIORef ([] :: [Text])
               let mockCfg = MockConfig seenContexts
-              _ <- runPromptResultTWith mockCfg $ runPromptT defaultPromptConfig $ do
+              _ <- runPromptResultTWith mockCfg $ runPromptTNoTools defaultPromptConfig $ do
                 _ <-
                   promptPar
                     (context "branch-local" >> prompt @Counter)
@@ -191,7 +191,7 @@ main =
               let mockCfg = MockConfig seenContexts
               result <-
                 runPromptResultTWith mockCfg $
-                  runPromptT defaultPromptConfig $
+                  runPromptTNoTools defaultPromptConfig $
                     promptsParallel (replicate 3 (prompt @Counter))
               case result of
                 Left err -> fail (show err)
@@ -206,7 +206,7 @@ main =
               responses <- newIORef ["{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}"]
               seenContexts <- newIORef ([] :: [Text])
               let cfg = SeqMockConfig responses seenContexts
-              result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) $ prompt @User
+              result <- runPromptResultTWith cfg $ runPromptTNoTools (defaultPromptConfig {maxRetries = 2}) $ prompt @User
               result @?= Right (User "Alice" "alice@example.com")
               seen <- readIORef seenContexts
               length seen @?= 1
@@ -219,7 +219,7 @@ main =
                   ]
               seenContexts <- newIORef ([] :: [Text])
               let cfg = SeqMockConfig responses seenContexts
-              result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) $ prompt @User
+              result <- runPromptResultTWith cfg $ runPromptTNoTools (defaultPromptConfig {maxRetries = 2}) $ prompt @User
               result @?= Right (User "Alice" "alice@example.com")
               seen <- readIORef seenContexts
               length seen @?= 2
@@ -231,7 +231,7 @@ main =
                   ]
               seenContexts <- newIORef ([] :: [Text])
               let cfg = SeqMockConfig responses seenContexts
-              _ <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) $ prompt @User
+              _ <- runPromptResultTWith cfg $ runPromptTNoTools (defaultPromptConfig {maxRetries = 2}) $ prompt @User
               seen <- readIORef seenContexts
               -- Second context should include the failure description
               assertContains "The email address is not empty." (seen !! 1)
@@ -241,7 +241,7 @@ main =
               responses <- newIORef (repeat "{\"userName\":\"Alice\",\"userEmail\":\"\"}")
               seenContexts <- newIORef ([] :: [Text])
               let cfg = SeqMockConfig responses seenContexts
-              result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) $ prompt @User
+              result <- runPromptResultTWith cfg $ runPromptTNoTools (defaultPromptConfig {maxRetries = 2}) $ prompt @User
               case result of
                 Left err -> assertContains "The email address is not empty." err
                 Right _ -> fail "Expected Left but got Right"
@@ -256,7 +256,7 @@ main =
                   ]
               seenContexts <- newIORef ([] :: [Text])
               let cfg = SeqMockConfig responses seenContexts
-              result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) $ prompt @User
+              result <- runPromptResultTWith cfg $ runPromptTNoTools (defaultPromptConfig {maxRetries = 2}) $ prompt @User
               result @?= Right (User "Alice" "alice@example.com")
               seen <- readIORef seenContexts
               length seen @?= 2
@@ -266,7 +266,7 @@ main =
               responses <- newIORef (repeat "not valid json")
               seenContexts <- newIORef ([] :: [Text])
               let cfg = SeqMockConfig responses seenContexts
-              result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 1}) $ prompt @User
+              result <- runPromptResultTWith cfg $ runPromptTNoTools (defaultPromptConfig {maxRetries = 1}) $ prompt @User
               case result of
                 Left err -> assertContains "JSON decode error" err
                 Right _ -> fail "Expected Left but got Right"
@@ -278,19 +278,19 @@ main =
           "Alternative, MonadPlus, MonadFail"
           [ testCase "empty always fails" $ do
               let cfg = MockConfig (error "not implemented")
-              result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig (empty :: PromptT IO Counter)
+              result <- runPromptResultTWith cfg $ runPromptTNoTools defaultPromptConfig (empty :: PromptT IO Counter)
               case result of
                 Left _ -> pure ()
                 Right _ -> fail "Expected Left"
           , testCase "Fail propagates the message" $ do
               let cfg = MockConfig (error "not implemented")
-              result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig (Fail "the reason" :: PromptT IO Counter)
+              result <- runPromptResultTWith cfg $ runPromptTNoTools defaultPromptConfig (Fail "the reason" :: PromptT IO Counter)
               case result of
                 Left err -> assertContains "the reason" err
                 Right _ -> fail "Expected Left"
           , testCase "MonadFail propagates the message" $ do
               let cfg = MockConfig (error "not implemented")
-              result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig (fail "oops" :: PromptT IO Counter)
+              result <- runPromptResultTWith cfg $ runPromptTNoTools defaultPromptConfig (fail "oops" :: PromptT IO Counter)
               case result of
                 Left err -> assertContains "oops" err
                 Right _ -> fail "Expected Left"
@@ -298,7 +298,7 @@ main =
               let cfg = MockConfig (error "not implemented")
               result <-
                 runPromptResultTWith cfg $
-                  runPromptT
+                  runPromptTNoTools
                     defaultPromptConfig
                     (Pure (Counter 42) <|> Fail "should not reach")
               case result of
@@ -308,7 +308,7 @@ main =
               let cfg = MockConfig (error "not implemented")
               result <-
                 runPromptResultTWith cfg $
-                  runPromptT
+                  runPromptTNoTools
                     defaultPromptConfig
                     (Fail "x" <|> Pure (Counter 42))
               case result of
@@ -318,7 +318,7 @@ main =
               let cfg = MockConfig (error "not implemented")
               result <-
                 runPromptResultTWith cfg $
-                  runPromptT
+                  runPromptTNoTools
                     defaultPromptConfig
                     (Fail "first" <|> (Fail "second" :: PromptT IO Counter))
               case result of
@@ -327,7 +327,7 @@ main =
           , testCase "backend error triggers fallback" $ do
               result <-
                 runPromptResultTWith InjectFailConfig $
-                  runPromptT
+                  runPromptTNoTools
                     defaultPromptConfig
                     (prompt @Counter <|> Pure (Counter 0))
               case result of
@@ -338,7 +338,7 @@ main =
               let cfg = MockConfig seenContexts
               _ <-
                 runPromptResultTWith cfg $
-                  runPromptT defaultPromptConfig $
+                  runPromptTNoTools defaultPromptConfig $
                     (context "leaked" >> Fail "x") <|> prompt @Counter
               seen <- readIORef seenContexts
               length seen @?= 1
@@ -346,7 +346,7 @@ main =
           , testCase "context from winning branch persists to next prompt" $ do
               seenContexts <- newIORef ([] :: [Text])
               let cfg = MockConfig seenContexts
-              _ <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig $ do
+              _ <- runPromptResultTWith cfg $ runPromptTNoTools defaultPromptConfig $ do
                 _ <- (context "kept" >> prompt @Counter) <|> Fail "x"
                 prompt @Counter
               seen <- readIORef seenContexts
@@ -356,7 +356,7 @@ main =
               let cfg = MockConfig (error "not implemented")
               result <-
                 runPromptResultTWith cfg $
-                  runPromptT
+                  runPromptTNoTools
                     defaultPromptConfig
                     (mzero `mplus` Pure (Counter 99))
               case result of

@@ -1,6 +1,7 @@
 module Main (main) where
 
 -- base
+import Data.IORef
 import System.Environment (lookupEnv)
 
 -- text
@@ -9,11 +10,16 @@ import Data.Text qualified as T
 
 -- tasty
 import Test.Tasty (TestTree, defaultMain, testGroup)
-import Test.Tasty.HUnit (assertFailure, testCaseSteps, (@?=))
+import Test.Tasty.HUnit (assertBool, assertFailure, testCaseSteps, (@?=))
+
+-- sop-core
+import Data.SOP (NP (..))
 
 -- shroom
 import Control.Monad.Prompt
 import Control.Monad.Prompt.Ollama
+import Control.Monad.Prompt.Tool (ToolHandler (..))
+import Control.Monad.Prompt.Tool.Web (webSearchHandler)
 
 -- test
 
@@ -39,7 +45,7 @@ ollamaIntegrationTests mHost model =
                 { maxRetries = 10
                 , debugLog = Just (step . T.unpack)
                 }
-        result <- runPromptResultTWith cfg $ runPromptT ollamaPromptConfig $ do
+        result <- runPromptResultTWith cfg $ runPromptTNoTools ollamaPromptConfig $ do
           context "Return a JSON object for a user named Alice with email alice@example.com"
           prompt @User
         case result of
@@ -52,7 +58,7 @@ ollamaIntegrationTests mHost model =
                 { maxRetries = 10
                 , debugLog = Just (step . T.unpack)
                 }
-        result <- runPromptResultTWith cfg $ runPromptT ollamaPromptConfig $ do
+        result <- runPromptResultTWith cfg $ runPromptTNoTools ollamaPromptConfig $ do
           context "Return a JSON counter object with value 42."
           prompt @Counter
         case result of
@@ -65,7 +71,7 @@ ollamaIntegrationTests mHost model =
                 { maxRetries = 10
                 , debugLog = Just (step . T.unpack)
                 }
-        result <- runPromptResultTWith cfg $ runPromptT ollamaPromptConfig conferenceChain
+        result <- runPromptResultTWith cfg $ runPromptTNoTools ollamaPromptConfig conferenceChain
         case result of
           Left err -> assertFailure (show err)
           Right (allSpeakers, talks, schedule) -> do
@@ -76,4 +82,28 @@ ollamaIntegrationTests mHost model =
             let slots = scheduleSlots schedule
                 pairs = zip slots (drop 1 slots)
             all (\(a, b) -> slotEnd a == slotStart b) pairs @?= True
+    , testCaseSteps "conferenceChainWithTools: web_search tool is invoked at least once" $ \step -> do
+        let cfg = (defaultOllamaBackendConfig mHost) {ollamaModel = model}
+            pcfg =
+              defaultPromptConfig
+                { maxRetries = 10
+                , maxToolSteps = Just 10
+                , debugLog = Just (step . T.unpack)
+                }
+        callCount <- newIORef (0 :: Int)
+        let countingHandler = ToolHandler $ \q -> do
+              atomicModifyIORef' callCount (\n -> (n + 1, ()))
+              runToolHandler webSearchHandler q
+            handlers = countingHandler :* Nil
+        result <-
+          runPromptResultTWith cfg $
+            runPromptT pcfg handlers conferenceChainWithTools
+        case result of
+          Left err -> assertFailure (show err)
+          Right (allSpeakers, talks, _schedule) -> do
+            let n = length (speakers allSpeakers)
+            assertBool "at least 3 speakers" (n >= 3)
+            length talks @?= n
+        n <- readIORef callCount
+        assertBool "web_search tool was called at least once" (n > 0)
     ]

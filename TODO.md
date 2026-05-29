@@ -35,3 +35,33 @@ Why do we need to modify so much
 ## What features does anthropic and/or ollama have that we're currently not using?
 
 ## Compaction
+
+## Backend specific features
+
+Typeclass constraint on the backend possible in the prompt definition.
+E.g. URL images in anthropic
+
+
+## Image/multimodal generation
+
+## Tool use follow up
+
+### OCR tool
+
+Separate cabal package shroom-ocr with bindings to the best ocr library available.
+LLM may call OCR on an image.
+
+### Key value storage tool
+
+* User may store e.g. an image or a longer text or a file in a key value store living on the user side
+* LLM may retrieve, write, rename, delete etc. the key value store
+
+### Local file manipulation tool
+
+
+### Tool example
+
+Implement a "Facts about a celebrity" tool use example.
+The LLM is first instructed to offer a list of 3 celebrities.
+User chooses one of them randomly.
+Next step: LLM should read their wikipedia article and summarize one trivia fact.

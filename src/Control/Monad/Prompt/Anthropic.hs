@@ -28,19 +28,17 @@ import Data.Text qualified as T
 -- vector
 import Data.Vector qualified as V
 
--- witherable
-import Witherable ((<&?>))
+-- aeson
+import Data.Aeson (Value)
 
 -- claude
 import Claude.V1
 import Claude.V1.Messages
 
 -- shroom
-import Control.Monad.Prompt (
-  ContextItem (..),
-  LLMBackend (..),
-  fixSchemaForAnthropic,
- )
+import Control.Monad.Prompt (ContextItem (..), LLMBackend (..))
+import Control.Monad.Prompt.Schema (ToolDef (..), fixSchemaForAnthropic, inlineSchema)
+import Control.Monad.Prompt.Tool (ToolLoopOps (..), genericToolLoop)
 
 -- | Configuration for the Anthropic Claude API.
 data AnthropicConfig = AnthropicConfig
@@ -91,28 +89,96 @@ contextItemsToAnthropic items typeDesc =
     isSystem (SystemMessage _) = True
     isSystem _ = False
 
+-- | Convert a 'ToolDef' to an Anthropic 'ToolDefinition'.
+toAnthropicTool :: ToolDef -> ToolDefinition
+toAnthropicTool td =
+  inlineTool $ strictFunctionTool td.toolDefName (Just td.toolDefDescription) (inlineSchema td.toolDefSchema)
+
+-- | Build 'ToolLoopOps' for the Anthropic backend.
+anthropicToolLoopOps ::
+  (MonadIO m) =>
+  Methods ->
+  AnthropicConfig ->
+  Maybe SystemPrompt ->
+  -- | output schema (for final structured call)
+  Value ->
+  Maybe (V.Vector ToolDefinition) ->
+  ToolLoopOps m [Message] MessageResponse
+anthropicToolLoopOps methods cfg mSystem schema mTools =
+  ToolLoopOps
+    { callModel = \msgs -> do
+        result <-
+          liftIO $
+            try @SomeException $
+              methods.createMessage
+                _CreateMessage
+                  { model = cfg.model
+                  , messages = V.fromList msgs
+                  , system = mSystem
+                  , max_tokens = cfg.maxTokens
+                  , tools = mTools
+                  , -- Only request structured output when there are no tools active,
+                    -- or Anthropic rejects the combination when tool_use stop_reason is expected.
+                    -- We set output_config on every call; if the model stops for tool_use
+                    -- the schema is ignored; if it stops for end_turn we get JSON.
+                    output_config = Just (jsonSchemaConfig (fixSchemaForAnthropic schema))
+                  }
+        pure $ case result of
+          Left ex -> Left ("HTTP error: " <> pack (show ex))
+          Right resp -> Right resp
+    , callModelNoTools = \msgs -> do
+        result <-
+          liftIO $
+            try @SomeException $
+              methods.createMessage
+                _CreateMessage
+                  { model = cfg.model
+                  , messages = V.fromList msgs
+                  , system = mSystem
+                  , max_tokens = cfg.maxTokens
+                  , tools = Nothing
+                  , output_config = Just (jsonSchemaConfig (fixSchemaForAnthropic schema))
+                  }
+        pure $ case result of
+          Left ex -> Left ("HTTP error: " <> pack (show ex))
+          Right resp -> Right resp
+    , detectTools = \resp ->
+        case resp.stop_reason of
+          Just Tool_Use ->
+            let calls =
+                  [ (cb, cb.name, cb.input)
+                  | cb <- toList resp.content
+                  , ContentBlock_Tool_Use {} <- [cb]
+                  ]
+             in if null calls then Nothing else Just calls
+          _ -> Nothing
+    , appendExchange = \msgs resp tagged ->
+        let assistantContents = V.fromList $ mapMaybe contentBlockToContent (toList resp.content)
+            assistantMsg = Message {role = Assistant, content = assistantContents, cache_control = Nothing}
+            toolResults =
+              [ Content_Tool_Result
+                  { tool_use_id = uid
+                  , content = Just (either ("Error: " <>) (id) res)
+                  , is_error = either (const (Just True)) (const Nothing) res
+                  }
+              | (uid, _name, res) <- tagged
+              ]
+            toolMsg = Message {role = User, content = V.fromList toolResults, cache_control = Nothing}
+         in msgs <> [assistantMsg, toolMsg]
+    , extractText = \resp ->
+        mconcat
+          [ t
+          | ContentBlock_Text {text = t} <- toList resp.content
+          ]
+    }
+
 instance LLMBackend AnthropicConfig where
-  runChat cfg ctx typeDesc schema = liftIO $ do
-    result <- try @SomeException $ do
-      clientEnv <- getClientEnv "https://api.anthropic.com"
-      let methods = makeMethods clientEnv cfg.apiKey (Just "2023-06-01")
-          (mSystem, msgs) = contextItemsToAnthropic ctx typeDesc
-      resp <-
-        methods.createMessage
-          _CreateMessage
-            { model = cfg.model
-            , messages = V.fromList msgs
-            , system = mSystem
-            , max_tokens = cfg.maxTokens
-            , output_config = Just (jsonSchemaConfig (fixSchemaForAnthropic schema))
-            }
-      let MessageResponse {content} = resp
-          texts =
-            toList $
-              content <&?> \case
-                ContentBlock_Text {text = t} -> Just t
-                _ -> Nothing
-      pure $ mconcat texts
-    pure $ case result of
-      Left ex -> Left ("HTTP error: " <> pack (show ex))
-      Right txt -> Right txt
+  runChatWithTools cfg ctx typeDesc schema toolDefs dispatch maxToolSteps = do
+    clientEnv <- liftIO $ getClientEnv "https://api.anthropic.com"
+    let methods = makeMethods clientEnv cfg.apiKey (Just "2023-06-01")
+        (mSystem, msgs) = contextItemsToAnthropic ctx typeDesc
+        mTools = case toolDefs of
+          [] -> Nothing
+          ts -> Just (V.fromList (fmap toAnthropicTool ts))
+        ops = anthropicToolLoopOps methods cfg mSystem schema mTools
+    genericToolLoop ops dispatch msgs maxToolSteps

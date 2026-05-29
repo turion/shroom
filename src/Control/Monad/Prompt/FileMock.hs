@@ -69,7 +69,7 @@ defaultFileMockConfig = do
       }
 
 instance LLMBackend FileMockConfig where
-  runChat cfg ctx typeDesc _schema = liftIO $ do
+  runChatWithTools cfg ctx typeDesc _schema _toolDefs _dispatch _maxToolSteps = liftIO $ do
     n <- atomicModifyIORef' cfg.stepCounter (\i -> (i + 1, i))
     let stepNum = n + 1 -- 1-indexed for humans
         filename = "response-" <> printf "%03d" stepNum <> ".json"

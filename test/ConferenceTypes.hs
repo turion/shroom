@@ -26,6 +26,9 @@ module ConferenceTypes (
   ConferenceSchedule (..),
   ScheduleProperty (..),
   conferenceChain,
+  SpeakerLookup (..),
+  fakeSpeakerLookupHandler,
+  conferenceChainWithTools,
 ) where
 
 -- base
@@ -51,9 +54,9 @@ import Data.OpenApi (ToSchema)
 import Data.Universe.Class (Universe)
 
 -- shroom
-
 import Control.Monad.Prompt
 import Control.Monad.Prompt.TH (deriveDescribeType)
+import Control.Monad.Prompt.Tool (IsTool (..), ToolHandler (..))
 import Data.Describe
 
 -- * Types
@@ -298,4 +301,69 @@ conferenceChain = do
             <> "Include every talk exactly once."
         )
 
+  pure (allSpeakers, talks, schedule)
+
+-- * Tool: SpeakerLookup
+
+-- | A request to look up background info about a conference speaker by name.
+newtype SpeakerLookup = SpeakerLookup
+  { speakerLookupName :: Text
+  -- ^ The full name of the speaker to look up.
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema)
+
+$(pure [])
+
+instance Describe SpeakerLookup where
+  describeType = $(deriveDescribeType ''SpeakerLookup)
+
+instance IsTool SpeakerLookup where
+  toolDescription _ = Just "Look up a speaker's background, research interests, and past talks."
+
+-- | Canned handler: returns one of 3 bios based on name length mod 3.
+fakeSpeakerLookupHandler :: ToolHandler SpeakerLookup
+fakeSpeakerLookupHandler = ToolHandler $ \(SpeakerLookup name) ->
+  pure $ Right $ case T.length name `mod` 3 of
+    0 -> name <> " is known for pioneering work on dependent types and proof assistants."
+    1 -> name <> " is a compiler engineer specializing in GHC optimizations and LLVM backends."
+    _ -> name <> " researches distributed systems and formal verification of consensus protocols."
+
+-- | Conference chain that instructs the LLM to search the web for speaker info.
+conferenceChainWithTools :: (Monad m) => PromptT m (Speakers, [Talk], ConferenceSchedule)
+conferenceChainWithTools = do
+  context "You are helping to schedule ZuriHac 2027, a Haskell community conference at OST Rapperswil-Jona, Switzerland, right next to a beautiful lake."
+  context "The conference focuses on Haskell, functional programming, and type theory."
+  allSpeakers <- prompt @Speakers
+  context $
+    "The confirmed speakers are: "
+      <> T.intercalate
+        ", "
+        ( fmap
+            ( \s ->
+                firstName (speakerName s)
+                  <> " "
+                  <> lastName (speakerName s)
+            )
+            (speakers allSpeakers)
+        )
+  talks <-
+    mapM
+      ( \speaker ->
+          promptWith @Talk $
+            "The talk must be presented by "
+              <> firstName (speakerName speaker)
+              <> " "
+              <> lastName (speakerName speaker)
+              <> ". You may use the web_search tool once to look up their background. Then write the abstract — do not search again."
+      )
+      (speakers allSpeakers)
+  context $
+    "The talks are: "
+      <> T.intercalate ", " (fmap talkTitle talks)
+  schedule <-
+    promptWith @ConferenceSchedule
+      "Create a schedule for Friday 11 June 2027 with one slot per talk. Include every talk."
+      <|> promptWith @ConferenceSchedule
+        "Create a schedule for Friday 11 June 2027. First slot starts at 07:00:00 UTC. Slots must be contiguous."
   pure (allSpeakers, talks, schedule)

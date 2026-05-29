@@ -15,6 +15,7 @@ import Test.Tasty.HUnit (testCase, (@?=))
 
 -- shroom
 import Control.Monad.Prompt
+import Data.SOP (NP (..))
 
 -- test
 import ConferenceTypes
@@ -66,7 +67,7 @@ runConference :: PromptConfig -> [Text] -> IO (Either Text (Speakers, [Talk], Co
 runConference cfg responseList = do
   responses <- newIORef responseList
   seenCtxs <- newIORef []
-  result <- runPromptResultTWith (SeqMockConfig responses seenCtxs) $ runPromptT cfg conferenceChain
+  result <- runPromptResultTWith (SeqMockConfig responses seenCtxs) $ runPromptTNoTools cfg conferenceChain
   seen <- readIORef seenCtxs
   pure (result, seen)
 
@@ -140,7 +141,7 @@ main =
           responses <- newIORef [speakersJson, talk1Json, talk2Json, talk3Json, dupScheduleJson, scheduleJson]
           seenCtxs <- newIORef ([] :: [Text])
           let cfg = SeqMockConfig responses seenCtxs
-          result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) conferenceChain
+          result <- runPromptResultTWith cfg $ runPromptTNoTools (defaultPromptConfig {maxRetries = 2}) conferenceChain
           case result of
             Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
             Right (_, _, schedule) -> do
@@ -169,7 +170,7 @@ main =
           responses <- newIORef [speakersJson, talk1Json, talk2Json, talk3Json, gapScheduleJson, scheduleJson]
           seenCtxs <- newIORef ([] :: [Text])
           let cfg = SeqMockConfig responses seenCtxs
-          result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) conferenceChain
+          result <- runPromptResultTWith cfg $ runPromptTNoTools (defaultPromptConfig {maxRetries = 2}) conferenceChain
           case result of
             Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
             Right (_, _, schedule) -> do
@@ -191,7 +192,7 @@ main =
           responses <- newIORef [badSpeakers, speakersJson, talk1Json, talk2Json, talk3Json, scheduleJson]
           seenCtxs <- newIORef ([] :: [Text])
           let cfg = SeqMockConfig responses seenCtxs
-          result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) conferenceChain
+          result <- runPromptResultTWith cfg $ runPromptTNoTools (defaultPromptConfig {maxRetries = 2}) conferenceChain
           case result of
             Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
             Right (allSpeakers, _, _) ->
@@ -202,4 +203,19 @@ main =
           -- Retry context should explain the violated invariant
           assertContains "IMPORTANT" (seen !! 1)
           assertContains "between 3 and 10" (seen !! 1)
+      , testCase "runPromptT with tools: chain runs successfully (mock ignores tools)" $ do
+          -- Verify that passing real tool definitions and a dispatcher compiles
+          -- and produces the correct result even when the backend doesn't invoke tools.
+          let handlers = fakeSpeakerLookupHandler :* Nil
+          responses <- newIORef defaultResponses
+          seenCtxs <- newIORef ([] :: [Text])
+          let cfg = SeqMockConfig responses seenCtxs
+          result <-
+            runPromptResultTWith cfg $
+              runPromptT defaultPromptConfig handlers conferenceChainWithTools
+          case result of
+            Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
+            Right (allSpeakers, talks, _schedule) -> do
+              length (speakers allSpeakers) @?= 3
+              length talks @?= 3
       ]

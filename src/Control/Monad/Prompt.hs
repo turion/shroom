@@ -61,10 +61,15 @@ import Data.Text qualified as T
 import UnliftIO (MonadUnliftIO, withRunInIO)
 import UnliftIO.Async (concurrently)
 
-import Data.Aeson (FromJSON, Value (..), eitherDecodeStrictText, toJSON)
-import Data.Aeson.KeyMap qualified as KM
-import Data.OpenApi (Referenced (..), ToSchema, declareSchemaRef, getReference)
-import Data.OpenApi.Declare (runDeclare)
+import Data.Aeson (FromJSON, Value (..), eitherDecodeStrictText)
+import Data.OpenApi (ToSchema)
+
+-- sop-core
+import Data.SOP (All, NP (..), SListI)
+
+-- shroom (internal)
+import Control.Monad.Prompt.Schema (ToolDef, ToolDispatcher, schemaWithDefs)
+import Control.Monad.Prompt.Tool (IsTool, ToolHandler, makeDispatcher, toolDefsRaw)
 
 -- universe-base
 import Data.Universe.Class (universe)
@@ -206,63 +211,60 @@ renderContextItems = T.intercalate "\n" . fmap render
 
 -- * Backend abstraction
 
-{- | Type class for LLM backends.  Each instance specifies a configuration
-type and provides a single-turn chat operation: given the accumulated
-conversation history and a type description, return the raw JSON text
-produced by the model.
+{- | Type class for LLM backends.
 
-__Contract__: implementations of 'runChat' must not throw IO exceptions.
-All errors (HTTP failures, timeouts, API errors) must be caught and
-returned as @Left@.
+'runChatWithTools' is the sole required method.  Backends receive the full
+list of available tools and a dispatch callback; they may use them or ignore
+them freely.
+
+__Contract__: implementations must not throw IO exceptions — all errors must
+be returned as @Left@.
 -}
 class LLMBackend cfg where
-  {- | @runChat cfg history typeDescription schema@ calls the LLM and returns
-    the raw response text (expected to be valid JSON for the requested type).
+  {- | Call the LLM with optional tool support.
 
-    @history@ is the conversation so far as a list of 'ContextItem' values.
-    @typeDescription@ is appended as a final user turn by the backend.
-    @schema@ is the OpenAPI JSON schema for the expected type, encoded as a
-    JSON 'Value'.  Backends may use it to enforce structured output.
+    * @history@ — accumulated conversation so far.
+    * @typeDescription@ — appended as a final user turn; describes the
+      expected output type.
+    * @schema@ — OpenAPI JSON schema for the expected type.
+    * @tools@ — available tool definitions; empty list means no tools.
+    * @dispatch@ — callback to invoke a tool by name with a JSON input.
+    * @maxToolSteps@ — maximum tool-call iterations before giving up.
+
+    Returns the raw JSON text of the final (non-tool) response, or an error.
   -}
-  runChat :: (MonadIO m) => cfg -> [ContextItem] -> Text -> Value -> m (Either Text Text)
+  runChatWithTools ::
+    (MonadIO m) =>
+    cfg ->
+    [ContextItem] ->
+    -- | type description
+    Text ->
+    -- | output schema
+    Value ->
+    -- | available tools
+    [ToolDef] ->
+    ToolDispatcher m ->
+    -- | max tool steps
+    Maybe Int ->
+    m (Either Text Text)
 
-{- | Build a JSON schema 'Value' for type @a@ that includes all referenced
-sub-schemas in a @$defs@ section, using openapi3's 'declareSchemaRef'.
-This avoids the @#\/components\/schemas\/X@ references that Anthropic rejects.
+{- | Convenience wrapper: chat without tools.
+Calls 'runChatWithTools' with an empty tool list and zero tool steps.
 -}
-schemaWithDefs :: forall a. (ToSchema a) => Proxy a -> Value
-schemaWithDefs prx =
-  let (defs, ref) = runDeclare (declareSchemaRef prx) mempty
-      rootSchema = case ref of
-        Inline s -> toJSON s
-        Ref r -> Object (KM.singleton "$ref" (String ("#/$defs/" <> getReference r)))
-      defsJson = toJSON defs
-   in case defsJson of
-        Object defsKm | not (KM.null defsKm) ->
-          case rootSchema of
-            Object rootKm -> fixSchemaForAnthropic (Object (KM.insert "$defs" (Object defsKm) rootKm))
-            _ -> fixSchemaForAnthropic rootSchema
-        _ -> fixSchemaForAnthropic rootSchema
+runChat :: (LLMBackend cfg, MonadIO m) => cfg -> [ContextItem] -> Text -> Value -> m (Either Text Text)
+runChat cfg ctx typeDesc schema =
+  runChatWithTools cfg ctx typeDesc schema [] (\_ _ -> pure (Left "no tools")) (Just 0)
 
-{- | Fix a JSON schema 'Value' to satisfy Anthropic API constraints:
-
-* Adds @"additionalProperties": false@ to every @"type": "object"@ node.
-* Removes @"minimum"@ and @"maximum"@ from every @"type": "integer"@ node.
-* Rewrites @$ref@ values from @#\/components\/schemas\/X@ to @#\/$defs\/X@.
+{- | Like 'runPromptT' but without tools.
+Convenient for callers that don't need tool use; equivalent to
+@'runPromptT' cfg 'Nil'@.
 -}
-fixSchemaForAnthropic :: Value -> Value
-fixSchemaForAnthropic (Object km) =
-  let km1 = case KM.lookup "$ref" km of
-        Just (String ref) -> KM.insert "$ref" (String (T.replace "#/components/schemas/" "#/$defs/" ref)) km
-        _ -> km
-      km' = KM.map fixSchemaForAnthropic km1
-   in Object $ case KM.lookup "type" km' of
-        Just (String "object") -> KM.insert "additionalProperties" (Bool False) km'
-        Just (String "integer") -> KM.delete "minimum" (KM.delete "maximum" km')
-        Just (String "string") -> KM.delete "format" km'
-        _ -> km'
-fixSchemaForAnthropic (Array vs) = Array (fmap fixSchemaForAnthropic vs)
-fixSchemaForAnthropic v = v
+runPromptTNoTools ::
+  (LLMBackend cfg, MonadUnliftIO m) =>
+  PromptConfig ->
+  PromptT m a ->
+  PromptResultT cfg m a
+runPromptTNoTools cfg = runPromptT cfg Nil
 
 -- * Runner configuration
 
@@ -272,6 +274,11 @@ data PromptConfig = PromptConfig
   {- ^ Maximum number of re-prompts when a parsed value fails property
   validation.  Default: 3.
   -}
+  , maxToolSteps :: Maybe Int
+  {- ^ Maximum number of tool-call iterations per 'prompt' call before giving
+  up.  Only relevant when tools are supplied to 'runPromptT'.  Default: 10.
+  'Nothing' means no limit.
+  -}
   , debugLog :: Maybe (Text -> IO ())
   {- ^ Optional logger called before each LLM call and after each response.
   Receives a human-readable 'Text' summary.  Pass @Just TIO.putStrLn@ for
@@ -279,9 +286,9 @@ data PromptConfig = PromptConfig
   -}
   }
 
--- | Default 'PromptConfig': up to 3 retries, no debug logging.
+-- | Default 'PromptConfig': up to 3 retries, up to 10 tool steps, no debug logging.
 defaultPromptConfig :: PromptConfig
-defaultPromptConfig = PromptConfig {maxRetries = 3, debugLog = Nothing}
+defaultPromptConfig = PromptConfig {maxRetries = 3, maxToolSteps = Just 10, debugLog = Nothing}
 
 -- * PromptResultT runner
 
@@ -308,25 +315,34 @@ and the failing property descriptions so the model can correct itself.
 
 'Ap' branches are executed in parallel.
 
+Pass an 'NP' of 'ToolHandler's to enable tool use; use 'Nil' for no tools.
+
 Run the result with 'runPromptResultTWith'.
 -}
-runPromptT :: (LLMBackend cfg, MonadUnliftIO m) => PromptConfig -> PromptT m a -> PromptResultT cfg m a
-runPromptT promptCfg p = do
+runPromptT ::
+  forall tools cfg m a.
+  (LLMBackend cfg, MonadUnliftIO m, SListI tools, All IsTool tools) =>
+  PromptConfig ->
+  -- | Available tools; pass 'Nil' for none.
+  NP ToolHandler tools ->
+  PromptT m a ->
+  PromptResultT cfg m a
+runPromptT promptCfg handlers p = do
   cfg <- ask
   fst <$> go cfg [] p
   where
+    toolDefs = toolDefsRaw handlers
+    dispatch = makeDispatcher handlers
     -- Returns the result together with the context as it stands after execution.
     -- Context accumulated inside a sub-program is visible to all subsequent
     -- steps in the same 'Bind' chain.
-    go ::
-      (LLMBackend cfg, MonadUnliftIO m) =>
-      cfg -> [ContextItem] -> PromptT m a -> PromptResultT cfg m (a, [ContextItem])
+    go :: forall b. cfg -> [ContextItem] -> PromptT m b -> PromptResultT cfg m (b, [ContextItem])
     go _cfg ctx (AddContext item) = pure ((), ctx <> [item])
     go cfg ctx (WithContext item inner) = do
       (a, _) <- go cfg (ctx <> [item]) inner
       pure (a, ctx)
-    go cfg ctx (Prompt :: PromptT m a) = do
-      let prx = Proxy @a
+    go cfg ctx (Prompt :: PromptT m b) = do
+      let prx = Proxy @b
           typeDesc = description prx
           schema = schemaWithDefs prx
           checkProps a =
@@ -362,9 +378,7 @@ runPromptT promptCfg p = do
 
     -- Returns both the parsed value and the raw response text (for AssistantMessage).
     -- totalRetries is the original maxRetries value (fixed); retriesLeft decrements on each retry.
-    attempt ::
-      (LLMBackend cfg, MonadUnliftIO m, FromJSON a) =>
-      cfg -> [ContextItem] -> Text -> Value -> (a -> [Text]) -> Int -> Int -> PromptResultT cfg m (a, Text)
+    attempt :: forall c. (FromJSON c) => cfg -> [ContextItem] -> Text -> Value -> (c -> [Text]) -> Int -> Int -> PromptResultT cfg m (c, Text)
     attempt cfg ctx typeDesc schema checkProps totalRetries retriesLeft = do
       let attemptNum = totalRetries - retriesLeft + 1
       logDebug $
@@ -373,7 +387,7 @@ runPromptT promptCfg p = do
           , "Type: " <> typeDesc
           , "Context: " <> renderContextItems ctx
           ]
-      result <- runChat cfg ctx typeDesc schema
+      result <- runChatWithTools cfg ctx typeDesc schema toolDefs (\n v -> lift (dispatch n v)) (maxToolSteps promptCfg)
       let attemptsStr = "(" <> pack (show attemptNum) <> " attempt(s))"
       case result of
         Left err -> do
@@ -425,7 +439,7 @@ runPromptT promptCfg p = do
                                      ]
                           attempt cfg retryCtx typeDesc schema checkProps totalRetries (retriesLeft - 1)
 
-    eitherDecodeStrictText' :: (FromJSON a) => Text -> Either Text a
+    eitherDecodeStrictText' :: forall c. (FromJSON c) => Text -> Either Text c
     eitherDecodeStrictText' t = case eitherDecodeStrictText t of
       Left err -> Left (mconcat ["JSON decode error: ", t, "\n", pack err])
       Right a -> Right a
