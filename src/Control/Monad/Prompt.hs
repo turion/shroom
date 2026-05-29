@@ -421,7 +421,7 @@ runPromptT promptCfg p = do
             , not (propertyHolds a prop)
             , Just desc <- [describeProperties prx prop]
             ]
-      (a, rawTxt) <- attempt cfg ctx typeDesc schema checkProps (maxRetries promptCfg)
+      (a, rawTxt) <- attempt cfg ctx typeDesc schema checkProps (maxRetries promptCfg) (maxRetries promptCfg)
       pure (a, ctx <> [AssistantMessage rawTxt])
     go _cfg ctx (Pure a) = pure (a, ctx)
     go _cfg ctx (Lift m) = (,ctx) <$> lift m
@@ -442,15 +442,20 @@ runPromptT promptCfg p = do
       catchError (go cfg ctx left) (\_ -> go cfg ctx right)
 
     -- Returns both the parsed value and the raw response text (for AssistantMessage).
-    attempt cfg ctx typeDesc schema checkProps retriesLeft = do
+    -- totalRetries is the original maxRetries value (fixed); retriesLeft decrements on each retry.
+    attempt cfg ctx typeDesc schema checkProps totalRetries retriesLeft = do
       result <- runChat cfg ctx typeDesc schema
+      let attemptsStr = "(" <> pack (show (totalRetries - retriesLeft + 1)) <> " attempt(s))"
       case result of
-        Left err -> throwError err
+        Left err ->
+          if retriesLeft <= 0
+            then throwError $ err <> "\n" <> attemptsStr
+            else attempt cfg ctx typeDesc schema checkProps totalRetries (retriesLeft - 1)
         Right rawTxt ->
           case eitherDecodeStrictText' rawTxt of
             Left parseErr ->
               if retriesLeft <= 0
-                then throwError parseErr
+                then throwError $ parseErr <> "\n" <> attemptsStr
                 else do
                   let retryCtx =
                         ctx
@@ -461,7 +466,7 @@ runPromptT promptCfg p = do
                                    <> parseErr
                                    <> "\n\nGenerate a new, corrected JSON response that matches the required schema exactly."
                              ]
-                  attempt cfg retryCtx typeDesc schema checkProps (retriesLeft - 1)
+                  attempt cfg retryCtx typeDesc schema checkProps totalRetries (retriesLeft - 1)
             Right a ->
               let failDescs = checkProps a
                in if null failDescs
@@ -470,8 +475,10 @@ runPromptT promptCfg p = do
                       if retriesLeft <= 0
                         then
                           throwError $
-                            "Property validation failed after retries:\n"
+                            "Property validation failed:\n"
                               <> T.intercalate "\n" (fmap ("- " <>) failDescs)
+                              <> "\n"
+                              <> attemptsStr
                         else do
                           let retryCtx =
                                 ctx
@@ -482,7 +489,7 @@ runPromptT promptCfg p = do
                                            <> T.unlines (fmap ("- " <>) failDescs)
                                            <> "\nGenerate a new, corrected JSON response that satisfies ALL invariants listed above."
                                      ]
-                          attempt cfg retryCtx typeDesc schema checkProps (retriesLeft - 1)
+                          attempt cfg retryCtx typeDesc schema checkProps totalRetries (retriesLeft - 1)
 
     eitherDecodeStrictText' :: (FromJSON a) => Text -> Either Text a
     eitherDecodeStrictText' t = case eitherDecodeStrictText t of
