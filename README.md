@@ -23,7 +23,7 @@ instance Describe User where
 ```
 
 ```haskell
-result <- runPromptResultTWith cfg $ runPromptT $ do
+result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig $ do
   context "The user's name is Alice and her email is alice@example.com."
   prompt @User
 
@@ -58,13 +58,30 @@ Use `deriveDescribeType` from `Control.Monad.Prompt.TH` to derive
 accumulated context:
 
 ```haskell
-result <- runPromptResultTWith cfg $ runPromptT $ do
+result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig $ do
   context "Alice is 30 years old."
-  user  <- prompt @User          -- first LLM call
-  score <- promptWith @Score     -- second LLM call, still sees "Alice is 30..."
-    "Rate this user's awesomeness from 0 to 100."
+  user  <- prompt @User                                         -- first LLM call
+  score <- promptWith @Score "Rate this user's awesomeness."   -- second LLM call, still sees "Alice is 30..."
   pure (user, score)
 ```
+
+## Parallel prompts
+
+Independent prompts can run concurrently. The `Applicative` instance uses
+`unliftio`'s `concurrently` under the hood, so both LLM calls are issued at
+the same time:
+
+```haskell
+-- Two independent prompts run concurrently:
+(user, score) <- promptPar (prompt @User) (prompt @Score)
+
+-- A list of independent prompts, all in parallel:
+talks <- promptsParallel
+  [ promptWith @Talk ("Speaker: " <> speakerName spk) | spk <- speakers ]
+```
+
+Context added *inside* a parallel branch is local to that branch — it does not
+leak to sibling branches or to subsequent steps in the chain.
 
 ## Context model
 
@@ -110,6 +127,7 @@ The tradeoff:
 | Schema source | Inferred from usage | Explicit `ToSchema` instance |
 | Sum-type routing | ✓ (inferred) | ✓ (`prompt @SumType`, then `case`) |
 | Property validation + retry | — | ✓ (`Describe` / `failingProperties`) |
+| Parallel prompts | — | ✓ (`promptPar`, `promptsParallel`) |
 | Multiple LLM backends | — | ✓ (Claude, Ollama, FileMock) |
 | Code generation | ✓ | — |
 | Production-ready | proof-of-concept | closer |
@@ -135,8 +153,7 @@ shroom follows [Anthropic's prompt chaining recommendations](https://platform.cl
 **Branching and routing** are fully supported: `prompt @SumType` returns a typed
 Haskell sum type; use ordinary `case` to take different paths through the chain.
 
-See [TODO.md](TODO.md) for planned features (parallel prompts, `Alternative`,
-structured message history, and more).
+See [TODO.md](TODO.md) for planned features (`Alternative`, structured message history, and more).
 
 ## Installation
 
