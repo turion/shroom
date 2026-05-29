@@ -64,8 +64,10 @@ import Witherable ((<&?>))
 import Claude.V1
 import Claude.V1.Messages
 
--- operational
-import Control.Monad.Operational
+-- unliftio
+import UnliftIO (MonadUnliftIO, withRunInIO)
+import UnliftIO.Async (concurrently)
+
 import Data.Aeson (FromJSON, Value, eitherDecodeStrictText, toJSON)
 import Data.OpenApi (ToSchema, toSchema)
 
@@ -78,38 +80,66 @@ import Data.Describe qualified as D
 
 -- * Prompt DSL
 
--- | The instruction set for the prompt DSL.
-data Prompt a where
-  -- | Append a piece of text to the global conversation context.
-  Context :: Text -> Prompt ()
-  -- | Request a typed value from the model using only the accumulated global context.
-  Prompt :: (ToSchema a, FromJSON a, Describe a) => Prompt a
-  {- | Like 'Prompt', but also sends an extra piece of prompt-local context that
-    is /not/ carried forward into subsequent prompts.
-  -}
-  PromptWith :: (ToSchema a, FromJSON a, Describe a) => Text -> Prompt a
-
 -- | A monad transformer for building LLM prompt programs.
-newtype PromptT m a = PromptT {getPromptT :: ProgramT Prompt m a}
-  deriving (Functor, Applicative, Monad, MonadTrans, MonadIO)
+data PromptT m a where
+  {- | Append @txt@ to the accumulated context for all subsequent steps
+    in the current chain. This is a persistent, non-scoped addition.
+  -}
+  AddContext :: Text -> PromptT m ()
+  {- | Add @txt@ to the LLM context for the scoped sub-program only.
+    Context does not leak outside the 'WithContext' node.
+  -}
+  WithContext :: Text -> PromptT m a -> PromptT m a
+  -- | Request a typed value from the model using the accumulated context.
+  Prompt :: (ToSchema a, FromJSON a, Describe a) => PromptT m a
+  -- | Embed a pure value into 'PromptT' without any LLM call or effect.
+  Pure :: a -> PromptT m a
+  -- | Lift an @m@ action into 'PromptT'. Supports 'MonadTrans' and 'MonadIO'.
+  Lift :: m a -> PromptT m a
+  -- | Sequentially bind: run the first action, pass the result to the continuation.
+  Bind :: PromptT m a -> (a -> PromptT m b) -> PromptT m b
+  {- | Apply a function to a value, running both branches in parallel.
+    Both branches see the same context snapshot at the point of 'Ap'.
+  -}
+  Ap :: PromptT m (a -> b) -> PromptT m a -> PromptT m b
 
-{- | Append a piece of text to the accumulated global context.
-All subsequent 'prompt' / 'promptWith' calls will see this text.
+instance Functor (PromptT m) where
+  fmap f p = Bind p (Pure . f)
+
+instance Applicative (PromptT m) where
+  pure = Pure
+  (<*>) = Ap
+
+instance Monad (PromptT m) where
+  (>>=) = Bind
+
+instance MonadTrans PromptT where
+  lift = Lift
+
+instance (MonadIO m) => MonadIO (PromptT m) where
+  liftIO = Lift . liftIO
+
+{- | Scope a piece of context to a sub-program.
+The context is only visible within @p@ and does not persist afterwards.
+-}
+withContext :: Text -> PromptT m a -> PromptT m a
+withContext = WithContext
+
+{- | Append a piece of text to the context for the remainder of the current
+do-block (via 'Bind'). Context does not persist past the enclosing scope.
 -}
 context :: Text -> PromptT m ()
-context txt = PromptT $ singleton $ Context txt
+context = AddContext
 
 {- | Request a value of type @a@ from the model.
-The model sees the accumulated global context plus the type description.
+The model sees the accumulated context plus the type description.
 -}
 prompt :: (ToSchema a, FromJSON a, Describe a) => PromptT m a
-prompt = PromptT $ singleton Prompt
+prompt = Prompt
 
-{- | Like 'prompt', but with an extra piece of context that is only sent for
-this one request and does not persist into the global context.
--}
+-- | Like 'prompt', but with an extra piece of context scoped to this request only.
 promptWith :: (ToSchema a, FromJSON a, Describe a) => Text -> PromptT m a
-promptWith txt = PromptT $ singleton $ PromptWith txt
+promptWith txt = WithContext txt Prompt
 
 -- * Backend abstraction
 
@@ -207,46 +237,51 @@ On property-validation failure the prompt is retried up to
 'maxRetries' times, each time including the previous (invalid) response
 and the failing property descriptions so the model can correct itself.
 
+'Ap' branches are executed in parallel.
+
 Run the result with 'runPromptResultTWith'.
 -}
-runPromptT :: (LLMBackend cfg, MonadIO m) => PromptConfig -> PromptT m a -> PromptResultT cfg m a
+runPromptT :: (LLMBackend cfg, MonadUnliftIO m) => PromptConfig -> PromptT m a -> PromptResultT cfg m a
 runPromptT promptCfg p = do
   cfg <- ask
-  loop cfg (getPromptT p) ""
+  fst <$> go cfg "" p
   where
-    mkProxy :: Prompt a -> Proxy a
-    mkProxy _ = Proxy
-
-    loop cfg prog globalCtx = do
-      command <- lift $ viewT prog
-      case command of
-        Return a -> pure a
-        Context txt :>>= k ->
-          loop cfg (k ()) (globalCtx <> "\n" <> txt)
-        currentPrompt@Prompt :>>= k -> do
-          let prx = mkProxy currentPrompt
-              typeDesc = D.description prx
-              schema = toJSON (toSchema prx)
-              checkProps a =
-                [ desc
-                | prop <- universe
-                , not (propertyHolds a prop)
-                , Just desc <- [describeProperties prx prop]
-                ]
-          a <- attempt cfg globalCtx typeDesc schema checkProps (maxRetries promptCfg)
-          loop cfg (k a) globalCtx
-        currentPrompt@(PromptWith localCtx) :>>= k -> do
-          let prx = mkProxy currentPrompt
-              typeDesc = D.description prx
-              schema = toJSON (toSchema prx)
-              checkProps a =
-                [ desc
-                | prop <- universe
-                , not (propertyHolds a prop)
-                , Just desc <- [describeProperties prx prop]
-                ]
-          a <- attempt cfg (globalCtx <> "\n" <> localCtx) typeDesc schema checkProps (maxRetries promptCfg)
-          loop cfg (k a) globalCtx
+    -- Returns the result together with the context as it stands after execution.
+    -- Context accumulated inside a sub-program is visible to all subsequent
+    -- steps in the same 'Bind' chain.
+    go ::
+      (LLMBackend cfg, MonadUnliftIO m) =>
+      cfg -> Text -> PromptT m a -> PromptResultT cfg m (a, Text)
+    go _cfg ctx (AddContext txt) = pure ((), ctx <> "\n" <> txt)
+    go cfg ctx (WithContext txt inner) = do
+      (a, _) <- go cfg (ctx <> "\n" <> txt) inner
+      pure (a, ctx)
+    go cfg ctx (Prompt :: PromptT m a) = do
+      let prx = Proxy @a
+          typeDesc = D.description prx
+          schema = toJSON (toSchema prx)
+          checkProps a =
+            [ desc
+            | prop <- universe
+            , not (propertyHolds a prop)
+            , Just desc <- [describeProperties prx prop]
+            ]
+      a <- attempt cfg ctx typeDesc schema checkProps (maxRetries promptCfg)
+      pure (a, ctx)
+    go _cfg ctx (Pure a) = pure (a, ctx)
+    go _cfg ctx (Lift m) = (,ctx) <$> lift m
+    go cfg ctx (Bind q k) = do
+      (a, ctx') <- go cfg ctx q
+      go cfg ctx' (k a)
+    go cfg ctx (Ap pf pa) = do
+      let runF = fmap fst <$> runPromptResultTWith cfg (go cfg ctx pf)
+          runA = fmap fst <$> runPromptResultTWith cfg (go cfg ctx pa)
+      (rf, ra) <- lift $ withRunInIO $ \runInIO ->
+        concurrently (runInIO runF) (runInIO runA)
+      case (rf, ra) of
+        (Left e, _) -> throwError e
+        (_, Left e) -> throwError e
+        (Right f, Right a) -> pure (f a, ctx)
 
     attempt cfg ctx typeDesc schema checkProps retriesLeft = do
       result <- runChat cfg ctx typeDesc schema
