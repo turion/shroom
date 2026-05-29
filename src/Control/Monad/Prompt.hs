@@ -39,7 +39,9 @@ result <- runPromptResultTWith cfg $ runPromptT $ do
 module Control.Monad.Prompt (module Control.Monad.Prompt) where
 
 -- base
+import Control.Applicative (Alternative (..))
 import Control.Exception (SomeException, try)
+import Control.Monad (MonadPlus (..))
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Foldable (Foldable (..))
 import Data.Proxy (Proxy (..))
@@ -104,6 +106,12 @@ data PromptT m a where
     Both branches see the same context snapshot at the point of 'Ap'.
   -}
   Ap :: PromptT m (a -> b) -> PromptT m a -> PromptT m b
+  -- | Always fail with the given error message. Used as 'empty' and via 'MonadFail'.
+  Fail :: Text -> PromptT m a
+  {- | Try the first branch; if it fails, run the second from the original context.
+    Context accumulated inside a failing branch is discarded.
+  -}
+  Alt :: PromptT m a -> PromptT m a -> PromptT m a
 
 instance Functor (PromptT m) where
   fmap f p = Bind p (Pure . f)
@@ -120,6 +128,15 @@ instance MonadTrans PromptT where
 
 instance (MonadIO m) => MonadIO (PromptT m) where
   liftIO = Lift . liftIO
+
+instance Alternative (PromptT m) where
+  empty = Fail "empty"
+  (<|>) = Alt
+
+instance MonadPlus (PromptT m)
+
+instance MonadFail (PromptT m) where
+  fail = Fail . T.pack
 
 {- | Scope a piece of context to a sub-program.
 The context is only visible within @p@ and does not persist afterwards.
@@ -336,6 +353,9 @@ runPromptT promptCfg p = do
         (Left e, _) -> throwError e
         (_, Left e) -> throwError e
         (Right f, Right a) -> pure (f a, ctx)
+    go _cfg _ctx (Fail msg) = throwError msg
+    go cfg ctx (Alt left right) =
+      catchError (go cfg ctx left) (\_ -> go cfg ctx right)
 
     attempt cfg ctx typeDesc schema checkProps retriesLeft = do
       result <- runChat cfg ctx typeDesc schema

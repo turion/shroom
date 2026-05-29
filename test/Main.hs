@@ -1,6 +1,8 @@
 module Main (main) where
 
 -- base
+import Control.Applicative (Alternative (..))
+import Control.Monad (MonadPlus (..), forM_)
 import Data.IORef
 import Data.Proxy (Proxy (..))
 
@@ -272,4 +274,99 @@ main =
               -- 1 original + 1 retry = 2 total calls
               length seen @?= 2
           ]
+      , testGroup
+          "Alternative, MonadPlus, MonadFail"
+          [ testCase "empty always fails" $ do
+              let cfg = MockConfig (error "not implemented")
+              result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig (empty :: PromptT IO Counter)
+              case result of
+                Left _ -> pure ()
+                Right _ -> fail "Expected Left"
+          , testCase "Fail propagates the message" $ do
+              let cfg = MockConfig (error "not implemented")
+              result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig (Fail "the reason" :: PromptT IO Counter)
+              case result of
+                Left err -> assertContains "the reason" err
+                Right _ -> fail "Expected Left"
+          , testCase "MonadFail propagates the message" $ do
+              let cfg = MockConfig (error "not implemented")
+              result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig (fail "oops" :: PromptT IO Counter)
+              case result of
+                Left err -> assertContains "oops" err
+                Right _ -> fail "Expected Left"
+          , testCase "succeeding first branch returned, fallback not run" $ do
+              let cfg = MockConfig (error "not implemented")
+              result <-
+                runPromptResultTWith cfg $
+                  runPromptT
+                    defaultPromptConfig
+                    (Pure (Counter 42) <|> Fail "should not reach")
+              case result of
+                Right (Counter 42) -> pure ()
+                _ -> fail "Expected Right (Counter 42)"
+          , testCase "failing first branch falls back to second" $ do
+              let cfg = MockConfig (error "not implemented")
+              result <-
+                runPromptResultTWith cfg $
+                  runPromptT
+                    defaultPromptConfig
+                    (Fail "x" <|> Pure (Counter 42))
+              case result of
+                Right (Counter 42) -> pure ()
+                _ -> fail "Expected Right (Counter 42)"
+          , testCase "both branches fail — second error propagates" $ do
+              let cfg = MockConfig (error "not implemented")
+              result <-
+                runPromptResultTWith cfg $
+                  runPromptT
+                    defaultPromptConfig
+                    (Fail "first" <|> (Fail "second" :: PromptT IO Counter))
+              case result of
+                Left err -> assertContains "second" err
+                Right _ -> fail "Expected Left"
+          , testCase "backend error triggers fallback" $ do
+              result <-
+                runPromptResultTWith InjectFailConfig $
+                  runPromptT
+                    defaultPromptConfig
+                    (prompt @Counter <|> Pure (Counter 0))
+              case result of
+                Right (Counter 0) -> pure ()
+                _ -> fail "Expected Right (Counter 0)"
+          , testCase "context from failing branch does not persist" $ do
+              seenContexts <- newIORef ([] :: [Text])
+              let cfg = MockConfig seenContexts
+              _ <-
+                runPromptResultTWith cfg $
+                  runPromptT defaultPromptConfig $
+                    (context "leaked" >> Fail "x") <|> prompt @Counter
+              seen <- readIORef seenContexts
+              length seen @?= 1
+              forM_ seen $ assertNotContains "leaked"
+          , testCase "context from winning branch persists to next prompt" $ do
+              seenContexts <- newIORef ([] :: [Text])
+              let cfg = MockConfig seenContexts
+              _ <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig $ do
+                _ <- (context "kept" >> prompt @Counter) <|> Fail "x"
+                prompt @Counter
+              seen <- readIORef seenContexts
+              length seen @?= 2
+              assertContains "kept" (seen !! 1)
+          , testCase "mzero `mplus` p equals p" $ do
+              let cfg = MockConfig (error "not implemented")
+              result <-
+                runPromptResultTWith cfg $
+                  runPromptT
+                    defaultPromptConfig
+                    (mzero `mplus` Pure (Counter 99))
+              case result of
+                Right (Counter 99) -> pure ()
+                _ -> fail "Expected Right (Counter 99)"
+          ]
       ]
+
+-- | A mock backend that always returns a backend-level error.
+data InjectFailConfig = InjectFailConfig
+
+instance LLMBackend InjectFailConfig where
+  runChat _ _ _ _ = pure (Left "injected failure")

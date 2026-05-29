@@ -29,6 +29,7 @@ module ConferenceTypes (
 ) where
 
 -- base
+import Control.Applicative (Alternative (..))
 import Data.List (nub)
 import Data.Void (Void)
 import GHC.Generics (Generic)
@@ -285,11 +286,16 @@ conferenceChain = do
             talks
         )
 
+  -- Try a short prompt first (cheap); if the model can't satisfy the type invariants
+  -- after retries, fall back to the detailed prompt that explicitly spells them out.
   schedule <-
-    promptWith @ConferenceSchedule $
-      "Create a schedule for Friday 11 June 2027 as an ordered list of timetable slots, one per talk. "
-        <> "Each slot must have a start time and end time in ISO 8601 UTC format (e.g. \"2027-06-11T07:00:00Z\", \"2027-06-11T07:45:00Z\"), and slots must be contiguous. "
-        <> "The first slot must start at 07:00:00 UTC (09:00 Zurich local time). "
-        <> "Include every talk exactly once."
+    promptWith @ConferenceSchedule
+      "Create a schedule for Friday 11 June 2027 with one slot per talk. Include every talk."
+      <|> promptWith @ConferenceSchedule
+        ( "Create a schedule for Friday 11 June 2027 as an ordered list of timetable slots, one per talk. "
+            <> "Each slot must have a start time and end time in ISO 8601 UTC format (e.g. \"2027-06-11T07:00:00Z\", \"2027-06-11T07:45:00Z\"), and slots must be contiguous. "
+            <> "The first slot must start at 07:00:00 UTC (09:00 Zurich local time). "
+            <> "Include every talk exactly once."
+        )
 
   pure (allSpeakers, talks, schedule)
