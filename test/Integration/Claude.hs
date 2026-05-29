@@ -26,31 +26,29 @@ main = do
 
 integrationTests :: Text -> TestTree
 integrationTests apiKey =
-  testGroup
-    "Claude API integration"
-    [ testCase "prompt returns a User" $ do
-        let cfg = AnthropicConfig {apiKey = apiKey, model = "claude-haiku-4-5-20251001"}
-        result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig $ do
-          context "Return a JSON object for a user named Alice with email alice@example.com"
-          prompt @User
-        case result of
-          Left err -> assertFailure (show err)
-          Right user -> userName user @?= "Alice"
-    , testCase "prompt returns a Counter" $ do
-        let cfg = AnthropicConfig {apiKey = apiKey, model = "claude-haiku-4-5-20251001"}
-        result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig $ do
-          context "Return a JSON counter object with value 42."
-          prompt @Counter
-        case result of
-          Left err -> assertFailure (show err)
-          Right (Counter n) -> n @?= 42
-    , testCase "conference chain produces a valid schedule" $ do
-        let cfg = AnthropicConfig {apiKey = apiKey, model = "claude-haiku-4-5-20251001"}
-        result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig conferenceChain
-        case result of
-          Left err -> assertFailure (show err)
-          Right (allSpeakers, talks, schedule) -> do
-            assertBool "at least 3 speakers" (length (speakers allSpeakers) >= 3)
-            length talks @?= length (speakers allSpeakers)
-            assertBool "at least one slot" (not (null (scheduleSlots schedule)))
-    ]
+  let cfg = mkAnthropicConfig apiKey
+   in testGroup
+        "Claude API integration"
+        [ testCase "prompt returns a User" $ do
+            result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig $ do
+              context "Return a JSON object for a user named Alice with email alice@example.com"
+              prompt @User
+            case result of
+              Left err -> assertFailure (show err)
+              Right user -> userName user @?= "Alice"
+        , testCase "prompt returns a Counter" $ do
+            result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig $ do
+              context "Return a JSON counter object with value 42."
+              prompt @Counter
+            case result of
+              Left err -> assertFailure (show err)
+              Right (Counter n) -> n @?= 42
+        , testCase "conference chain produces a valid schedule" $ do
+            result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig conferenceChain
+            case result of
+              Left err -> assertFailure (show err)
+              Right (allSpeakers, talks, schedule) -> do
+                assertBool "at least 3 speakers" (length (speakers allSpeakers) >= 3)
+                length talks @?= length (speakers allSpeakers)
+                assertBool "at least one slot" (not (null (scheduleSlots schedule)))
+        ]

@@ -45,6 +45,7 @@ import Control.Monad (MonadPlus (..))
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Foldable (Foldable (..))
 import Data.Proxy (Proxy (..))
+import Numeric.Natural (Natural)
 
 -- mtl
 import Control.Monad.Error.Class (MonadError (..))
@@ -246,8 +247,26 @@ data AnthropicConfig = AnthropicConfig
   { apiKey :: Text
   -- ^ Your Anthropic API key.
   , model :: Text
-  -- ^ Model identifier, e.g. @\"claude-3-5-haiku-20241022\"@.
+  -- ^ Model identifier, e.g. @\"claude-haiku-4-5-20251001\"@.
+  , maxTokens :: Natural
+  -- ^ Maximum number of tokens in the model response. Default: 4096.
   }
+
+{- | Make a configuration for the Anthropic backend.
+
+Provide a specified API key,
+reasonable defaults for other parameters: Claude Haiku 4-5-20251001 and max tokens 4096.
+-}
+mkAnthropicConfig ::
+  -- | Your Anthropic API key.
+  Text ->
+  AnthropicConfig
+mkAnthropicConfig apiKey =
+  AnthropicConfig
+    { apiKey = apiKey
+    , model = "claude-haiku-4-5-20251001"
+    , maxTokens = 4096
+    }
 
 {- | Build a JSON schema 'Value' for type @a@ that includes all referenced
 sub-schemas in a @$defs@ section, using openapi3's 'declareSchemaRef'.
@@ -322,7 +341,7 @@ instance LLMBackend AnthropicConfig where
             { model = cfg.model
             , messages = V.fromList msgs
             , system = mSystem
-            , max_tokens = 1024
+            , max_tokens = cfg.maxTokens
             , output_config = Just (jsonSchemaConfig (fixSchemaForAnthropic schema))
             }
       let MessageResponse {content} = resp
