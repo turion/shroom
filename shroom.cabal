@@ -78,13 +78,16 @@ test-suite shroom-test
     tasty ^>=1.4,
     tasty-hunit ^>=0.10,
 
-test-suite shroom-test-integration
+test-suite shroom-test-integration-claude
   import: opts
   default-language: GHC2024
   type: exitcode-stdio-1.0
   hs-source-dirs: test
-  main-is: Integration.hs
-  other-modules: Types
+  main-is: Integration/Claude.hs
+  other-modules:
+    ConferenceTypes
+    Types
+
   build-depends:
     shroom,
     tasty ^>=1.4,
@@ -95,7 +98,7 @@ test-suite shroom-test-integration-ollama
   default-language: GHC2024
   type: exitcode-stdio-1.0
   hs-source-dirs: test
-  main-is: OllamaIntegration.hs
+  main-is: Integration/Ollama.hs
   other-modules:
     ConferenceTypes
     Types

@@ -68,8 +68,10 @@ import Claude.V1.Messages
 import UnliftIO (MonadUnliftIO, withRunInIO)
 import UnliftIO.Async (concurrently)
 
-import Data.Aeson (FromJSON, Value, eitherDecodeStrictText, toJSON)
-import Data.OpenApi (ToSchema, toSchema)
+import Data.Aeson (FromJSON, Value (..), eitherDecodeStrictText, toJSON)
+import Data.Aeson.KeyMap qualified as KM
+import Data.OpenApi (Referenced (..), ToSchema, declareSchemaRef, getReference)
+import Data.OpenApi.Declare (runDeclare)
 
 -- universe-base
 import Data.Universe.Class (universe)
@@ -170,6 +172,43 @@ data AnthropicConfig = AnthropicConfig
   -- ^ Model identifier, e.g. @\"claude-3-5-haiku-20241022\"@.
   }
 
+{- | Build a JSON schema 'Value' for type @a@ that includes all referenced
+sub-schemas in a @$defs@ section, using openapi3's 'declareSchemaRef'.
+This avoids the @#\/components\/schemas\/X@ references that Anthropic rejects.
+-}
+schemaWithDefs :: forall a. (ToSchema a) => Proxy a -> Value
+schemaWithDefs prx =
+  let (defs, ref) = runDeclare (declareSchemaRef prx) mempty
+      rootSchema = case ref of
+        Inline s -> toJSON s
+        Ref r -> Object (KM.singleton "$ref" (String ("#/$defs/" <> getReference r)))
+      defsJson = toJSON defs
+   in case defsJson of
+        Object defsKm | not (KM.null defsKm) ->
+          case rootSchema of
+            Object rootKm -> fixSchemaForAnthropic (Object (KM.insert "$defs" (Object defsKm) rootKm))
+            _ -> fixSchemaForAnthropic rootSchema
+        _ -> fixSchemaForAnthropic rootSchema
+
+{- | Fix a JSON schema 'Value' to satisfy Anthropic API constraints:
+
+* Adds @"additionalProperties": false@ to every @"type": "object"@ node.
+* Removes @"minimum"@ and @"maximum"@ from every @"type": "integer"@ node.
+* Rewrites @$ref@ values from @#\/components\/schemas\/X@ to @#\/$defs\/X@.
+-}
+fixSchemaForAnthropic :: Value -> Value
+fixSchemaForAnthropic (Object km) =
+  let km1 = case KM.lookup "$ref" km of
+        Just (String ref) -> KM.insert "$ref" (String (T.replace "#/components/schemas/" "#/$defs/" ref)) km
+        _ -> km
+      km' = KM.map fixSchemaForAnthropic km1
+   in Object $ case KM.lookup "type" km' of
+        Just (String "object") -> KM.insert "additionalProperties" (Bool False) km'
+        Just (String "integer") -> KM.delete "minimum" (KM.delete "maximum" km')
+        _ -> km'
+fixSchemaForAnthropic (Array vs) = Array (fmap fixSchemaForAnthropic vs)
+fixSchemaForAnthropic v = v
+
 instance LLMBackend AnthropicConfig where
   runChat cfg ctx typeDesc schema = liftIO $ do
     result <- try @SomeException $ do
@@ -187,7 +226,7 @@ instance LLMBackend AnthropicConfig where
                     }
                 ]
             , max_tokens = 1024
-            , output_config = Just (jsonSchemaConfig schema)
+            , output_config = Just (jsonSchemaConfig (fixSchemaForAnthropic schema))
             }
       let MessageResponse {content} = resp
           texts =
@@ -259,7 +298,7 @@ runPromptT promptCfg p = do
     go cfg ctx (Prompt :: PromptT m a) = do
       let prx = Proxy @a
           typeDesc = D.description prx
-          schema = toJSON (toSchema prx)
+          schema = schemaWithDefs prx
           checkProps a =
             [ desc
             | prop <- universe
