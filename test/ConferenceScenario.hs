@@ -170,7 +170,7 @@ main =
           responses <- newIORef [speakersJson, talk1Json, talk2Json, talk3Json, dupScheduleJson, scheduleJson]
           seenCtxs <- newIORef ([] :: [Text])
           let cfg = SeqMockConfig responses seenCtxs
-          result <- runPromptResultTWith cfg $ runPromptT (PromptConfig {maxRetries = 2}) conferenceChain
+          result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) conferenceChain
           case result of
             Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
             Right (_, _, schedule) -> do
@@ -199,7 +199,7 @@ main =
           responses <- newIORef [speakersJson, talk1Json, talk2Json, talk3Json, gapScheduleJson, scheduleJson]
           seenCtxs <- newIORef ([] :: [Text])
           let cfg = SeqMockConfig responses seenCtxs
-          result <- runPromptResultTWith cfg $ runPromptT (PromptConfig {maxRetries = 2}) conferenceChain
+          result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) conferenceChain
           case result of
             Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
             Right (_, _, schedule) -> do
@@ -221,7 +221,7 @@ main =
           responses <- newIORef [badSpeakers, speakersJson, talk1Json, talk2Json, talk3Json, scheduleJson]
           seenCtxs <- newIORef ([] :: [Text])
           let cfg = SeqMockConfig responses seenCtxs
-          result <- runPromptResultTWith cfg $ runPromptT (PromptConfig {maxRetries = 2}) conferenceChain
+          result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) conferenceChain
           case result of
             Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
             Right (allSpeakers, _, _) ->

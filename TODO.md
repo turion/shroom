@@ -48,3 +48,9 @@ Why do we need to modify so much
 
 Add a debug mode config variable to PromptConfig.
 Run a prompt in debug mode where we can see the prompt and the schemata. In particular use this in all the tests so you'll immediately see why things are failing and what prompts/schemata were used.
+
+## Streaming
+
+## What features does anthropic and/or ollama have that we're currently not using?
+
+## Compaction

@@ -206,7 +206,7 @@ main =
               responses <- newIORef ["{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}"]
               seenContexts <- newIORef ([] :: [Text])
               let cfg = SeqMockConfig responses seenContexts
-              result <- runPromptResultTWith cfg $ runPromptT (PromptConfig {maxRetries = 2}) $ prompt @User
+              result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) $ prompt @User
               result @?= Right (User "Alice" "alice@example.com")
               seen <- readIORef seenContexts
               length seen @?= 1
@@ -219,7 +219,7 @@ main =
                   ]
               seenContexts <- newIORef ([] :: [Text])
               let cfg = SeqMockConfig responses seenContexts
-              result <- runPromptResultTWith cfg $ runPromptT (PromptConfig {maxRetries = 2}) $ prompt @User
+              result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) $ prompt @User
               result @?= Right (User "Alice" "alice@example.com")
               seen <- readIORef seenContexts
               length seen @?= 2
@@ -231,7 +231,7 @@ main =
                   ]
               seenContexts <- newIORef ([] :: [Text])
               let cfg = SeqMockConfig responses seenContexts
-              _ <- runPromptResultTWith cfg $ runPromptT (PromptConfig {maxRetries = 2}) $ prompt @User
+              _ <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) $ prompt @User
               seen <- readIORef seenContexts
               -- Second context should include the failure description
               assertContains "The email address is not empty." (seen !! 1)
@@ -241,7 +241,7 @@ main =
               responses <- newIORef (repeat "{\"userName\":\"Alice\",\"userEmail\":\"\"}")
               seenContexts <- newIORef ([] :: [Text])
               let cfg = SeqMockConfig responses seenContexts
-              result <- runPromptResultTWith cfg $ runPromptT (PromptConfig {maxRetries = 2}) $ prompt @User
+              result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) $ prompt @User
               case result of
                 Left err -> assertContains "The email address is not empty." err
                 Right _ -> fail "Expected Left but got Right"
@@ -256,7 +256,7 @@ main =
                   ]
               seenContexts <- newIORef ([] :: [Text])
               let cfg = SeqMockConfig responses seenContexts
-              result <- runPromptResultTWith cfg $ runPromptT (PromptConfig {maxRetries = 2}) $ prompt @User
+              result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 2}) $ prompt @User
               result @?= Right (User "Alice" "alice@example.com")
               seen <- readIORef seenContexts
               length seen @?= 2
@@ -266,7 +266,7 @@ main =
               responses <- newIORef (repeat "not valid json")
               seenContexts <- newIORef ([] :: [Text])
               let cfg = SeqMockConfig responses seenContexts
-              result <- runPromptResultTWith cfg $ runPromptT (PromptConfig {maxRetries = 1}) $ prompt @User
+              result <- runPromptResultTWith cfg $ runPromptT (defaultPromptConfig {maxRetries = 1}) $ prompt @User
               case result of
                 Left err -> assertContains "JSON decode error" err
                 Right _ -> fail "Expected Left but got Right"

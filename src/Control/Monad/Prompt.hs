@@ -358,16 +358,21 @@ instance LLMBackend AnthropicConfig where
 -- * Runner configuration
 
 -- | Model-independent configuration for the prompt runner.
-newtype PromptConfig = PromptConfig
+data PromptConfig = PromptConfig
   { maxRetries :: Int
   {- ^ Maximum number of re-prompts when a parsed value fails property
-    validation.  Default: 3.
+  validation.  Default: 3.
+  -}
+  , debugLog :: Maybe (Text -> IO ())
+  {- ^ Optional logger called before each LLM call and after each response.
+  Receives a human-readable 'Text' summary.  Pass @Just TIO.putStrLn@ for
+  stdout, or @tasty-hunit@\'s @step@ callback in tests.  Default: 'Nothing'.
   -}
   }
 
--- | Default 'PromptConfig': up to 3 retries on validation failure.
+-- | Default 'PromptConfig': up to 3 retries, no debug logging.
 defaultPromptConfig :: PromptConfig
-defaultPromptConfig = PromptConfig {maxRetries = 3}
+defaultPromptConfig = PromptConfig {maxRetries = 3, debugLog = Nothing}
 
 -- * PromptResultT runner
 
@@ -441,19 +446,36 @@ runPromptT promptCfg p = do
     go cfg ctx (Alt left right) =
       catchError (go cfg ctx left) (\_ -> go cfg ctx right)
 
+    logDebug :: (MonadIO n) => Text -> n ()
+    logDebug msg = case promptCfg.debugLog of
+      Nothing -> pure ()
+      Just fn -> liftIO (fn msg)
+
     -- Returns both the parsed value and the raw response text (for AssistantMessage).
     -- totalRetries is the original maxRetries value (fixed); retriesLeft decrements on each retry.
+    attempt ::
+      (LLMBackend cfg, MonadUnliftIO m, FromJSON a) =>
+      cfg -> [ContextItem] -> Text -> Value -> (a -> [Text]) -> Int -> Int -> PromptResultT cfg m (a, Text)
     attempt cfg ctx typeDesc schema checkProps totalRetries retriesLeft = do
+      let attemptNum = totalRetries - retriesLeft + 1
+      logDebug $
+        T.unlines
+          [ "=== LLM CALL (attempt " <> pack (show attemptNum) <> "/" <> pack (show (totalRetries + 1)) <> ") ==="
+          , "Type: " <> typeDesc
+          , "Context: " <> renderContextItems ctx
+          ]
       result <- runChat cfg ctx typeDesc schema
-      let attemptsStr = "(" <> pack (show (totalRetries - retriesLeft + 1)) <> " attempt(s))"
+      let attemptsStr = "(" <> pack (show attemptNum) <> " attempt(s))"
       case result of
-        Left err ->
+        Left err -> do
+          logDebug $ "ERROR: " <> err
           if retriesLeft <= 0
             then throwError $ err <> "\n" <> attemptsStr
             else attempt cfg ctx typeDesc schema checkProps totalRetries (retriesLeft - 1)
         Right rawTxt ->
           case eitherDecodeStrictText' rawTxt of
-            Left parseErr ->
+            Left parseErr -> do
+              logDebug $ "PARSE FAIL: " <> parseErr
               if retriesLeft <= 0
                 then throwError $ parseErr <> "\n" <> attemptsStr
                 else do
@@ -470,8 +492,11 @@ runPromptT promptCfg p = do
             Right a ->
               let failDescs = checkProps a
                in if null failDescs
-                    then pure (a, rawTxt)
-                    else
+                    then do
+                      logDebug $ "OK: " <> rawTxt
+                      pure (a, rawTxt)
+                    else do
+                      logDebug $ "VALIDATION FAIL: " <> T.intercalate ", " failDescs
                       if retriesLeft <= 0
                         then
                           throwError $

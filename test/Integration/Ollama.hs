@@ -5,10 +5,11 @@ import System.Environment (lookupEnv)
 
 -- text
 import Data.Text (Text, pack)
+import Data.Text qualified as T
 
 -- tasty
 import Test.Tasty (TestTree, defaultMain, testGroup)
-import Test.Tasty.HUnit (assertFailure, testCase, (@?=))
+import Test.Tasty.HUnit (assertFailure, testCaseSteps, (@?=))
 
 -- shroom
 import Control.Monad.Prompt
@@ -31,27 +32,39 @@ ollamaIntegrationTests :: Maybe Text -> Text -> TestTree
 ollamaIntegrationTests mHost model =
   testGroup
     "PromptT Ollama integration"
-    [ testCase "prompt returns a User" $ do
+    [ testCaseSteps "prompt returns a User" $ \step -> do
         let cfg = (defaultOllamaBackendConfig mHost) {ollamaModel = model}
-            ollamaPromptConfig = defaultPromptConfig {maxRetries = 10}
+            ollamaPromptConfig =
+              defaultPromptConfig
+                { maxRetries = 10
+                , debugLog = Just (step . T.unpack)
+                }
         result <- runPromptResultTWith cfg $ runPromptT ollamaPromptConfig $ do
           context "Return a JSON object for a user named Alice with email alice@example.com"
           prompt @User
         case result of
           Left err -> assertFailure (show err)
           Right user -> userName user @?= "Alice"
-    , testCase "prompt returns a Counter" $ do
+    , testCaseSteps "prompt returns a Counter" $ \step -> do
         let cfg = (defaultOllamaBackendConfig mHost) {ollamaModel = model}
-            ollamaPromptConfig = defaultPromptConfig {maxRetries = 10}
+            ollamaPromptConfig =
+              defaultPromptConfig
+                { maxRetries = 10
+                , debugLog = Just (step . T.unpack)
+                }
         result <- runPromptResultTWith cfg $ runPromptT ollamaPromptConfig $ do
           context "Return a JSON counter object with value 42."
           prompt @Counter
         case result of
           Left err -> assertFailure (show err)
           Right (Counter n) -> n @?= 42
-    , testCase "conferenceChain runs end-to-end" $ do
+    , testCaseSteps "conferenceChain runs end-to-end" $ \step -> do
         let cfg = (defaultOllamaBackendConfig mHost) {ollamaModel = model}
-            ollamaPromptConfig = defaultPromptConfig {maxRetries = 10}
+            ollamaPromptConfig =
+              defaultPromptConfig
+                { maxRetries = 10
+                , debugLog = Just (step . T.unpack)
+                }
         result <- runPromptResultTWith cfg $ runPromptT ollamaPromptConfig conferenceChain
         case result of
           Left err -> assertFailure (show err)
