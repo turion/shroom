@@ -364,9 +364,3 @@ main =
                 _ -> fail "Expected Right (Counter 99)"
           ]
       ]
-
--- | A mock backend that always returns a backend-level error.
-data InjectFailConfig = InjectFailConfig
-
-instance LLMBackend InjectFailConfig where
-  runChat _ _ _ _ = pure (Left "injected failure")

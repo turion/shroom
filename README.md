@@ -35,17 +35,18 @@ Everyone wins.
 
 ## Backends
 
-| Backend | Config type | Notes |
-|---|---|---|
-| Anthropic Claude | `AnthropicConfig` | Requires `ANTHROPIC_API_KEY`; uses structured JSON output |
-| Ollama (local) | `OllamaBackendConfig` | Free, offline, slower; defaults to `llama3.2:3b` |
+| Backend | Config type | Module | Notes |
+|---|---|---|---|
+| Anthropic Claude | `AnthropicConfig` | `Control.Monad.Prompt.Anthropic` | Requires `ANTHROPIC_API_KEY`; uses structured JSON output |
+| Ollama (local) | `OllamaBackendConfig` | `Control.Monad.Prompt.Ollama` | Free, offline, slower; defaults to `llama3.2:3b` |
+| File mock | `FileMockConfig` | `Control.Monad.Prompt.FileMock` | Reads canned JSON responses from files; useful for dev/testing |
 
 ## The `Describe` typeclass
 
 `Describe` lets you attach three things to a type:
 
 - **`describeType`** — a one-sentence description sent to the model
-- **`failingProperties`** — invariants to validate after parsing
+- **`propertyHolds`** / **`describeProperties`** — invariants to validate after parsing
 - **`examples`** — sample values to include in the prompt
 
 Use `deriveDescribeType` from `Control.Monad.Prompt.TH` to derive
@@ -89,6 +90,20 @@ leak to sibling branches or to subsequent steps in the chain.
   all subsequent prompts in the chain.
 - `promptWith @T "..."` sends a *prompt-local* extra message alongside one
   specific request — it doesn't accumulate into the global context.
+- For fine-grained control, `addContextItem` and `withContextItem` accept
+  `ContextItem` values (`SystemMessage`, `UserMessage`, or `AssistantMessage`)
+  directly, letting you build structured multi-turn conversation history.
+
+## Branching with `Alternative`
+
+`PromptT` implements `Alternative` and `MonadPlus`. Use `<|>` to try one branch
+and fall back to another if it fails. Context added in a failing branch does not
+leak to the fallback or to subsequent steps:
+
+```haskell
+result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig $
+  prompt @RichUser <|> fmap toRichUser (prompt @SimpleUser)
+```
 
 ## Prior art & inspiration
 
@@ -126,7 +141,7 @@ The tradeoff:
 |---|---|---|
 | Schema source | Inferred from usage | Explicit `ToSchema` instance |
 | Sum-type routing | ✓ (inferred) | ✓ (`prompt @SumType`, then `case`) |
-| Property validation + retry | — | ✓ (`Describe` / `failingProperties`) |
+| Property validation + retry | — | ✓ (`Describe` / `propertyHolds`) |
 | Parallel prompts | — | ✓ (`promptPar`, `promptsParallel`) |
 | Multiple LLM backends | — | ✓ (Claude, Ollama, FileMock) |
 | Code generation | ✓ | — |
@@ -144,7 +159,7 @@ shroom follows [Anthropic's prompt chaining recommendations](https://platform.cl
 
 - **One prompt, one type** — each `prompt @T` call targets a single type.
 - **Explicit context passing** — `context` for global state, `promptWith` for local.
-- **Validation checkpoints** — `failingProperties` validates each response before
+- **Validation checkpoints** — `propertyHolds` validates each response before
   the chain continues.
 - **Self-correction** — on failure the model is re-prompted with the invalid response
   and a description of the violated invariants.
@@ -153,7 +168,7 @@ shroom follows [Anthropic's prompt chaining recommendations](https://platform.cl
 **Branching and routing** are fully supported: `prompt @SumType` returns a typed
 Haskell sum type; use ordinary `case` to take different paths through the chain.
 
-See [TODO.md](TODO.md) for planned features (`Alternative`, structured message history, and more).
+See [TODO.md](TODO.md) for planned features.
 
 ## Installation
 

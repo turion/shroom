@@ -1,6 +1,7 @@
 module TestUtils (
   MockConfig (..),
   SeqMockConfig (..),
+  InjectFailConfig (..),
   assertContains,
   assertNotContains,
   textIsInfixOf,
@@ -66,3 +67,9 @@ assertNotContains needle haystack
 
 textIsInfixOf :: Text -> Text -> Bool
 textIsInfixOf = T.isInfixOf
+
+-- | A mock 'LLMBackend' that always returns a backend-level error.
+data InjectFailConfig = InjectFailConfig
+
+instance LLMBackend InjectFailConfig where
+  runChat _ _ _ _ = pure (Left "injected failure")

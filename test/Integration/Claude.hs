@@ -12,6 +12,7 @@ import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 
 -- shroom
 import Control.Monad.Prompt
+import Control.Monad.Prompt.Anthropic
 
 -- test
 import ConferenceTypes

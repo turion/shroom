@@ -1,6 +1,7 @@
 module Main (main) where
 
 -- base
+import Control.Monad (void)
 import Data.IORef
 import Data.List (nub)
 
@@ -57,8 +58,25 @@ scheduleJson =
     <> "}"
     <> "]}"
 
-allResponses :: IO (IORef [Text])
-allResponses = newIORef [speakersJson, talk1Json, talk2Json, talk3Json, scheduleJson]
+defaultResponses :: [Text]
+defaultResponses = [speakersJson, talk1Json, talk2Json, talk3Json, scheduleJson]
+
+-- | Run conferenceChain with given responses; return (result, seen contexts).
+runConference :: PromptConfig -> [Text] -> IO (Either Text (Speakers, [Talk], ConferenceSchedule), [Text])
+runConference cfg responseList = do
+  responses <- newIORef responseList
+  seenCtxs <- newIORef []
+  result <- runPromptResultTWith (SeqMockConfig responses seenCtxs) $ runPromptT cfg conferenceChain
+  seen <- readIORef seenCtxs
+  pure (result, seen)
+
+-- | Like 'runConference' but fails the test on 'Left'.
+runConferenceOk :: PromptConfig -> [Text] -> IO ((Speakers, [Talk], ConferenceSchedule), [Text])
+runConferenceOk cfg responseList = do
+  (result, seen) <- runConference cfg responseList
+  case result of
+    Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
+    Right x -> pure (x, seen)
 
 main :: IO ()
 main =
@@ -66,91 +84,43 @@ main =
     testGroup
       "conference scenario"
       [ testCase "chain completes successfully" $ do
-          responses <- allResponses
-          seenCtxs <- newIORef ([] :: [Text])
-          let cfg = SeqMockConfig responses seenCtxs
-          result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig conferenceChain
-          case result of
-            Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
-            Right _ -> pure ()
+          void $ runConferenceOk defaultPromptConfig defaultResponses
       , testCase "3 speakers are returned" $ do
-          responses <- allResponses
-          seenCtxs <- newIORef ([] :: [Text])
-          let cfg = SeqMockConfig responses seenCtxs
-          result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig conferenceChain
-          case result of
-            Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
-            Right (allSpeakers, _, _) ->
-              length (speakers allSpeakers) @?= 3
+          ((allSpeakers, _, _), _) <- runConferenceOk defaultPromptConfig defaultResponses
+          length (speakers allSpeakers) @?= 3
       , testCase "one talk per speaker, speaker names match" $ do
-          responses <- allResponses
-          seenCtxs <- newIORef ([] :: [Text])
-          let cfg = SeqMockConfig responses seenCtxs
-          result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig conferenceChain
-          case result of
-            Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
-            Right (allSpeakers, talks, _) -> do
-              length talks @?= length (speakers allSpeakers)
-              mapM_
-                (\(speaker, talk) -> talkSpeakerName talk @?= speakerName speaker)
-                (zip (speakers allSpeakers) talks)
+          ((allSpeakers, talks, _), _) <- runConferenceOk defaultPromptConfig defaultResponses
+          length talks @?= length (speakers allSpeakers)
+          mapM_
+            (\(speaker, talk) -> talkSpeakerName talk @?= speakerName speaker)
+            (zip (speakers allSpeakers) talks)
       , testCase "schedule has at least one slot" $ do
-          responses <- allResponses
-          seenCtxs <- newIORef ([] :: [Text])
-          let cfg = SeqMockConfig responses seenCtxs
-          result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig conferenceChain
-          case result of
-            Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
-            Right (_, _, schedule) ->
-              not (null (scheduleSlots schedule)) @?= True
+          ((_, _, schedule), _) <- runConferenceOk defaultPromptConfig defaultResponses
+          not (null (scheduleSlots schedule)) @?= True
       , testCase "schedule slots are contiguous" $ do
-          responses <- allResponses
-          seenCtxs <- newIORef ([] :: [Text])
-          let cfg = SeqMockConfig responses seenCtxs
-          result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig conferenceChain
-          case result of
-            Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
-            Right (_, _, schedule) -> do
-              let slots = scheduleSlots schedule
-                  pairs = zip slots (drop 1 slots)
-              all (\(a, b) -> slotEnd a == slotStart b) pairs @?= True
+          ((_, _, schedule), _) <- runConferenceOk defaultPromptConfig defaultResponses
+          let slots = scheduleSlots schedule
+              pairs = zip slots (drop 1 slots)
+          all (\(a, b) -> slotEnd a == slotStart b) pairs @?= True
       , testCase "schedule starts at 07:00 UTC (09:00 Zurich)" $ do
-          responses <- allResponses
-          seenCtxs <- newIORef ([] :: [Text])
-          let cfg = SeqMockConfig responses seenCtxs
-          result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig conferenceChain
-          case result of
-            Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
-            Right (_, _, schedule) ->
-              case scheduleSlots schedule of
-                [] -> fail "No slots"
-                (first : _) -> slotStart first @?= read "2027-06-11 07:00:00 UTC"
+          ((_, _, schedule), _) <- runConferenceOk defaultPromptConfig defaultResponses
+          case scheduleSlots schedule of
+            [] -> fail "No slots"
+            (first : _) -> slotStart first @?= read "2027-06-11 07:00:00 UTC"
       , testCase "step 2 context includes all speaker names" $ do
-          responses <- allResponses
-          seenCtxs <- newIORef ([] :: [Text])
-          let cfg = SeqMockConfig responses seenCtxs
-          _ <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig conferenceChain
-          seen <- readIORef seenCtxs
+          (_, seen) <- runConference defaultPromptConfig defaultResponses
           -- Step 2 (index 1) should contain the speaker names injected into context
           assertContains "Hopper" (seen !! 1)
           assertContains "Turing" (seen !! 1)
           assertContains "McCarthy" (seen !! 1)
       , testCase "last context includes all talk titles" $ do
-          responses <- allResponses
-          seenCtxs <- newIORef ([] :: [Text])
-          let cfg = SeqMockConfig responses seenCtxs
-          _ <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig conferenceChain
-          seen <- readIORef seenCtxs
+          (_, seen) <- runConference defaultPromptConfig defaultResponses
           -- Step 5 (index 4) should contain all talk titles injected into context
           assertContains "Compilers Are For Everyone" (seen !! 4)
           assertContains "Computability and the Halting" (seen !! 4)
           assertContains "The Birth of Lisp" (seen !! 4)
       , testCase "exactly 5 LLM calls are made (1 speakers + 3 talks + 1 schedule)" $ do
-          responses <- allResponses
-          seenCtxs <- newIORef ([] :: [Text])
-          let cfg = SeqMockConfig responses seenCtxs
-          _ <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig conferenceChain
-          seen <- readIORef seenCtxs
+          (_, seen) <- runConference defaultPromptConfig defaultResponses
           length seen @?= 5
       , testCase "duplicate talk in schedule triggers retry" $ do
           -- First schedule has talk1 in two slots (fails ScheduleEachTalkOccursOnce)
