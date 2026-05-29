@@ -24,35 +24,35 @@ import TestUtils
 --   2. Talk for speaker 1
 --   3. Talk for speaker 2
 --   4. Talk for speaker 3
---   5. ConferenceSchedule (3 contiguous slots)
+--   5. ConferenceSchedule (3 contiguous slots, starting at 07:00 UTC)
 
 speakersJson :: Text
 speakersJson =
   "{\"speakers\":["
-    <> "{\"speakerName\":\"Grace Hopper\",\"speakerAffiliation\":\"Yale University\",\"speakerBio\":\"Pioneer of compiler design.\"},"
-    <> "{\"speakerName\":\"Alan Turing\",\"speakerAffiliation\":\"University of Manchester\",\"speakerBio\":\"Father of theoretical computer science.\"},"
-    <> "{\"speakerName\":\"John McCarthy\",\"speakerAffiliation\":\"Stanford University\",\"speakerBio\":\"Creator of Lisp and coiner of AI.\"}"
+    <> "{\"speakerName\":{\"firstName\":\"Grace\",\"lastName\":\"Hopper\"},\"speakerAffiliation\":\"Yale University\",\"speakerBio\":\"Pioneer of compiler design.\"},"
+    <> "{\"speakerName\":{\"firstName\":\"Alan\",\"lastName\":\"Turing\"},\"speakerAffiliation\":\"University of Manchester\",\"speakerBio\":\"Father of theoretical computer science.\"},"
+    <> "{\"speakerName\":{\"firstName\":\"John\",\"lastName\":\"McCarthy\"},\"speakerAffiliation\":\"Stanford University\",\"speakerBio\":\"Creator of Lisp and coiner of AI.\"}"
     <> "]}"
 
 talk1Json :: Text
-talk1Json = "{\"talkTitle\":\"Compilers Are For Everyone\",\"talkAbstract\":\"A history of the compiler.\",\"talkSpeakerName\":\"Grace Hopper\"}"
+talk1Json = "{\"talkTitle\":\"Compilers Are For Everyone\",\"talkAbstract\":\"A history of the compiler.\",\"talkSpeakerName\":{\"firstName\":\"Grace\",\"lastName\":\"Hopper\"},\"talkExtensions\":[\"TypeFamilies\"]}"
 
 talk2Json :: Text
-talk2Json = "{\"talkTitle\":\"Computability and the Halting Problem\",\"talkAbstract\":\"On undecidability and limits of computation.\",\"talkSpeakerName\":\"Alan Turing\"}"
+talk2Json = "{\"talkTitle\":\"Computability and the Halting Problem\",\"talkAbstract\":\"On undecidability and limits of computation.\",\"talkSpeakerName\":{\"firstName\":\"Alan\",\"lastName\":\"Turing\"},\"talkExtensions\":[\"UndecidableInstances\"]}"
 
 talk3Json :: Text
-talk3Json = "{\"talkTitle\":\"The Birth of Lisp\",\"talkAbstract\":\"How symbolic computation changed programming.\",\"talkSpeakerName\":\"John McCarthy\"}"
+talk3Json = "{\"talkTitle\":\"The Birth of Lisp\",\"talkAbstract\":\"How symbolic computation changed programming.\",\"talkSpeakerName\":{\"firstName\":\"John\",\"lastName\":\"McCarthy\"},\"talkExtensions\":[]}"
 
 scheduleJson :: Text
 scheduleJson =
-  "{\"scheduleDay\":\"Monday\",\"scheduleSlots\":["
-    <> "{\"slotStart\":\"09:00\",\"slotEnd\":\"09:45\",\"slotTalk\":"
+  "{\"scheduleDay\":\"2027-06-11T00:00:00Z\",\"scheduleSlots\":["
+    <> "{\"slotStart\":\"2027-06-11T07:00:00Z\",\"slotEnd\":\"2027-06-11T07:45:00Z\",\"slotTalk\":"
     <> talk1Json
     <> "},"
-    <> "{\"slotStart\":\"09:45\",\"slotEnd\":\"10:30\",\"slotTalk\":"
+    <> "{\"slotStart\":\"2027-06-11T07:45:00Z\",\"slotEnd\":\"2027-06-11T08:30:00Z\",\"slotTalk\":"
     <> talk2Json
     <> "},"
-    <> "{\"slotStart\":\"10:30\",\"slotEnd\":\"11:15\",\"slotTalk\":"
+    <> "{\"slotStart\":\"2027-06-11T08:30:00Z\",\"slotEnd\":\"2027-06-11T09:15:00Z\",\"slotTalk\":"
     <> talk3Json
     <> "}"
     <> "]}"
@@ -114,6 +114,17 @@ main =
               let slots = scheduleSlots schedule
                   pairs = zip slots (drop 1 slots)
               all (\(a, b) -> slotEnd a == slotStart b) pairs @?= True
+      , testCase "schedule starts at 07:00 UTC (09:00 Zurich)" $ do
+          responses <- allResponses
+          seenCtxs <- newIORef ([] :: [Text])
+          let cfg = SeqMockConfig responses seenCtxs
+          result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig conferenceChain
+          case result of
+            Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
+            Right (_, _, schedule) ->
+              case scheduleSlots schedule of
+                [] -> fail "No slots"
+                (first : _) -> slotStart first @?= read "2027-06-11 07:00:00 UTC"
       , testCase "step 2 context includes all speaker names" $ do
           responses <- allResponses
           seenCtxs <- newIORef ([] :: [Text])
@@ -121,9 +132,9 @@ main =
           _ <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig conferenceChain
           seen <- readIORef seenCtxs
           -- Step 2 (index 1) should contain the speaker names injected into context
-          assertContains "Grace Hopper" (seen !! 1)
-          assertContains "Alan Turing" (seen !! 1)
-          assertContains "John McCarthy" (seen !! 1)
+          assertContains "Hopper" (seen !! 1)
+          assertContains "Turing" (seen !! 1)
+          assertContains "McCarthy" (seen !! 1)
       , testCase "last context includes all talk titles" $ do
           responses <- allResponses
           seenCtxs <- newIORef ([] :: [Text])
@@ -145,14 +156,14 @@ main =
           -- First schedule has talk1 in two slots (fails ScheduleEachTalkOccursOnce)
           -- Second schedule is valid
           let dupScheduleJson =
-                "{\"scheduleDay\":\"Monday\",\"scheduleSlots\":["
-                  <> "{\"slotStart\":\"09:00\",\"slotEnd\":\"09:45\",\"slotTalk\":"
+                "{\"scheduleDay\":\"2027-06-11T00:00:00Z\",\"scheduleSlots\":["
+                  <> "{\"slotStart\":\"2027-06-11T07:00:00Z\",\"slotEnd\":\"2027-06-11T07:45:00Z\",\"slotTalk\":"
                   <> talk1Json
                   <> "},"
-                  <> "{\"slotStart\":\"09:45\",\"slotEnd\":\"10:30\",\"slotTalk\":"
+                  <> "{\"slotStart\":\"2027-06-11T07:45:00Z\",\"slotEnd\":\"2027-06-11T08:30:00Z\",\"slotTalk\":"
                   <> talk1Json
                   <> "},"
-                  <> "{\"slotStart\":\"10:30\",\"slotEnd\":\"11:15\",\"slotTalk\":"
+                  <> "{\"slotStart\":\"2027-06-11T08:30:00Z\",\"slotEnd\":\"2027-06-11T09:15:00Z\",\"slotTalk\":"
                   <> talk3Json
                   <> "}"
                   <> "]}"
@@ -174,14 +185,14 @@ main =
       , testCase "non-contiguous slots in schedule triggers retry" $ do
           -- First schedule has a gap between slots (fails ScheduleSlotsAreContiguous)
           let gapScheduleJson =
-                "{\"scheduleDay\":\"Monday\",\"scheduleSlots\":["
-                  <> "{\"slotStart\":\"09:00\",\"slotEnd\":\"09:45\",\"slotTalk\":"
+                "{\"scheduleDay\":\"2027-06-11T00:00:00Z\",\"scheduleSlots\":["
+                  <> "{\"slotStart\":\"2027-06-11T07:00:00Z\",\"slotEnd\":\"2027-06-11T07:45:00Z\",\"slotTalk\":"
                   <> talk1Json
                   <> "},"
-                  <> "{\"slotStart\":\"10:00\",\"slotEnd\":\"10:45\",\"slotTalk\":"
+                  <> "{\"slotStart\":\"2027-06-11T08:00:00Z\",\"slotEnd\":\"2027-06-11T08:45:00Z\",\"slotTalk\":"
                   <> talk2Json
                   <> "},"
-                  <> "{\"slotStart\":\"10:45\",\"slotEnd\":\"11:30\",\"slotTalk\":"
+                  <> "{\"slotStart\":\"2027-06-11T08:45:00Z\",\"slotEnd\":\"2027-06-11T09:30:00Z\",\"slotTalk\":"
                   <> talk3Json
                   <> "}"
                   <> "]}"
@@ -204,8 +215,8 @@ main =
           -- Second response has 3 speakers (valid)
           let badSpeakers =
                 "{\"speakers\":["
-                  <> "{\"speakerName\":\"A\",\"speakerAffiliation\":\"X\",\"speakerBio\":\".\"},"
-                  <> "{\"speakerName\":\"B\",\"speakerAffiliation\":\"Y\",\"speakerBio\":\".\"}"
+                  <> "{\"speakerName\":{\"firstName\":\"A\",\"lastName\":\"B\"},\"speakerAffiliation\":\"X\",\"speakerBio\":\".\"},"
+                  <> "{\"speakerName\":{\"firstName\":\"C\",\"lastName\":\"D\"},\"speakerAffiliation\":\"Y\",\"speakerBio\":\".\"}"
                   <> "]}"
           responses <- newIORef [badSpeakers, speakersJson, talk1Json, talk2Json, talk3Json, scheduleJson]
           seenCtxs <- newIORef ([] :: [Text])

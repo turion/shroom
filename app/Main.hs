@@ -15,12 +15,18 @@ module Main (main) where
 -- text
 import Data.Text qualified as T
 
+-- time
+import Data.Time (UTCTime, defaultTimeLocale, formatTime)
+
 -- shroom
 import Control.Monad.Prompt (defaultPromptConfig, runPromptResultTWith, runPromptT)
 import Control.Monad.Prompt.FileMock (defaultFileMockConfig)
 
 -- conference scenario
-import ConferenceTypes (ConferenceSchedule (..), Slot (..), Speaker (..), Speakers (..), Talk (..), conferenceChain)
+import ConferenceTypes (ConferenceSchedule (..), Slot (..), Speaker (..), SpeakerName (..), Speakers (..), Talk (..), conferenceChain)
+
+fmtTime :: UTCTime -> String
+fmtTime = formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ"
 
 main :: IO ()
 main = do
@@ -35,33 +41,39 @@ main = do
       putStrLn $ "Speakers: " <> show (length (speakers allSpeakers))
       mapM_
         ( \s ->
-            putStrLn $
-              "  - "
-                <> T.unpack (speakerName s)
-                <> " ("
-                <> T.unpack (speakerAffiliation s)
-                <> ")"
+            let n = speakerName s
+             in putStrLn $
+                  "  - "
+                    <> T.unpack (firstName n)
+                    <> " "
+                    <> T.unpack (lastName n)
+                    <> " ("
+                    <> T.unpack (speakerAffiliation s)
+                    <> ")"
         )
         (speakers allSpeakers)
       putStrLn $ "Talks:    " <> show (length talks)
       mapM_
         ( \t ->
-            putStrLn $
-              "  - \""
-                <> T.unpack (talkTitle t)
-                <> "\" by "
-                <> T.unpack (talkSpeakerName t)
+            let n = talkSpeakerName t
+             in putStrLn $
+                  "  - \""
+                    <> T.unpack (talkTitle t)
+                    <> "\" by "
+                    <> T.unpack (firstName n)
+                    <> " "
+                    <> T.unpack (lastName n)
         )
         talks
-      putStrLn $ "Day:      " <> T.unpack (scheduleDay schedule)
+      putStrLn $ "Day:      " <> fmtTime (scheduleDay schedule)
       putStrLn $ "Slots:    " <> show (length (scheduleSlots schedule))
       mapM_
         ( \slot ->
             putStrLn $
               "  "
-                <> T.unpack (slotStart slot)
+                <> fmtTime (slotStart slot)
                 <> "-"
-                <> T.unpack (slotEnd slot)
+                <> fmtTime (slotEnd slot)
                 <> ": \""
                 <> T.unpack (talkTitle (slotTalk slot))
                 <> "\""
