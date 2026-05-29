@@ -7,7 +7,9 @@ import Data.Foldable (toList)
 import Data.List.NonEmpty (NonEmpty ((:|)))
 
 -- text
+
 import Data.Text (Text, pack)
+import Data.Text qualified as T
 import Data.Text.Lazy (toStrict)
 import Data.Text.Lazy.Encoding (decodeUtf8)
 
@@ -91,12 +93,51 @@ instance LLMBackend OllamaBackendConfig where
         Nothing -> pure $ Left "Ollama returned a response with no message"
         Just msg -> pure $ Right (unwrap msg.content)
 
+{- | Resolve all @$ref@ pointers in a JSON schema against its @$defs@ section,
+producing a fully inlined schema with no @$ref@ or @$defs@ keys.
+Ollama does not support @$ref@ resolution in the @format@ field, so we must
+inline all sub-schemas before passing the schema to the API.
+-}
+inlineSchema :: Value -> Value
+inlineSchema root = go 20 startVal
+  where
+    defs = case root of
+      Object km -> case KM.lookup "$defs" km of
+        Just (Object d) -> d
+        _ -> KM.empty
+      _ -> KM.empty
+
+    startVal = case root of
+      Object km -> case KM.lookup "$ref" km of
+        Just (String ref) -> resolve 19 ref
+        _ -> root
+      _ -> root
+
+    resolve n ref =
+      let name = T.replace "#/$defs/" "" ref
+       in case KM.lookup (Key.fromText name) defs of
+            Just v -> go n v
+            Nothing -> Object KM.empty
+
+    go :: Int -> Value -> Value
+    go 0 v = v
+    go n (Object o) = case KM.lookup "$ref" o of
+      Just (String ref) -> go (n - 1) (resolve (n - 1) ref)
+      _ -> Object (KM.map (go (n - 1)) (KM.delete "$defs" o))
+    go n (Array vs) = Array (fmap (go (n - 1)) vs)
+    go _ v = v
+
 {- | Build an Ollama 'Format' from an OpenAPI schema 'Value'.
 Returns @(format, unwrapFn)@ where @unwrapFn@ strips the @{\"result\":...}@
 wrapper that is added for non-object schemas (scalars, arrays).
+The schema is inlined via 'inlineSchema' before conversion, because Ollama
+does not resolve @$ref@ in the @format@ field.
 -}
 schemaToFormatAndUnwrap :: Value -> (Format, Text -> Text)
-schemaToFormatAndUnwrap (Object km) =
+schemaToFormatAndUnwrap schema = schemaToFormatAndUnwrap' (inlineSchema schema)
+
+schemaToFormatAndUnwrap' :: Value -> (Format, Text -> Text)
+schemaToFormatAndUnwrap' (Object km) =
   case KM.lookup "type" km of
     Just (String "object") ->
       (SchemaFormat (openApiObjectToSchema km), id)
@@ -105,7 +146,7 @@ schemaToFormatAndUnwrap (Object km) =
           wrapped = Schema (Map.singleton "result" (Property jtype)) ["result"]
        in (SchemaFormat wrapped, unwrapResult)
     _ -> (JsonFormat, id)
-schemaToFormatAndUnwrap _ = (JsonFormat, id)
+schemaToFormatAndUnwrap' _ = (JsonFormat, id)
 
 {- | Extract the value of the @\"result\"@ key from a JSON object response.
 Used to unwrap scalars/arrays that were wrapped in @{\"result\": ...}@.
