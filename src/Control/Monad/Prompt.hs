@@ -143,6 +143,20 @@ prompt = Prompt
 promptWith :: (ToSchema a, FromJSON a, Describe a) => Text -> PromptT m a
 promptWith txt = WithContext txt Prompt
 
+{- | Run two independent prompts in parallel, returning both results.
+Both branches see the same context snapshot at the point of the call;
+'context' calls inside a branch are local to that branch.
+-}
+promptPar :: PromptT m a -> PromptT m b -> PromptT m (a, b)
+promptPar pa pb = (,) <$> pa <*> pb
+
+{- | Run a list of independent prompts in parallel, returning all results.
+All branches see the same context snapshot at the point of the call;
+'context' calls inside a branch are local to that branch.
+-}
+promptsParallel :: [PromptT m a] -> PromptT m [a]
+promptsParallel = sequenceA
+
 -- * Backend abstraction
 
 {- | Type class for LLM backends.  Each instance specifies a configuration

@@ -139,6 +139,65 @@ main =
                 _ -> assertFailure "Unexpected number of seen contexts"
           ]
       , testGroup
+          "parallel prompts"
+          [ testCase "promptPar makes two LLM calls" $ do
+              seenContexts <- newIORef ([] :: [Text])
+              let mockCfg = MockConfig seenContexts
+              result <-
+                runPromptResultTWith mockCfg $
+                  runPromptT defaultPromptConfig $
+                    promptPar (prompt @Counter) (prompt @Counter)
+              case result of
+                Left err -> fail (show err)
+                Right _ -> pure ()
+              seen <- readIORef seenContexts
+              length seen @?= 2
+          , testCase "promptPar branches both see global context" $ do
+              seenContexts <- newIORef ([] :: [Text])
+              let mockCfg = MockConfig seenContexts
+              _ <- runPromptResultTWith mockCfg $ runPromptT defaultPromptConfig $ do
+                context "shared global"
+                promptPar (prompt @Counter) (prompt @Counter)
+              seen <- readIORef seenContexts
+              all ("shared global" `textIsInfixOf`) seen @?= True
+          , testCase "context inside promptPar branch does not leak to sibling" $ do
+              seenContexts <- newIORef ([] :: [Text])
+              let mockCfg = MockConfig seenContexts
+              _ <-
+                runPromptResultTWith mockCfg $
+                  runPromptT defaultPromptConfig $
+                    promptPar
+                      (context "branch-local" >> prompt @Counter)
+                      (prompt @Counter :: PromptT IO Counter)
+              seen <- readIORef seenContexts
+              -- exactly one branch should have seen "branch-local"
+              length (filter ("branch-local" `textIsInfixOf`) seen) @?= 1
+          , testCase "context inside promptPar branch does not leak to subsequent sequential prompt" $ do
+              seenContexts <- newIORef ([] :: [Text])
+              let mockCfg = MockConfig seenContexts
+              _ <- runPromptResultTWith mockCfg $ runPromptT defaultPromptConfig $ do
+                _ <-
+                  promptPar
+                    (context "branch-local" >> prompt @Counter)
+                    (prompt @Counter)
+                prompt @Counter
+              seen <- readIORef seenContexts
+              -- last (3rd) call must not contain "branch-local"
+              "branch-local" `textIsInfixOf` (seen !! 2) @?= False
+          , testCase "promptsParallel makes one call per element" $ do
+              seenContexts <- newIORef ([] :: [Text])
+              let mockCfg = MockConfig seenContexts
+              result <-
+                runPromptResultTWith mockCfg $
+                  runPromptT defaultPromptConfig $
+                    promptsParallel (replicate 3 (prompt @Counter))
+              case result of
+                Left err -> fail (show err)
+                Right xs -> length xs @?= 3
+              seen <- readIORef seenContexts
+              length seen @?= 3
+          ]
+      , testGroup
           "property validation and retry"
           [ testCase "validation passes immediately — no retry" $ do
               -- Valid user (non-empty email): should succeed in one call

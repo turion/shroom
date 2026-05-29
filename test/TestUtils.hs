@@ -32,7 +32,7 @@ newtype MockConfig = MockConfig (IORef [Text])
 
 instance LLMBackend MockConfig where
   runChat (MockConfig ref) ctx _typeDesc _schema = liftIO $ do
-    modifyIORef ref (<> [ctx])
+    atomicModifyIORef' ref (\xs -> (xs <> [ctx], ()))
     -- Return a valid Counter JSON (the newtype wraps an Int)
     pure $ Right (toStrict (decodeUtf8 (encode (0 :: Int))))
 
@@ -43,14 +43,11 @@ data SeqMockConfig = SeqMockConfig (IORef [Text]) (IORef [Text])
 
 instance LLMBackend SeqMockConfig where
   runChat (SeqMockConfig responses seenCtxs) ctx _typeDesc _schema = liftIO $ do
-    modifyIORef seenCtxs (<> [ctx])
-    rs <- readIORef responses
-    case rs of
-      [] -> pure $ Left "SeqMockConfig: no more responses"
-      [r] -> pure $ Right r
-      (r : rest) -> do
-        writeIORef responses rest
-        pure $ Right r
+    atomicModifyIORef' seenCtxs (\xs -> (xs <> [ctx], ()))
+    atomicModifyIORef' responses $ \rs -> case rs of
+      [] -> ([], Left "SeqMockConfig: no more responses")
+      [x] -> ([x], Right x)
+      (x : rest) -> (rest, Right x)
 
 -- * Helpers
 
