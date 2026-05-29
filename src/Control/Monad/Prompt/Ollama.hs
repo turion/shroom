@@ -24,6 +24,7 @@ import Data.Map.Strict qualified as Map
 import Data.Ollama.Chat (
   ChatOps (..),
   Format (..),
+  assistantMessage,
   chat,
   defaultChatOps,
   systemMessage,
@@ -35,7 +36,7 @@ import Data.Ollama.Common.SchemaBuilder (JsonType (..), Property (..), Schema (.
 import Data.Ollama.Common.Types (ChatResponse (..), Message (..))
 
 -- shroom
-import Control.Monad.Prompt (LLMBackend (..))
+import Control.Monad.Prompt (ContextItem (..), LLMBackend (..))
 
 -- | Configuration for an Ollama-hosted local model.
 data OllamaBackendConfig = OllamaBackendConfig
@@ -58,12 +59,23 @@ defaultOllamaBackendConfig mHost =
     , ollamaModel = "llama3.2:3b"
     }
 
+{- | Convert a list of 'ContextItem' values to Ollama messages, appending
+the type description as a final user turn.
+-}
+contextItemsToOllama :: [ContextItem] -> Text -> NonEmpty Message
+contextItemsToOllama items typeDesc =
+  let toMsg (SystemMessage t) = systemMessage t
+      toMsg (UserMessage t) = userMessage t
+      toMsg (AssistantMessage t) = assistantMessage t
+      allMsgs = fmap toMsg items <> [userMessage typeDesc]
+   in case allMsgs of
+        [] -> userMessage typeDesc :| []
+        (x : xs) -> x :| xs
+
 instance LLMBackend OllamaBackendConfig where
   runChat cfg ctx typeDesc schema = liftIO $ do
     let (fmt, unwrap) = schemaToFormatAndUnwrap schema
-        msgs = case ctx of
-          "" -> userMessage typeDesc :| []
-          _ -> systemMessage ctx :| [userMessage typeDesc]
+        msgs = contextItemsToOllama ctx typeDesc
         ops =
           defaultChatOps
             { modelName = cfg.ollamaModel

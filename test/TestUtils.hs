@@ -26,24 +26,26 @@ import Control.Monad.Prompt
 -- * Mock backends
 
 {- | A mock 'LLMBackend' that records the context passed to each call
-and always returns @0@ (encoded as JSON) for 'Counter'.
+(as flat text via 'renderContextItems') and always returns @0@ (encoded
+as JSON) for 'Counter'.
 -}
 newtype MockConfig = MockConfig (IORef [Text])
 
 instance LLMBackend MockConfig where
   runChat (MockConfig ref) ctx _typeDesc _schema = liftIO $ do
-    atomicModifyIORef' ref (\xs -> (xs <> [ctx], ()))
+    atomicModifyIORef' ref (\xs -> (xs <> [renderContextItems ctx], ()))
     -- Return a valid Counter JSON (the newtype wraps an Int)
     pure $ Right (toStrict (decodeUtf8 (encode (0 :: Int))))
 
 {- | A mock 'LLMBackend' that returns responses from a list in order,
 repeating the last one when the list is exhausted.
+Records contexts as flat text via 'renderContextItems'.
 -}
 data SeqMockConfig = SeqMockConfig (IORef [Text]) (IORef [Text])
 
 instance LLMBackend SeqMockConfig where
   runChat (SeqMockConfig responses seenCtxs) ctx _typeDesc _schema = liftIO $ do
-    atomicModifyIORef' seenCtxs (\xs -> (xs <> [ctx], ()))
+    atomicModifyIORef' seenCtxs (\xs -> (xs <> [renderContextItems ctx], ()))
     atomicModifyIORef' responses $ \rs -> case rs of
       [] -> ([], Left "SeqMockConfig: no more responses")
       [x] -> ([x], Right x)

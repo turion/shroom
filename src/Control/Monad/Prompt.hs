@@ -60,7 +60,10 @@ import Data.Text (Text, pack)
 import Data.Text qualified as T
 
 -- witherable
-import Witherable ((<&?>))
+import Witherable (Filterable (..), (<&?>))
+
+-- vector
+import Data.Vector qualified as V
 
 -- claude
 import Claude.V1
@@ -82,18 +85,35 @@ import Data.Universe.Class (universe)
 import Data.Describe
 import Data.Describe qualified as D
 
+-- * Context items
+
+{- | A single item in the LLM conversation history.
+Backends map these to their native message types (Anthropic: @system@ field
+or @user@\/@assistant@ roles; Ollama: @system@\/@user@\/@assistant@ roles).
+-}
+data ContextItem
+  = -- | Instructions or persona, sent before any user turns.
+    SystemMessage Text
+  | -- | A user turn in the conversation.
+    UserMessage Text
+  | {- | A previous model response. Appended automatically after each successful
+      'prompt' call so subsequent prompts can reference prior outputs naturally.
+    -}
+    AssistantMessage Text
+  deriving (Eq, Show)
+
 -- * Prompt DSL
 
 -- | A monad transformer for building LLM prompt programs.
 data PromptT m a where
-  {- | Append @txt@ to the accumulated context for all subsequent steps
-    in the current chain. This is a persistent, non-scoped addition.
+  {- | Append a 'ContextItem' to the accumulated context for all subsequent
+    steps in the current chain. This is a persistent, non-scoped addition.
   -}
-  AddContext :: Text -> PromptT m ()
-  {- | Add @txt@ to the LLM context for the scoped sub-program only.
+  AddContext :: ContextItem -> PromptT m ()
+  {- | Add a 'ContextItem' to the LLM context for the scoped sub-program only.
     Context does not leak outside the 'WithContext' node.
   -}
-  WithContext :: Text -> PromptT m a -> PromptT m a
+  WithContext :: ContextItem -> PromptT m a -> PromptT m a
   -- | Request a typed value from the model using the accumulated context.
   Prompt :: (ToSchema a, FromJSON a, Describe a) => PromptT m a
   -- | Embed a pure value into 'PromptT' without any LLM call or effect.
@@ -138,17 +158,29 @@ instance MonadPlus (PromptT m)
 instance MonadFail (PromptT m) where
   fail = Fail . T.pack
 
-{- | Scope a piece of context to a sub-program.
+{- | Scope a 'ContextItem' to a sub-program.
+The item is only visible within @p@ and does not persist afterwards.
+-}
+withContextItem :: ContextItem -> PromptT m a -> PromptT m a
+withContextItem = WithContext
+
+{- | Scope a piece of user-turn text to a sub-program.
 The context is only visible within @p@ and does not persist afterwards.
 -}
 withContext :: Text -> PromptT m a -> PromptT m a
-withContext = WithContext
+withContext txt = WithContext (UserMessage txt)
 
-{- | Append a piece of text to the context for the remainder of the current
-do-block (via 'Bind'). Context does not persist past the enclosing scope.
+{- | Append a 'ContextItem' to the context for the remainder of the current
+do-block (via 'Bind').
+-}
+addContextItem :: ContextItem -> PromptT m ()
+addContextItem = AddContext
+
+{- | Append a piece of user-turn text to the context for the remainder of the
+current do-block (via 'Bind'). Context does not persist past the enclosing scope.
 -}
 context :: Text -> PromptT m ()
-context = AddContext
+context txt = AddContext (UserMessage txt)
 
 {- | Request a value of type @a@ from the model.
 The model sees the accumulated context plus the type description.
@@ -158,7 +190,7 @@ prompt = Prompt
 
 -- | Like 'prompt', but with an extra piece of context scoped to this request only.
 promptWith :: (ToSchema a, FromJSON a, Describe a) => Text -> PromptT m a
-promptWith txt = WithContext txt Prompt
+promptWith txt = WithContext (UserMessage txt) Prompt
 
 {- | Run two independent prompts in parallel, returning both results.
 Both branches see the same context snapshot at the point of the call;
@@ -174,24 +206,38 @@ All branches see the same context snapshot at the point of the call;
 promptsParallel :: [PromptT m a] -> PromptT m [a]
 promptsParallel = sequenceA
 
+{- | Render a list of 'ContextItem' values to a flat 'Text' for display or
+simple backends that do not support structured message histories.
+Each item is prefixed with its role and separated by newlines.
+-}
+renderContextItems :: [ContextItem] -> Text
+renderContextItems = T.intercalate "\n" . fmap render
+  where
+    render (SystemMessage t) = "[system] " <> t
+    render (UserMessage t) = t
+    render (AssistantMessage t) = "[assistant] " <> t
+
 -- * Backend abstraction
 
 {- | Type class for LLM backends.  Each instance specifies a configuration
 type and provides a single-turn chat operation: given the accumulated
-context text and a type description, return the raw JSON text produced by
-the model.
+conversation history and a type description, return the raw JSON text
+produced by the model.
 
 __Contract__: implementations of 'runChat' must not throw IO exceptions.
 All errors (HTTP failures, timeouts, API errors) must be caught and
 returned as @Left@.
 -}
 class LLMBackend cfg where
-  {- | @runChat cfg context typeDescription schema@ calls the LLM and returns
+  {- | @runChat cfg history typeDescription schema@ calls the LLM and returns
     the raw response text (expected to be valid JSON for the requested type).
+
+    @history@ is the conversation so far as a list of 'ContextItem' values.
+    @typeDescription@ is appended as a final user turn by the backend.
     @schema@ is the OpenAPI JSON schema for the expected type, encoded as a
     JSON 'Value'.  Backends may use it to enforce structured output.
   -}
-  runChat :: (MonadIO m) => cfg -> Text -> Text -> Value -> m (Either Text Text)
+  runChat :: (MonadIO m) => cfg -> [ContextItem] -> Text -> Value -> m (Either Text Text)
 
 -- * Anthropic backend
 
@@ -241,22 +287,41 @@ fixSchemaForAnthropic (Object km) =
 fixSchemaForAnthropic (Array vs) = Array (fmap fixSchemaForAnthropic vs)
 fixSchemaForAnthropic v = v
 
+{- | Convert a list of 'ContextItem' values to Anthropic API messages.
+'SystemMessage' items are collected into the @system@ field;
+'UserMessage' and 'AssistantMessage' items become @messages@.
+A final user message containing @typeDesc@ is always appended.
+-}
+contextItemsToAnthropic :: [ContextItem] -> Text -> (Maybe SystemPrompt, [Message])
+contextItemsToAnthropic items typeDesc =
+  let systemTexts = [t | SystemMessage t <- items]
+      mSystem = case systemTexts of
+        [] -> Nothing
+        ts -> Just (systemText (T.intercalate "\n" ts))
+      chatItems = [item | item <- items, not (isSystem item)]
+      toMsg (UserMessage t) = Just Message {role = User, content = [Content_Text {text = t, cache_control = Nothing}], cache_control = Nothing}
+      toMsg (AssistantMessage t) = Just Message {role = Assistant, content = [Content_Text {text = t, cache_control = Nothing}], cache_control = Nothing}
+      toMsg (SystemMessage _) = Nothing
+      chatMsgs = mapMaybe toMsg chatItems
+      -- Append the type description as the final user turn
+      finalMsg = Message {role = User, content = [Content_Text {text = typeDesc, cache_control = Nothing}], cache_control = Nothing}
+   in (mSystem, chatMsgs <> [finalMsg])
+  where
+    isSystem (SystemMessage _) = True
+    isSystem _ = False
+
 instance LLMBackend AnthropicConfig where
   runChat cfg ctx typeDesc schema = liftIO $ do
     result <- try @SomeException $ do
       clientEnv <- getClientEnv "https://api.anthropic.com"
       let methods = makeMethods clientEnv cfg.apiKey (Just "2023-06-01")
+          (mSystem, msgs) = contextItemsToAnthropic ctx typeDesc
       resp <-
         methods.createMessage
           _CreateMessage
             { model = cfg.model
-            , messages =
-                [ Message
-                    { role = User
-                    , content = [Content_Text {text = ctx <> typeDesc, cache_control = Nothing}]
-                    , cache_control = Nothing
-                    }
-                ]
+            , messages = V.fromList msgs
+            , system = mSystem
             , max_tokens = 1024
             , output_config = Just (jsonSchemaConfig (fixSchemaForAnthropic schema))
             }
@@ -315,17 +380,17 @@ Run the result with 'runPromptResultTWith'.
 runPromptT :: (LLMBackend cfg, MonadUnliftIO m) => PromptConfig -> PromptT m a -> PromptResultT cfg m a
 runPromptT promptCfg p = do
   cfg <- ask
-  fst <$> go cfg "" p
+  fst <$> go cfg [] p
   where
     -- Returns the result together with the context as it stands after execution.
     -- Context accumulated inside a sub-program is visible to all subsequent
     -- steps in the same 'Bind' chain.
     go ::
       (LLMBackend cfg, MonadUnliftIO m) =>
-      cfg -> Text -> PromptT m a -> PromptResultT cfg m (a, Text)
-    go _cfg ctx (AddContext txt) = pure ((), ctx <> "\n" <> txt)
-    go cfg ctx (WithContext txt inner) = do
-      (a, _) <- go cfg (ctx <> "\n" <> txt) inner
+      cfg -> [ContextItem] -> PromptT m a -> PromptResultT cfg m (a, [ContextItem])
+    go _cfg ctx (AddContext item) = pure ((), ctx <> [item])
+    go cfg ctx (WithContext item inner) = do
+      (a, _) <- go cfg (ctx <> [item]) inner
       pure (a, ctx)
     go cfg ctx (Prompt :: PromptT m a) = do
       let prx = Proxy @a
@@ -337,8 +402,8 @@ runPromptT promptCfg p = do
             , not (propertyHolds a prop)
             , Just desc <- [describeProperties prx prop]
             ]
-      a <- attempt cfg ctx typeDesc schema checkProps (maxRetries promptCfg)
-      pure (a, ctx)
+      (a, rawTxt) <- attempt cfg ctx typeDesc schema checkProps (maxRetries promptCfg)
+      pure (a, ctx <> [AssistantMessage rawTxt])
     go _cfg ctx (Pure a) = pure (a, ctx)
     go _cfg ctx (Lift m) = (,ctx) <$> lift m
     go cfg ctx (Bind q k) = do
@@ -357,6 +422,7 @@ runPromptT promptCfg p = do
     go cfg ctx (Alt left right) =
       catchError (go cfg ctx left) (\_ -> go cfg ctx right)
 
+    -- Returns both the parsed value and the raw response text (for AssistantMessage).
     attempt cfg ctx typeDesc schema checkProps retriesLeft = do
       result <- runChat cfg ctx typeDesc schema
       case result of
@@ -369,17 +435,18 @@ runPromptT promptCfg p = do
                 else do
                   let retryCtx =
                         ctx
-                          <> "\n\nIMPORTANT: Your previous response could not be parsed.\n"
-                          <> "Previous (invalid) response:\n"
-                          <> rawTxt
-                          <> "\n\nParse error:\n"
-                          <> parseErr
-                          <> "\n\nGenerate a new, corrected JSON response that matches the required schema exactly."
+                          <> [ AssistantMessage rawTxt
+                             , UserMessage $
+                                 "IMPORTANT: Your previous response could not be parsed.\n"
+                                   <> "Parse error:\n"
+                                   <> parseErr
+                                   <> "\n\nGenerate a new, corrected JSON response that matches the required schema exactly."
+                             ]
                   attempt cfg retryCtx typeDesc schema checkProps (retriesLeft - 1)
             Right a ->
               let failDescs = checkProps a
                in if null failDescs
-                    then pure a
+                    then pure (a, rawTxt)
                     else
                       if retriesLeft <= 0
                         then
@@ -389,12 +456,13 @@ runPromptT promptCfg p = do
                         else do
                           let retryCtx =
                                 ctx
-                                  <> "\n\nIMPORTANT: Your previous response was rejected because it violated required invariants.\n"
-                                  <> "Previous (invalid) response:\n"
-                                  <> rawTxt
-                                  <> "\n\nViolated invariants:\n"
-                                  <> T.unlines (fmap ("- " <>) failDescs)
-                                  <> "\nGenerate a new, corrected JSON response that satisfies ALL invariants listed above."
+                                  <> [ AssistantMessage rawTxt
+                                     , UserMessage $
+                                         "IMPORTANT: Your previous response was rejected because it violated required invariants.\n"
+                                           <> "Violated invariants:\n"
+                                           <> T.unlines (fmap ("- " <>) failDescs)
+                                           <> "\nGenerate a new, corrected JSON response that satisfies ALL invariants listed above."
+                                     ]
                           attempt cfg retryCtx typeDesc schema checkProps (retriesLeft - 1)
 
     eitherDecodeStrictText' :: (FromJSON a) => Text -> Either Text a

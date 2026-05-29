@@ -37,7 +37,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 
 -- shroom
-import Control.Monad.Prompt (LLMBackend (..))
+import Control.Monad.Prompt (LLMBackend (..), renderContextItems)
 
 -- | Configuration for the file-based mock backend.
 data FileMockConfig = FileMockConfig
@@ -76,7 +76,7 @@ instance LLMBackend FileMockConfig where
         path = cfg.responseDir </> filename
         header = "=== PROMPT (step " <> T.pack (show stepNum) <> ") ==="
         footer = T.replicate (T.length header) "="
-    cfg.promptLogFn $ T.unlines [header, ctx <> typeDesc, footer]
+    cfg.promptLogFn $ T.unlines [header, renderContextItems ctx <> "\n" <> typeDesc, footer]
     exists <- doesFileExist path
     if not exists
       then pure $ Left $ "FileMock: missing response file: " <> T.pack path
