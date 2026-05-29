@@ -219,6 +219,7 @@ fixSchemaForAnthropic (Object km) =
    in Object $ case KM.lookup "type" km' of
         Just (String "object") -> KM.insert "additionalProperties" (Bool False) km'
         Just (String "integer") -> KM.delete "minimum" (KM.delete "maximum" km')
+        Just (String "string") -> KM.delete "format" km'
         _ -> km'
 fixSchemaForAnthropic (Array vs) = Array (fmap fixSchemaForAnthropic vs)
 fixSchemaForAnthropic v = v
