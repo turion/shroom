@@ -1,0 +1,28 @@
+cradle:
+  cabal:
+    - path: "src"
+      component: "lib:shroom"
+
+    - path: "test"
+      component: "shroom:test:shroom-test"
+
+    - path: "test"
+      component: "shroom:test:shroom-test-integration"
+
+    - path: "test"
+      component: "shroom:test:shroom-test-integration-ollama"
+
+    - path: "test"
+      component: "shroom:test:shroom-test-conference"
+
+    - path: "app/Main.hs"
+      component: "shroom:exe:shroom-dev"
+
+    - path: "test/Main.hs"
+      component: "shroom:exe:shroom-dev"
+
+    - path: "app/ConferenceTypes.hs"
+      component: "shroom:exe:shroom-dev"
+
+    - path: "test/ConferenceTypes.hs"
+      component: "shroom:exe:shroom-dev"
