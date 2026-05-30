@@ -101,6 +101,7 @@ test-suite shroom-test-integration-claude
   other-modules:
     ConferenceTypes
     Types
+    WebToolReport
 
   build-depends:
     shroom,
@@ -114,6 +115,7 @@ test-suite shroom-test-integration-ollama
   hs-source-dirs: test
   main-is: Integration/Ollama.hs
   other-modules:
+    CelebrityTypes
     ConferenceTypes
     Types
 
@@ -136,6 +138,33 @@ test-suite shroom-test-conference
     shroom,
     tasty ^>=1.4,
     tasty-hunit ^>=0.10,
+
+test-suite shroom-test-celebrity
+  import: opts
+  default-language: GHC2024
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: CelebrityScenario.hs
+  other-modules:
+    CelebrityTypes
+    TestUtils
+
+  build-depends:
+    shroom,
+    tasty ^>=1.4,
+    tasty-hunit ^>=0.10,
+
+test-suite shroom-test-web-tools
+  import: opts
+  default-language: GHC2024
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: WebToolsScenario.hs
+  build-depends:
+    shroom,
+    tasty ^>=1.4,
+    tasty-hunit ^>=0.10,
+    text,
 
 executable shroom-dev
   import: opts

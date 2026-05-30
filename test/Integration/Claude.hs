@@ -6,6 +6,11 @@ import System.Environment (lookupEnv)
 
 -- text
 import Data.Text (Text, pack)
+import Data.Text qualified as T
+
+-- containers
+import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 
 -- tasty
 import Test.Tasty (TestTree, defaultMain, testGroup)
@@ -18,11 +23,19 @@ import Data.SOP (NP (..))
 import Control.Monad.Prompt
 import Control.Monad.Prompt.Anthropic
 import Control.Monad.Prompt.Tool (ToolHandler (..))
-import Control.Monad.Prompt.Tool.Web (webSearchHandler)
+import Control.Monad.Prompt.Tool.Web (
+  DuckDuckGoSearch,
+  WebFetch,
+  WikipediaSearch,
+  duckDuckGoSearchHandler,
+  webFetchHandler,
+  wikipediaSearchHandler,
+ )
 
 -- test
 import ConferenceTypes
 import Types
+import WebToolReport (WebToolReport (..), expectedNames, webToolReportChain)
 
 main :: IO ()
 main = do
@@ -58,12 +71,31 @@ integrationTests apiKey =
                 assertBool "at least 3 speakers" (length (speakers allSpeakers) >= 3)
                 length talks @?= length (speakers allSpeakers)
                 assertBool "at least one slot" (not (null (scheduleSlots schedule)))
+        , testCase "web tools smoke test: all three tools work" $ do
+            let handlers = duckDuckGoSearchHandler :* wikipediaSearchHandler :* webFetchHandler :* Nil
+                pcfg = defaultPromptConfig {maxRetries = 3, maxToolSteps = Just 15}
+            result <-
+              runPromptResultTWith cfg $
+                runPromptT pcfg handlers (webToolReportChain @'[DuckDuckGoSearch, WikipediaSearch, WebFetch])
+            case result of
+              Left err -> assertFailure (T.unpack err)
+              Right report -> do
+                let expected = Set.fromList (expectedNames @'[DuckDuckGoSearch, WikipediaSearch, WebFetch])
+                    actual = Map.keysSet (toolResults report)
+                actual @?= expected
+                mapM_
+                  ( \(tool, mErr) ->
+                      case mErr of
+                        Nothing -> pure ()
+                        Just err -> assertFailure ("Tool " <> T.unpack tool <> " failed: " <> T.unpack err)
+                  )
+                  (Map.toList (toolResults report))
         , testCase "conference chain with web_search tool: tool is invoked at least once" $ do
             callCount <- newIORef (0 :: Int)
             -- Wrap webSearchHandler to count invocations
             let countingHandler = ToolHandler $ \q -> do
                   atomicModifyIORef' callCount (\n -> (n + 1, ()))
-                  runToolHandler webSearchHandler q
+                  runToolHandler duckDuckGoSearchHandler q
                 handlers = countingHandler :* Nil
                 -- Give the model generous retries and tool steps
                 pcfg = defaultPromptConfig {maxRetries = 5, maxToolSteps = Just 10}

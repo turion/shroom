@@ -19,10 +19,10 @@ import Data.SOP (NP (..))
 import Control.Monad.Prompt
 import Control.Monad.Prompt.Ollama
 import Control.Monad.Prompt.Tool (ToolHandler (..))
-import Control.Monad.Prompt.Tool.Web (webSearchHandler)
+import Control.Monad.Prompt.Tool.Web (duckDuckGoSearchHandler, webFetchHandler)
 
 -- test
-
+import CelebrityTypes
 import ConferenceTypes
 import Types
 
@@ -82,6 +82,21 @@ ollamaIntegrationTests mHost model =
             let slots = scheduleSlots schedule
                 pairs = zip slots (drop 1 slots)
             all (\(a, b) -> slotEnd a == slotStart b) pairs @?= True
+    , testCaseSteps "celebrityChain: chain completes successfully with tools available" $ \step -> do
+        let cfg = (defaultOllamaBackendConfig mHost) {ollamaModel = model}
+            pcfg =
+              defaultPromptConfig
+                { maxRetries = 5
+                , maxToolSteps = Just 10
+                , debugLog = Just (step . T.unpack)
+                }
+        let handlers = duckDuckGoSearchHandler :* webFetchHandler :* Nil
+        result <- runPromptResultTWith cfg $ runPromptT pcfg handlers celebrityChain
+        case result of
+          Left err -> assertFailure (show err)
+          Right fact -> do
+            assertBool "celebrity not empty" (not (T.null (celebrity fact)))
+            assertBool "trivia fact not empty" (not (T.null (triviaFact fact)))
     , testCaseSteps "conferenceChainWithTools: web_search tool is invoked at least once" $ \step -> do
         let cfg = (defaultOllamaBackendConfig mHost) {ollamaModel = model}
             pcfg =
@@ -93,7 +108,7 @@ ollamaIntegrationTests mHost model =
         callCount <- newIORef (0 :: Int)
         let countingHandler = ToolHandler $ \q -> do
               atomicModifyIORef' callCount (\n -> (n + 1, ()))
-              runToolHandler webSearchHandler q
+              runToolHandler duckDuckGoSearchHandler q
             handlers = countingHandler :* Nil
         result <-
           runPromptResultTWith cfg $

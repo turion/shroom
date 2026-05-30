@@ -355,7 +355,7 @@ conferenceChainWithTools = do
               <> firstName (speakerName speaker)
               <> " "
               <> lastName (speakerName speaker)
-              <> ". You may use the web_search tool once to look up their background. Then write the abstract — do not search again."
+              <> ". You may search the web once to look up their background. Then write the abstract — do not search again."
       )
       (speakers allSpeakers)
   context $

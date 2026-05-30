@@ -236,6 +236,8 @@ class LLMBackend cfg where
   runChatWithTools ::
     (MonadIO m) =>
     cfg ->
+    -- | runner config (carries 'debugLog' for tool event logging)
+    PromptConfig ->
     [ContextItem] ->
     -- | type description
     Text ->
@@ -253,7 +255,7 @@ Calls 'runChatWithTools' with an empty tool list and zero tool steps.
 -}
 runChat :: (LLMBackend cfg, MonadIO m) => cfg -> [ContextItem] -> Text -> Value -> m (Either Text Text)
 runChat cfg ctx typeDesc schema =
-  runChatWithTools cfg ctx typeDesc schema [] (\_ _ -> pure (Left "no tools")) (Just 0)
+  runChatWithTools cfg defaultPromptConfig ctx typeDesc schema [] (\_ _ -> pure (Left "no tools")) (Just 0)
 
 {- | Like 'runPromptT' but without tools.
 Convenient for callers that don't need tool use; equivalent to
@@ -381,24 +383,35 @@ runPromptT promptCfg handlers p = do
     attempt :: forall c. (FromJSON c) => cfg -> [ContextItem] -> Text -> Value -> (c -> [Text]) -> Int -> Int -> PromptResultT cfg m (c, Text)
     attempt cfg ctx typeDesc schema checkProps totalRetries retriesLeft = do
       let attemptNum = totalRetries - retriesLeft + 1
+          separator = T.replicate 60 "─"
+          renderItem (SystemMessage t) = "[system]    " <> t
+          renderItem (UserMessage t) = "[user]      " <> t
+          renderItem (AssistantMessage t) = "[assistant] " <> t
       logDebug $
-        T.unlines
-          [ "=== LLM CALL (attempt " <> pack (show attemptNum) <> "/" <> pack (show (totalRetries + 1)) <> ") ==="
-          , "Type: " <> typeDesc
-          , "Context: " <> renderContextItems ctx
+        T.unlines $
+          [ separator
+          , "LLM CALL  attempt "
+              <> pack (show attemptNum)
+              <> "/"
+              <> pack (show (totalRetries + 1))
+              <> "  →  "
+              <> typeDesc
           ]
-      result <- runChatWithTools cfg ctx typeDesc schema toolDefs (\n v -> lift (dispatch n v)) (maxToolSteps promptCfg)
+            <> fmap renderItem ctx
+            <> [ separator
+               ]
+      result <- runChatWithTools cfg promptCfg ctx typeDesc schema toolDefs (\n v -> lift (dispatch n v)) (maxToolSteps promptCfg)
       let attemptsStr = "(" <> pack (show attemptNum) <> " attempt(s))"
       case result of
         Left err -> do
-          logDebug $ "ERROR: " <> err
+          logDebug $ "✗ ERROR: " <> err
           if retriesLeft <= 0
             then throwError $ err <> "\n" <> attemptsStr
             else attempt cfg ctx typeDesc schema checkProps totalRetries (retriesLeft - 1)
         Right rawTxt ->
           case eitherDecodeStrictText' rawTxt of
             Left parseErr -> do
-              logDebug $ "PARSE FAIL: " <> parseErr
+              logDebug $ "✗ PARSE FAIL: " <> parseErr
               if retriesLeft <= 0
                 then throwError $ parseErr <> "\n" <> attemptsStr
                 else do
@@ -416,10 +429,10 @@ runPromptT promptCfg handlers p = do
               let failDescs = checkProps a
                in if null failDescs
                     then do
-                      logDebug $ "OK: " <> rawTxt
+                      logDebug $ "✓ " <> rawTxt
                       pure (a, rawTxt)
                     else do
-                      logDebug $ "VALIDATION FAIL: " <> T.intercalate ", " failDescs
+                      logDebug $ "✗ VALIDATION FAIL: " <> T.intercalate ", " failDescs
                       if retriesLeft <= 0
                         then
                           throwError $

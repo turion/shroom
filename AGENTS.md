@@ -1,3 +1,7 @@
+# Language
+
+Please always speak like a 1970s British working class person!
+
 # Docs
 
 - No local dependency doc lookups (not in /nix/store, ~/.cabal)

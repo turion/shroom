@@ -36,6 +36,10 @@ import Data.Text qualified as T
 
 -- aeson
 import Data.Aeson (FromJSON, Result (..), Value (..), fromJSON)
+import Data.Aeson.Text (encodeToLazyText)
+
+-- text
+import Data.Text.Lazy (toStrict)
 
 -- sop-core
 import Data.SOP (All, K (..), NP (..), SListI, hcmap, hcollapse)
@@ -104,23 +108,32 @@ tool result or an error.
 type ToolDispatcher m = Text -> Value -> m (Either Text Text)
 
 {- | Build a 'ToolDispatcher' from a heterogeneous list of 'ToolHandler's.
-Walks the list by tool name; returns @Left@ for unknown tools or parse
-errors, @Right@ on success.
+Walks the list by tool name; returns @Left@ for unknown tools (with the
+list of available tool names) or parse errors, @Right@ on success.
 -}
 makeDispatcher ::
   forall tools m.
   (SListI tools, All IsTool tools, MonadIO m) =>
   NP ToolHandler tools ->
   ToolDispatcher m
-makeDispatcher Nil name _ =
-  pure $ Left ("Unknown tool: " <> name)
-makeDispatcher (h :* rest) name input
-  | toolName (proxyOf h) == name =
-      case fromJSON input of
-        Error e -> pure $ Left ("Tool input parse error for " <> name <> ": " <> T.pack e)
-        Success t -> liftIO (runToolHandler h t)
-  | otherwise = makeDispatcher rest name input
+makeDispatcher handlers name input = go handlers name input
   where
+    allNames :: [Text]
+    allNames = hcollapse $ hcmap (Proxy @IsTool) extractName handlers
+      where
+        extractName :: forall t. (IsTool t) => ToolHandler t -> K Text t
+        extractName _ = K (toolName (Proxy @t))
+
+    go :: forall ts. (All IsTool ts) => NP ToolHandler ts -> ToolDispatcher m
+    go Nil n _ =
+      pure $ Left ("Unknown tool: " <> n <> ". Available tools: " <> T.intercalate ", " allNames)
+    go (h :* rest) n inp
+      | toolName (proxyOf h) == n =
+          case fromJSON inp of
+            Error e -> pure $ Left ("Tool input parse error for " <> n <> ": " <> T.pack e)
+            Success t -> liftIO (runToolHandler h t)
+      | otherwise = go rest n inp
+
     proxyOf :: forall t. ToolHandler t -> Proxy t
     proxyOf _ = Proxy
 
@@ -171,6 +184,10 @@ data ToolLoopOps m ctx resp = ToolLoopOps
   -}
   , extractText :: resp -> Text
   -- ^ Extract the final response text when no tools are called.
+  , logEvent :: Text -> m ()
+  {- ^ Called for each tool call, tool result, and budget-exhaustion event.
+  Use @const (pure ())@ to disable logging.
+  -}
   }
 
 {- | Generic tool loop used by backends.
@@ -207,6 +224,7 @@ genericToolLoop ops dispatch ctx stepsLeft = do
           case stepsLeft of
             -- Budget exhausted: inform the model, then call without tools.
             Just 0 -> do
+              ops.logEvent "[tool budget exhausted]"
               let exhausted = "Tool budget exhausted. No further tool calls will be processed. Please give your final answer using the information already available."
                   fakeResults = [(uid, name, Right exhausted) | (uid, name, _) <- calls]
                   ctx' = ops.appendExchange ctx resp fakeResults
@@ -217,7 +235,9 @@ genericToolLoop ops dispatch ctx stepsLeft = do
               tagged <-
                 traverse
                   ( \(uid, name, input) -> do
+                      ops.logEvent $ ">>> TOOL CALL: " <> name <> " " <> toStrict (encodeToLazyText input)
                       r <- dispatch name input
+                      ops.logEvent $ "<<< TOOL RESULT: " <> name <> " " <> either ("ERROR: " <>) ("OK: " <>) r
                       pure (uid, name, r)
                   )
                   calls

@@ -33,7 +33,7 @@ as JSON) for 'Counter'.
 newtype MockConfig = MockConfig (IORef [Text])
 
 instance LLMBackend MockConfig where
-  runChatWithTools (MockConfig ref) ctx _typeDesc _schema _toolDefs _dispatch _maxToolSteps = liftIO $ do
+  runChatWithTools (MockConfig ref) _promptCfg ctx _typeDesc _schema _toolDefs _dispatch _maxToolSteps = liftIO $ do
     atomicModifyIORef' ref (\xs -> (xs <> [renderContextItems ctx], ()))
     -- Return a valid Counter JSON (the newtype wraps an Int)
     pure $ Right (toStrict (decodeUtf8 (encode (0 :: Int))))
@@ -45,10 +45,10 @@ Records contexts as flat text via 'renderContextItems'.
 data SeqMockConfig = SeqMockConfig (IORef [Text]) (IORef [Text])
 
 instance LLMBackend SeqMockConfig where
-  runChatWithTools (SeqMockConfig responses seenCtxs) ctx _typeDesc _schema _toolDefs _dispatch _maxToolSteps = liftIO $ do
+  runChatWithTools (SeqMockConfig responses seenCtxs) _promptCfg ctx _typeDesc _schema _toolDefs _dispatch _maxToolSteps = liftIO $ do
     atomicModifyIORef' seenCtxs (\xs -> (xs <> [renderContextItems ctx], ()))
     atomicModifyIORef' responses $ \rs -> case rs of
-      [] -> ([], Left "SeqMockConfig: no more responses")
+      [] -> ([], Left ("SeqMockConfig: no more responses" :: Text))
       [x] -> ([x], Right x)
       (x : rest) -> (rest, Right x)
 
@@ -72,4 +72,4 @@ textIsInfixOf = T.isInfixOf
 data InjectFailConfig = InjectFailConfig
 
 instance LLMBackend InjectFailConfig where
-  runChatWithTools _ _ _ _ _ _ _ = pure (Left "injected failure")
+  runChatWithTools _ _ _ _ _ _ _ _ = pure (Left "injected failure")

@@ -15,6 +15,7 @@ import System.Environment (lookupEnv)
 -- text
 import Data.Text (pack)
 import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
 
 -- time
 import Data.Time (UTCTime, defaultTimeLocale, formatTime)
@@ -25,7 +26,7 @@ import Data.SOP (NP (..))
 -- shroom
 import Control.Monad.Prompt (PromptConfig (..), defaultPromptConfig, runPromptResultTWith, runPromptT)
 import Control.Monad.Prompt.Anthropic (mkAnthropicConfig)
-import Control.Monad.Prompt.Tool.Web (webSearchHandler)
+import Control.Monad.Prompt.Tool.Web (duckDuckGoSearchHandler, wikipediaSearchHandler)
 
 -- conference scenario
 import ConferenceTypes (
@@ -51,8 +52,8 @@ main = do
 run :: T.Text -> IO ()
 run apiKey = do
   let cfg = mkAnthropicConfig apiKey
-      pcfg = defaultPromptConfig {debugLog = Just (putStr . T.unpack), maxToolSteps = Just 2}
-      handlers = webSearchHandler :* Nil
+      pcfg = defaultPromptConfig {debugLog = Just TIO.putStrLn, maxToolSteps = Just 2}
+      handlers = duckDuckGoSearchHandler :* wikipediaSearchHandler :* Nil
   result <- runPromptResultTWith cfg $ runPromptT pcfg handlers conferenceChainWithTools
   putStrLn ""
   case result of

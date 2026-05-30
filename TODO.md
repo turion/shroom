@@ -65,3 +65,18 @@ Implement a "Facts about a celebrity" tool use example.
 The LLM is first instructed to offer a list of 3 celebrities.
 User chooses one of them randomly.
 Next step: LLM should read their wikipedia article and summarize one trivia fact.
+
+
+# Adding structured data to the prompt
+
+# ScopedProgramT refactor
+
+
+-- The only difference: spm parameter here
+data Instr spm a where ...
+
+data ScopedProgramT instr m a where
+  Lift, Bind -- as usual
+  
+  -- Shallow effect handler
+  Instr :: instr (ScopedProgramT m) a -> ProgramT instr m a

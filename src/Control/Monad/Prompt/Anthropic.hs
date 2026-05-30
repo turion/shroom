@@ -36,7 +36,7 @@ import Claude.V1
 import Claude.V1.Messages
 
 -- shroom
-import Control.Monad.Prompt (ContextItem (..), LLMBackend (..))
+import Control.Monad.Prompt (ContextItem (..), LLMBackend (..), PromptConfig (..))
 import Control.Monad.Prompt.Schema (ToolDef (..), fixSchemaForAnthropic, inlineSchema)
 import Control.Monad.Prompt.Tool (ToolLoopOps (..), genericToolLoop)
 
@@ -103,8 +103,9 @@ anthropicToolLoopOps ::
   -- | output schema (for final structured call)
   Value ->
   Maybe (V.Vector ToolDefinition) ->
+  PromptConfig ->
   ToolLoopOps m [Message] MessageResponse
-anthropicToolLoopOps methods cfg mSystem schema mTools =
+anthropicToolLoopOps methods cfg mSystem schema mTools promptCfg =
   ToolLoopOps
     { callModel = \msgs -> do
         result <-
@@ -170,15 +171,16 @@ anthropicToolLoopOps methods cfg mSystem schema mTools =
           [ t
           | ContentBlock_Text {text = t} <- toList resp.content
           ]
+    , logEvent = \msg -> liftIO $ maybe (pure ()) ($ msg) promptCfg.debugLog
     }
 
 instance LLMBackend AnthropicConfig where
-  runChatWithTools cfg ctx typeDesc schema toolDefs dispatch maxToolSteps = do
+  runChatWithTools cfg promptCfg ctx typeDesc schema toolDefs dispatch maxToolSteps = do
     clientEnv <- liftIO $ getClientEnv "https://api.anthropic.com"
     let methods = makeMethods clientEnv cfg.apiKey (Just "2023-06-01")
         (mSystem, msgs) = contextItemsToAnthropic ctx typeDesc
         mTools = case toolDefs of
           [] -> Nothing
           ts -> Just (V.fromList (fmap toAnthropicTool ts))
-        ops = anthropicToolLoopOps methods cfg mSystem schema mTools
+        ops = anthropicToolLoopOps methods cfg mSystem schema mTools promptCfg
     genericToolLoop ops dispatch msgs maxToolSteps

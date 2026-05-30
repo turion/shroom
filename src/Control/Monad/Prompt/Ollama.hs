@@ -5,10 +5,12 @@ import Control.Exception (SomeException, try)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Foldable (toList)
 import Data.List.NonEmpty (NonEmpty ((:|)))
+import Data.Maybe (fromMaybe)
 
 -- text
 
 import Data.Text (Text, pack)
+import Data.Text qualified as T
 import Data.Text.Lazy (toStrict)
 import Data.Text.Lazy.Encoding (decodeUtf8)
 
@@ -29,16 +31,26 @@ import Data.Ollama.Chat (
   chat,
   defaultChatOps,
   systemMessage,
+  toolMessage,
   userMessage,
  )
 import Data.Ollama.Common.Config (OllamaConfig (..), defaultOllamaConfig)
 import Data.Ollama.Common.Error (OllamaError (..))
 import Data.Ollama.Common.SchemaBuilder (JsonType (..), Property (..), Schema (..))
-import Data.Ollama.Common.Types (ChatResponse (..), Message (..))
+import Data.Ollama.Common.Types (
+  ChatResponse (..),
+  FunctionDef (..),
+  FunctionParameters (..),
+  InputTool (..),
+  Message (..),
+  OutputFunction (..),
+  ToolCall (..),
+ )
 
 -- shroom
-import Control.Monad.Prompt (ContextItem (..), LLMBackend (..))
-import Control.Monad.Prompt.Schema (inlineSchema)
+import Control.Monad.Prompt (ContextItem (..), LLMBackend (..), PromptConfig (..))
+import Control.Monad.Prompt.Schema (ToolDef (..), inlineSchema)
+import Control.Monad.Prompt.Tool (ToolLoopOps (..), genericToolLoop)
 
 -- | Configuration for an Ollama-hosted local model.
 data OllamaBackendConfig = OllamaBackendConfig
@@ -74,24 +86,144 @@ contextItemsToOllama items typeDesc =
         [] -> userMessage typeDesc :| []
         (x : xs) -> x :| xs
 
+{- | Convert a 'ToolDef' to an Ollama 'InputTool'.
+Extracts properties and required fields from the JSON schema.
+-}
+toOllamaTool :: ToolDef -> InputTool
+toOllamaTool td =
+  InputTool
+    { toolType = "function"
+    , function =
+        FunctionDef
+          { functionName = td.toolDefName
+          , functionDescription = Just td.toolDefDescription
+          , functionParameters = Just (schemaToFunctionParameters (inlineSchema td.toolDefSchema))
+          , functionStrict = Nothing
+          }
+    }
+
+-- | Convert an inlined OpenAPI schema 'Value' to 'FunctionParameters'.
+schemaToFunctionParameters :: Value -> FunctionParameters
+schemaToFunctionParameters (Object km) =
+  FunctionParameters
+    { parameterType = "object"
+    , parameterProperties = case KM.lookup "properties" km of
+        Just (Object ps) ->
+          Just $
+            Map.fromList
+              [ (Key.toText k, schemaToFunctionParameters v)
+              | (k, v) <- KM.toList ps
+              ]
+        _ -> Nothing
+    , requiredParams = case KM.lookup "required" km of
+        Just (Array arr) -> Just [t | String t <- toList arr]
+        _ -> Nothing
+    , additionalProperties = Nothing
+    }
+schemaToFunctionParameters _ =
+  FunctionParameters
+    { parameterType = "string"
+    , parameterProperties = Nothing
+    , requiredParams = Nothing
+    , additionalProperties = Nothing
+    }
+
+-- | Build 'ToolLoopOps' for the Ollama backend.
+ollamaToolLoopOps ::
+  (MonadIO m) =>
+  OllamaBackendConfig ->
+  -- | output schema (for final structured call)
+  Value ->
+  [ToolDef] ->
+  PromptConfig ->
+  ToolLoopOps m (NonEmpty Message) ChatResponse
+ollamaToolLoopOps cfg schema toolDefs promptCfg =
+  let (fmt, unwrap) = schemaToFormatAndUnwrap schema
+   in ToolLoopOps
+        { callModel = \msgs -> liftIO $ do
+            let ops =
+                  defaultChatOps
+                    { modelName = cfg.ollamaModel
+                    , messages = msgs
+                    , tools = Just (fmap toOllamaTool toolDefs)
+                    , format = Just fmt
+                    , stream = Nothing
+                    }
+            result <- try @SomeException $ chat ops (Just cfg.ollamaConfig)
+            pure $ case result of
+              Left ex -> Left ("IO error: " <> pack (show ex))
+              Right (Left err) -> Left (renderOllamaError err)
+              Right (Right resp) -> Right resp
+        , callModelNoTools = \msgs -> liftIO $ do
+            let ops =
+                  defaultChatOps
+                    { modelName = cfg.ollamaModel
+                    , messages = msgs
+                    , tools = Nothing
+                    , format = Just fmt
+                    , stream = Nothing
+                    }
+            result <- try @SomeException $ chat ops (Just cfg.ollamaConfig)
+            pure $ case result of
+              Left ex -> Left ("IO error: " <> pack (show ex))
+              Right (Left err) -> Left (renderOllamaError err)
+              Right (Right resp) -> Right resp
+        , detectTools = \resp ->
+            case resp.message of
+              Nothing -> Nothing
+              Just msg -> case msg.tool_calls of
+                Nothing -> Nothing
+                Just [] -> Nothing
+                Just calls ->
+                  let extracted =
+                        ((\ tc
+                          -> (tc . outputFunction . outputFunctionName,
+                              tc . outputFunction . outputFunctionName,
+                              Object
+                                (KM.fromList
+                                   [(Key.fromText k, v) |
+                                      (k, v) <- Map.toList tc . outputFunction . arguments])))
+                         <$> calls)
+                   in if null extracted then Nothing else Just extracted
+        , appendExchange = \msgs resp tagged ->
+            -- Ollama rejects messages with empty content; use a space when the
+            -- assistant message has no text (e.g. pure tool-call turns).
+            let ensureContent msg
+                  | T.null msg.content = msg {content = " "}
+                  | otherwise = msg
+                assistantMsg = ensureContent $ fromMaybe (assistantMessage " ") resp.message
+                toolMsgs =
+                  [ toolMessage (either ("Error: " <>) id res)
+                  | (_, _, res) <- tagged
+                  ]
+             in msgs <> (assistantMsg :| toolMsgs)
+        , extractText = \resp -> unwrap (maybe "" (.content) resp.message)
+        , logEvent = \msg -> liftIO $ maybe (pure ()) ($ msg) promptCfg.debugLog
+        }
+
 instance LLMBackend OllamaBackendConfig where
-  runChatWithTools cfg ctx typeDesc schema _toolDefs _dispatch _maxToolSteps = liftIO $ do
-    let (fmt, unwrap) = schemaToFormatAndUnwrap schema
-        msgs = contextItemsToOllama ctx typeDesc
-        ops =
-          defaultChatOps
-            { modelName = cfg.ollamaModel
-            , messages = msgs
-            , format = Just fmt
-            , stream = Nothing
-            }
-    result <- try @SomeException $ chat ops (Just cfg.ollamaConfig)
-    case result of
-      Left ex -> pure $ Left ("IO error: " <> pack (show ex))
-      Right (Left err) -> pure $ Left (renderOllamaError err)
-      Right (Right resp) -> case resp.message of
-        Nothing -> pure $ Left "Ollama returned a response with no message"
-        Just msg -> pure $ Right (unwrap msg.content)
+  runChatWithTools cfg promptCfg ctx typeDesc schema toolDefs dispatch maxToolSteps
+    | null toolDefs = liftIO $ do
+        let (fmt, unwrap) = schemaToFormatAndUnwrap schema
+            msgs = contextItemsToOllama ctx typeDesc
+            ops =
+              defaultChatOps
+                { modelName = cfg.ollamaModel
+                , messages = msgs
+                , format = Just fmt
+                , stream = Nothing
+                }
+        result <- try @SomeException $ chat ops (Just cfg.ollamaConfig)
+        pure $ case result of
+          Left ex -> Left ("IO error: " <> pack (show ex))
+          Right (Left err) -> Left (renderOllamaError err)
+          Right (Right resp) -> case resp.message of
+            Nothing -> Left "Ollama returned a response with no message"
+            Just msg -> Right (unwrap msg.content)
+    | otherwise = do
+        let msgs = contextItemsToOllama ctx typeDesc
+            ops = ollamaToolLoopOps cfg schema toolDefs promptCfg
+        genericToolLoop ops dispatch msgs maxToolSteps
 
 {- | Build an Ollama 'Format' from an OpenAPI schema 'Value'.
 Returns @(format, unwrapFn)@ where @unwrapFn@ strips the @{\"result\":...}@
