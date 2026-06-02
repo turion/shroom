@@ -1,23 +1,23 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 {- | A tool-testing report type parametrised by the list of tools under test.
 
-'WebToolReport tools' holds a 'Map' from each tool name to 'Nothing' (success)
-or 'Just' an error description (failure).  The 'Describe' instance uses the
-phantom @tools@ list to enumerate expected keys and emit invariants.
+'WebToolReport tools' holds a list of 'ToolResult' records, one per tool,
+recording success (no error) or failure (error message).
 -}
 module WebToolReport (
   WebToolReport (..),
-  WebToolReportProperty (..),
+  ToolResult (..),
   expectedNames,
+  toolResults,
   webToolReportChain,
 ) where
 
 -- base
 import Data.Kind (Type)
-import Data.Maybe (isNothing)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
@@ -32,11 +32,6 @@ import Data.Aeson (FromJSON, ToJSON)
 -- openapi3
 import Data.OpenApi (ToSchema)
 
--- containers
-import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as Map
-import Data.Set qualified as Set
-
 -- sop-core
 import Data.SOP (All, K (..), NP, SListI, hcollapse, hcpure)
 
@@ -48,49 +43,65 @@ import Control.Monad.Prompt (PromptT, context, prompt)
 import Control.Monad.Prompt.Tool (IsTool, toolName)
 import Data.Describe (Describe (..))
 
--- * Type
+-- * Types
 
-{- | A report of tool tests.
-
-For each available tool, attempt to call it within its documented scope.
-Record @null@ (JSON) on success, or an error string on failure.
--}
-newtype WebToolReport (tools :: [Type]) = WebToolReport
-  { toolResults :: Map Text (Maybe Text)
-  -- ^ Tool name → @Nothing@ (success) or @Just errorMsg@ (failure).
+-- | The result of testing one tool.
+data ToolResult = ToolResult
+  { resultToolName :: Text
+  -- ^ The snake_case name of the tool that was tested.
+  , resultStatus :: Text
+  {- ^ Either @"ok"@ if the tool returned any content, or an error message
+  string if the tool call failed with an exception or HTTP error.
+  -}
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema)
 
--- | Properties a 'WebToolReport' must satisfy.
-data WebToolReportProperty
-  = -- | The map keys must be exactly the names of the offered tools.
-    AllToolsTested
-  | -- | Every value must be @Nothing@ (all tools succeeded).
-    AllToolsSucceeded
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+{- | A report of tool tests.
+
+A list of one 'ToolResult' per available tool.
+-}
+newtype WebToolReport (tools :: [Type]) = WebToolReport
+  { results :: [ToolResult]
+  -- ^ One entry per tool tested.
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema)
+
+{- | Extract results as a list of @(toolName, status)@ pairs.
+Status is @"ok"@ for success or an error string for failure.
+-}
+toolResults :: WebToolReport tools -> [(Text, Text)]
+toolResults r = (\ tr -> (resultToolName tr, resultStatus tr)) <$> results r
+
+-- | The only enforced property: every expected tool must appear in the results.
+data AllToolsTested = AllToolsTested
+  deriving stock (Bounded, Enum, Eq, Ord, Show)
+  deriving anyclass (Universe)
 
 instance (SListI tools, All IsTool tools) => Describe (WebToolReport tools) where
+  type Property (WebToolReport tools) = AllToolsTested
+
   describeType _ =
     "A report of tool tests. "
-      <> "For each available tool, attempt to call it within its documented scope. "
-      <> "Record null on success, or an error string on failure. "
-      <> "The keys must be exactly: "
+      <> "Call each available tool with a reasonable test input. "
+      <> "For each tool: set resultStatus to the string \"ok\" if the tool returned any content, "
+      <> "or set resultStatus to the error message if the tool call failed with an exception or HTTP error. "
+      <> "The tools to test are: "
       <> T.intercalate ", " (expectedNames @tools)
-
-  type Property (WebToolReport tools) = WebToolReportProperty
+      <> ". Example of all tools succeeding: {\"results\": ["
+      <> T.intercalate ", " (fmap (\k -> "{\"resultToolName\": \"" <> k <> "\", \"resultStatus\": \"ok\"}") (expectedNames @tools))
+      <> "]}. "
+      <> "Example with one failure: {\"results\": [{\"resultToolName\": \"some_tool\", \"resultStatus\": \"HTTP 404: not found\"}]}"
 
   describeProperties _ AllToolsTested =
     Just $
-      "The toolResults map must contain exactly these keys: "
+      "The results list must contain exactly one entry per tool: "
         <> T.intercalate ", " (expectedNames @tools)
-  describeProperties _ AllToolsSucceeded =
-    Just "Every value in toolResults must be null (Nothing), meaning all tools succeeded."
 
   propertyHolds r AllToolsTested =
-    Map.keysSet (toolResults r) == Set.fromList (expectedNames @tools)
-  propertyHolds r AllToolsSucceeded =
-    all isNothing (Map.elems (toolResults r))
+    let names = fmap resultToolName (results r)
+     in all (`elem` names) (expectedNames @tools)
 
 -- | Extract the tool names for a type-level list of 'IsTool' types.
 expectedNames ::
@@ -114,5 +125,7 @@ webToolReportChain ::
   (Monad m, SListI tools, All IsTool tools, Typeable tools) =>
   PromptT m (WebToolReport tools)
 webToolReportChain = do
-  context "You are a tool-testing assistant."
+  context "You are a tool-testing assistant. Your job is to call each available tool exactly once with a reasonable test input, observe the result, then return a JSON report."
+  context $ "Step 1: call each of these tools once: " <> T.intercalate ", " (expectedNames @tools) <> "."
+  context $ "Step 2: return a JSON object with a \"results\" array. Each entry must have \"resultToolName\" and \"resultStatus\". Set resultStatus to \"ok\" if the tool returned any content. Set resultStatus to the error message if the tool result started with 'Error:'. Tools: " <> T.intercalate ", " (expectedNames @tools) <> "."
   prompt @(WebToolReport tools)

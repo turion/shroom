@@ -156,7 +156,7 @@ anthropicToolLoopOps methods cfg mSystem schema mTools promptCfg =
     , appendExchange = \msgs resp tagged ->
         let assistantContents = V.fromList $ mapMaybe contentBlockToContent (toList resp.content)
             assistantMsg = Message {role = Assistant, content = assistantContents, cache_control = Nothing}
-            toolResults =
+            toolResultContents =
               [ Content_Tool_Result
                   { tool_use_id = uid
                   , content = Just (either ("Error: " <>) (id) res)
@@ -164,7 +164,21 @@ anthropicToolLoopOps methods cfg mSystem schema mTools promptCfg =
                   }
               | (uid, _name, res) <- tagged
               ]
-            toolMsg = Message {role = User, content = V.fromList toolResults, cache_control = Nothing}
+            -- If any tool call failed, append an extra reminder so the model
+            -- records the failure in the final structured-output response.
+            failedNames = [name | (_uid, name, Left _) <- tagged]
+            extraReminder
+              | null failedNames = []
+              | otherwise =
+                  [ Content_Text
+                      { text =
+                          "Note: the following tool(s) returned errors: "
+                            <> T.intercalate ", " failedNames
+                            <> ". Make sure to record these as non-null error strings in your final JSON response."
+                      , cache_control = Nothing
+                      }
+                  ]
+            toolMsg = Message {role = User, content = V.fromList (toolResultContents <> extraReminder), cache_control = Nothing}
          in msgs <> [assistantMsg, toolMsg]
     , extractText = \resp ->
         mconcat

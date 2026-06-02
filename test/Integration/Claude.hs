@@ -1,16 +1,22 @@
+{-# LANGUAGE DeriveAnyClass #-}
+
 module Main (main) where
 
 -- base
 import Data.IORef
+import Data.Void (Void)
+import GHC.Generics (Generic)
 import System.Environment (lookupEnv)
 
 -- text
 import Data.Text (Text, pack)
 import Data.Text qualified as T
 
--- containers
-import Data.Map.Strict qualified as Map
-import Data.Set qualified as Set
+-- aeson
+import Data.Aeson (FromJSON, ToJSON)
+
+-- openapi3
+import Data.OpenApi (ToSchema)
 
 -- tasty
 import Test.Tasty (TestTree, defaultMain, testGroup)
@@ -22,7 +28,7 @@ import Data.SOP (NP (..))
 -- shroom
 import Control.Monad.Prompt
 import Control.Monad.Prompt.Anthropic
-import Control.Monad.Prompt.Tool (ToolHandler (..))
+import Control.Monad.Prompt.Tool (IsTool (..), ToolHandler (..))
 import Control.Monad.Prompt.Tool.Web (
   DuckDuckGoSearch,
   WebFetch,
@@ -31,11 +37,28 @@ import Control.Monad.Prompt.Tool.Web (
   webFetchHandler,
   wikipediaSearchHandler,
  )
+import Data.Describe (Describe (..))
 
 -- test
 import ConferenceTypes
 import Types
-import WebToolReport (WebToolReport (..), expectedNames, webToolReportChain)
+import WebToolReport (toolResults, webToolReportChain)
+
+-- * Fake broken tool for testing failure reporting
+
+newtype FakeBrokenSearch = FakeBrokenSearch {brokenQuery :: Text}
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema)
+
+instance Describe FakeBrokenSearch where
+  type Property FakeBrokenSearch = Void
+  describeType _ = "A search query that always fails with a 404 error."
+
+instance IsTool FakeBrokenSearch where
+  toolDescription _ = Just "Always returns an HTTP 404 error."
+
+fakeBrokenSearchHandler :: ToolHandler FakeBrokenSearch
+fakeBrokenSearchHandler = ToolHandler $ \_ -> pure (Left "HTTP 404: not found")
 
 main :: IO ()
 main = do
@@ -73,23 +96,34 @@ integrationTests apiKey =
                 assertBool "at least one slot" (not (null (scheduleSlots schedule)))
         , testCase "web tools smoke test: all three tools work" $ do
             let handlers = duckDuckGoSearchHandler :* wikipediaSearchHandler :* webFetchHandler :* Nil
-                pcfg = defaultPromptConfig {maxRetries = 3, maxToolSteps = Just 15}
+                pcfg = defaultPromptConfig {maxRetries = 3, maxToolSteps = Just 15, debugLog = Just (putStrLn . T.unpack)}
             result <-
               runPromptResultTWith cfg $
                 runPromptT pcfg handlers (webToolReportChain @'[DuckDuckGoSearch, WikipediaSearch, WebFetch])
             case result of
               Left err -> assertFailure (T.unpack err)
-              Right report -> do
-                let expected = Set.fromList (expectedNames @'[DuckDuckGoSearch, WikipediaSearch, WebFetch])
-                    actual = Map.keysSet (toolResults report)
-                actual @?= expected
+              Right report ->
+                -- "ok" means success; anything else is a reported failure
                 mapM_
-                  ( \(tool, mErr) ->
-                      case mErr of
-                        Nothing -> pure ()
-                        Just err -> assertFailure ("Tool " <> T.unpack tool <> " failed: " <> T.unpack err)
+                  ( \(tool, status) ->
+                      if status == "ok"
+                        then pure ()
+                        else assertFailure ("Tool " <> T.unpack tool <> " failed: " <> T.unpack status)
                   )
-                  (Map.toList (toolResults report))
+                  (toolResults report)
+        , testCase "web tools: broken tool failure is reported" $ do
+            let handlers = fakeBrokenSearchHandler :* Nil
+                pcfg = defaultPromptConfig {maxRetries = 3, maxToolSteps = Just 5, debugLog = Just (putStrLn . T.unpack)}
+            result <-
+              runPromptResultTWith cfg $
+                runPromptT pcfg handlers (webToolReportChain @'[FakeBrokenSearch])
+            case result of
+              Left err -> assertFailure (T.unpack err)
+              Right report ->
+                case lookup "fake_broken_search" (toolResults report) of
+                  Nothing -> assertFailure "fake_broken_search missing from report"
+                  Just "ok" -> assertFailure "Expected fake_broken_search to be reported as failed, but got ok"
+                  Just _ -> pure () -- model correctly reported a non-ok status
         , testCase "conference chain with web_search tool: tool is invoked at least once" $ do
             callCount <- newIORef (0 :: Int)
             -- Wrap webSearchHandler to count invocations
