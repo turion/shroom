@@ -20,6 +20,7 @@ import Test.Tasty.HUnit (assertFailure, testCase, (@?=))
 -- shroom
 import Control.Monad.Prompt
 import Control.Monad.Prompt.Ollama (schemaToFormatAndUnwrap, unwrapResult)
+import Control.Monad.Prompt.Tool.Web
 import Data.Describe (Describe (..), description)
 
 -- test
@@ -362,5 +363,47 @@ main =
               case result of
                 Right (Counter 99) -> pure ()
                 _ -> fail "Expected Right (Counter 99)"
+          ]
+      , testGroup
+          "web tool security properties"
+          [ -- WebFetch URL scheme
+            testCase "valid https URL passes scheme check" $
+              propertyHolds (WebFetch "https://example.com") WebFetchUrlScheme @?= True
+          , testCase "valid http URL passes scheme check" $
+              propertyHolds (WebFetch "http://example.com") WebFetchUrlScheme @?= True
+          , testCase "file:// URL fails scheme check" $
+              propertyHolds (WebFetch "file:///etc/passwd") WebFetchUrlScheme @?= False
+          , testCase "empty string fails scheme check" $
+              propertyHolds (WebFetch "") WebFetchUrlScheme @?= False
+          , -- WebFetch safe chars
+            testCase "clean URL passes safe-char check" $
+              propertyHolds (WebFetch "https://example.com/path?q=1&x=2") WebFetchUrlSafeChars @?= True
+          , testCase "URL with space fails safe-char check" $
+              propertyHolds (WebFetch "https://example.com/bad url") WebFetchUrlSafeChars @?= False
+          , testCase "URL with backtick injection fails safe-char check" $
+              propertyHolds (WebFetch "https://example.com/`rm -rf /`") WebFetchUrlSafeChars @?= False
+          , testCase "URL with angle bracket fails safe-char check" $
+              propertyHolds (WebFetch "https://evil.com/<script>") WebFetchUrlSafeChars @?= False
+          , -- DuckDuckGoSearch not-empty
+            testCase "non-empty DDG query passes not-empty check" $
+              propertyHolds (DuckDuckGoSearch "Haskell") DuckDuckGoSearchQueryNotEmpty @?= True
+          , testCase "empty DDG query fails not-empty check" $
+              propertyHolds (DuckDuckGoSearch "") DuckDuckGoSearchQueryNotEmpty @?= False
+          , -- DuckDuckGoSearch safe chars
+            testCase "plain DDG query passes safe-char check" $
+              propertyHolds (DuckDuckGoSearch "Simon Peyton Jones") DuckDuckGoSearchQuerySafeChars @?= True
+          , testCase "DDG query with newline fails safe-char check" $
+              propertyHolds (DuckDuckGoSearch "foo\nbar") DuckDuckGoSearchQuerySafeChars @?= False
+          , testCase "DDG query with angle bracket fails safe-char check" $
+              propertyHolds (DuckDuckGoSearch "foo <script>") DuckDuckGoSearchQuerySafeChars @?= False
+          , testCase "DDG query with semicolon fails safe-char check" $
+              propertyHolds (DuckDuckGoSearch "foo; rm -rf /") DuckDuckGoSearchQuerySafeChars @?= False
+          , -- WikipediaSearch safe chars
+            testCase "plain Wikipedia query passes safe-char check" $
+              propertyHolds (WikipediaSearch "functional programming") WikipediaSearchQuerySafeChars @?= True
+          , testCase "Wikipedia query with newline fails safe-char check" $
+              propertyHolds (WikipediaSearch "foo\nbar") WikipediaSearchQuerySafeChars @?= False
+          , testCase "empty Wikipedia query fails not-empty check" $
+              propertyHolds (WikipediaSearch "") WikipediaSearchQueryNotEmpty @?= False
           ]
       ]

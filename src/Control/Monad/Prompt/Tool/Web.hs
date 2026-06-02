@@ -24,9 +24,7 @@ module Control.Monad.Prompt.Tool.Web (module Control.Monad.Prompt.Tool.Web) wher
 
 -- base
 import Control.Exception (SomeException, try)
-
--- bytestring
-import Data.ByteString.Char8 qualified as BS
+import Data.Char (isAlphaNum)
 
 -- text
 import Data.Text (Text)
@@ -40,6 +38,9 @@ import GHC.Generics (Generic)
 
 -- vector
 import Data.Vector qualified as V
+
+-- containers
+import Data.Set qualified as S
 
 -- openapi3
 import Data.OpenApi (ToSchema)
@@ -66,6 +67,9 @@ import Network.HTTP.Req (
  )
 import Network.HTTP.Req qualified as Req
 
+-- universe-base
+import Data.Universe.Class (Universe)
+
 -- shroom
 
 import Control.Monad.Prompt.TH (deriveDescribeType)
@@ -81,14 +85,35 @@ newtype WebFetch = WebFetch
   { fetchUrl :: Text
   -- ^ The URL to fetch.
   }
-  deriving stock (Eq, Show, Generic)
+  deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema)
 
 -- We need a new declaration group so TH can reify the type defined above.
 $(pure [])
 
+data WebFetchProperty
+  = -- | Must start with http:// or https://
+    WebFetchUrlScheme
+  | -- | Must contain only URL-safe characters
+    WebFetchUrlSafeChars
+  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+
 instance Describe WebFetch where
+  type Property WebFetch = WebFetchProperty
   describeType = $(deriveDescribeType ''WebFetch)
+  describeProperties _ WebFetchUrlScheme =
+    Just "The URL must start with \"https://\" or \"http://\"."
+  describeProperties _ WebFetchUrlSafeChars =
+    Just "The URL must contain only URL-safe characters: alphanumerics and \"-._~:/?#[]@!$&'()*+,;=%\". No spaces, no angle brackets, no backslash, no shell special characters."
+  propertyHolds (WebFetch url) WebFetchUrlScheme =
+    "https://" `T.isPrefixOf` url || "http://" `T.isPrefixOf` url
+  propertyHolds (WebFetch url) WebFetchUrlSafeChars =
+    T.all (\c -> isAlphaNum c || c `elem` ("-._~:/?#[]@!$&'()*+,;=%" :: String)) url
+  examples _ =
+    S.fromList
+      [ WebFetch "https://example.com"
+      , WebFetch "https://en.wikipedia.org/wiki/Haskell_%28programming_language%29"
+      ]
 
 instance IsTool WebFetch where
   toolDescription _ = Just "Returns up to 2000 characters of the page body."
@@ -104,16 +129,17 @@ webFetchHandler = ToolHandler $ \(WebFetch url) -> do
     case useHttpsURI uri of
       Just (u, opts) -> do
         r <- req GET u NoReqBody bsResponse (opts <> userAgentHeader)
-        pure $ responseBody r
+        pure $ Right (responseBody r)
       Nothing ->
         case useHttpURI uri of
           Just (u, opts) -> do
             r <- req GET u NoReqBody bsResponse (opts <> userAgentHeader)
-            pure $ responseBody r
-          Nothing -> pure $ BS.pack ("WebFetch: could not parse URL: " <> T.unpack url)
+            pure $ Right (responseBody r)
+          Nothing -> pure $ Left ("WebFetch: could not parse URL: " <> url)
   case result of
     Left ex -> pure $ Left ("WebFetch error: " <> T.pack (show ex))
-    Right bs ->
+    Right (Left e) -> pure $ Left e
+    Right (Right bs) ->
       let txt = TE.decodeUtf8Lenient bs
           -- Strip HTML tags using tagsoup
           stripped = innerText (parseTags txt :: [Tag Text])
@@ -135,14 +161,34 @@ newtype DuckDuckGoSearch = DuckDuckGoSearch
   { searchQuery :: Text
   -- ^ The search query string.
   }
-  deriving stock (Eq, Show, Generic)
+  deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema)
 
 -- We need a new declaration group so TH can reify the type defined above.
 $(pure [])
 
+data DuckDuckGoSearchProperty
+  = -- | Must not be empty
+    DuckDuckGoSearchQueryNotEmpty
+  | -- | Only alphanumerics, spaces, basic punctuation
+    DuckDuckGoSearchQuerySafeChars
+  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+
 instance Describe DuckDuckGoSearch where
+  type Property DuckDuckGoSearch = DuckDuckGoSearchProperty
   describeType = $(deriveDescribeType ''DuckDuckGoSearch)
+  describeProperties _ DuckDuckGoSearchQueryNotEmpty =
+    Just "The search query must not be empty."
+  describeProperties _ DuckDuckGoSearchQuerySafeChars =
+    Just "The search query must contain only alphanumerics, spaces, and basic punctuation (\".,'-\"). No newlines, no HTML, no shell special characters."
+  propertyHolds (DuckDuckGoSearch q) DuckDuckGoSearchQueryNotEmpty = not (T.null q)
+  propertyHolds (DuckDuckGoSearch q) DuckDuckGoSearchQuerySafeChars =
+    T.all (\c -> isAlphaNum c || c `elem` (" .,'-" :: String)) q
+  examples _ =
+    S.fromList
+      [ DuckDuckGoSearch "Haskell programming language"
+      , DuckDuckGoSearch "Simon Peyton Jones"
+      ]
 
 instance IsTool DuckDuckGoSearch where
   toolDescription _ = Just "DuckDuckGo Instant Answer: returns a short abstract for well-known named entities (people, places) that have a Wikipedia article. Returns no result for vague or multi-word queries — use wikipedia_search instead."
@@ -204,14 +250,34 @@ newtype WikipediaSearch = WikipediaSearch
   { wikiQuery :: Text
   -- ^ The search query string.
   }
-  deriving stock (Eq, Show, Generic)
+  deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema)
 
 -- We need a new declaration group so TH can reify the type defined above.
 $(pure [])
 
+data WikipediaSearchProperty
+  = -- | Must not be empty
+    WikipediaSearchQueryNotEmpty
+  | -- | Only alphanumerics, spaces, basic punctuation
+    WikipediaSearchQuerySafeChars
+  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+
 instance Describe WikipediaSearch where
+  type Property WikipediaSearch = WikipediaSearchProperty
   describeType = $(deriveDescribeType ''WikipediaSearch)
+  describeProperties _ WikipediaSearchQueryNotEmpty =
+    Just "The search query must not be empty."
+  describeProperties _ WikipediaSearchQuerySafeChars =
+    Just "The search query must contain only alphanumerics, spaces, and basic punctuation (\".,'-\"). No newlines, no HTML, no shell special characters."
+  propertyHolds (WikipediaSearch q) WikipediaSearchQueryNotEmpty = not (T.null q)
+  propertyHolds (WikipediaSearch q) WikipediaSearchQuerySafeChars =
+    T.all (\c -> isAlphaNum c || c `elem` (" .,'-" :: String)) q
+  examples _ =
+    S.fromList
+      [ WikipediaSearch "Haskell monad tutorial"
+      , WikipediaSearch "functional programming"
+      ]
 
 instance IsTool WikipediaSearch where
   toolDescription _ = Just "Returns up to 5 Wikipedia article titles and URLs matching the query."
