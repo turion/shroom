@@ -1,5 +1,12 @@
 # shroom — planned features
 
+## Simplification: Completely generic schema
+
+Since the LLM is the only one ever seeing the data in a schema,
+the particular chosen schema doesn't matter.
+We could just require Generic and derive a generic schema and ToJSON/FromJSON instances
+that are always compatible.
+
 ## Multimodal inputs
 
 Support passing images (and potentially audio) alongside text context.
@@ -31,6 +38,24 @@ Why do we need to modify so much
 * To PromptT, add a constructor `Improve :: Describe a => a -> PromptT m (Maybe a)` that asks the AI whether the properties are fulfilled, and if not suggest an improved version that does fulfill them.
  
 ## Streaming
+
+Support streaming LLM responses token-by-token. Would require extending `LLMBackend`
+with a streaming method variant and threading a callback or conduit through `runPromptT`.
+Both Anthropic and Ollama support streaming. Mainly useful for long-form outputs and
+interactive UX.
+
+## Interactive REPL
+
+An interactive REPL (à la intelli-monad) allowing the user to run `PromptT` programs
+step-by-step, inspect accumulated context, and edit the current prompt in `$EDITOR`
+before sending. Useful for iterative prompt development and debugging without writing
+test files.
+
+## Hook system
+
+Pre/post-call hooks: a `Hook` mechanism allowing users to register side-effectful
+callbacks that fire before and after each LLM call. Useful for logging, metrics,
+rate-limiting, and custom retry logic external to the core framework.
 
 ## What features does anthropic and/or ollama have that we're currently not using?
 
@@ -80,3 +105,9 @@ data ScopedProgramT instr m a where
   
   -- Shallow effect handler
   Instr :: instr (ScopedProgramT m) a -> ProgramT instr m a
+
+
+# Louter backend
+
+Might even explore whether we want to completely depend on louter and always use it.
+Simplifies architecture. Does it support ollama?

@@ -145,13 +145,41 @@ The tradeoff:
 | Parallel prompts | — | ✓ (`promptPar`, `promptsParallel`) |
 | Multiple LLM backends | — | ✓ (Claude, Ollama, FileMock) |
 | Code generation | ✓ | — |
+| Haddock → prompt description | — | ✓ (TH splice, field docs auto-annotated) |
 | Production-ready | proof-of-concept | closer |
 | Embedding | own DSL | full Haskell |
+| `FromJSON` / schema must agree | n/a | ✓ (not enforced automatically — must be consistent) |
 
 The main thing shroom does *not* have from Grace is automatic schema inference —
 you write `ToSchema` and `Describe` instances yourself (or derive them). In
 exchange you get property validation, automatic retry with feedback, and backends
 that actually work today.
+
+### intelli-monad
+
+[**intelli-monad**](https://hackage.haskell.org/package/intelli-monad) is a published Haskell library (Hackage, 0.1.3.0, April 2026) for type-safe LLM interaction via a `Prompt` state monad. It supports multiple backends (OpenAI, Anthropic, Gemini) through the `louter` routing library, has SQLite session persistence, a built-in interactive REPL, and automatic schema derivation via `GHC.Generics`.
+
+| | **intelli-monad** | **shroom** |
+|---|---|---|
+| Schema derivation | `Generic` + custom `GSchema` (no TH) | `ToSchema` from `openapi3` + `Describe` |
+| Sequential prompt chaining | ✓ | ✓ |
+| Parallel prompts | — | ✓ `<*>` / `promptPar` via `concurrently` |
+| Scoped context | — (all context globally persistent) | ✓ `WithContext` — does not leak |
+| `Alternative` / fallback | — | ✓ restores original context on failure |
+| Retry with LLM feedback | — (returns `Maybe`/`Either`) | ✓ auto-reprompts with error + correction |
+| Session persistence | ✓ SQLite (mandatory) | — (in-memory per run) |
+| Interactive REPL | ✓ with `$EDITOR` support | — |
+| Streaming | ✓ | — |
+| Pre/post-call hooks | ✓ | — |
+| Haddock → prompt description | — (manual string literals) | ✓ TH splice, field docs auto-annotated |
+| Backends | OpenAI, Anthropic, Gemini (via `louter`) | Anthropic, Ollama, FileMock |
+| Built-in tools | `Bash`, `Arxiv`, `KeyValue` | `WebFetch`, `WebSearch` |
+| Test coverage | Minimal | 37 unit tests + integration tests |
+| Hackage | ✓ | — (not yet) |
+
+**The Haddock advantage.** shroom's `deriveDescribeType` (a TH splice) extracts the Haddock comment and all record-field docs from the type declaration at compile time, and `annotateFieldTypes` annotates each field with its JSON type from the OpenAPI schema. The result: your documentation *is* your prompt engineering — they cannot drift. intelli-monad's `HasFunctionObject` requires manually written string literals for descriptions, entirely separate from any comments.
+
+**Schema / `FromJSON` consistency.** Both libraries require that the schema sent to the LLM and the `FromJSON` instance used to parse the response agree on the wire format — the schema instructs the LLM what to produce, and `FromJSON` deserialises what it produces. Neither library enforces this automatically. A custom `FromJSON` that expects a different encoding to what the schema describes will silently fail to parse.
 
 ### Prompt chaining best practices
 
