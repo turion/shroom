@@ -74,7 +74,8 @@ import Data.Universe.Class (Universe)
 
 import Control.Monad.Prompt.TH (deriveDescribable)
 import Control.Monad.Prompt.Tool (ToolHandler (..), Toolable (..))
-import Data.Shroom.Class (DescriptionPrompt, Promptable, Surveyable (..))
+import Data.Shroom.Class (Surveyable (..))
+import Data.Shroom.Class.Promptable (DescriptionPrompt, Promptable)
 
 -- * WebFetch
 

@@ -76,6 +76,7 @@ import Data.Universe.Class (universe)
 
 -- shroom
 import Data.Shroom.Class
+import Data.Shroom.Class.Promptable (Promptable (..))
 
 -- * Context items
 

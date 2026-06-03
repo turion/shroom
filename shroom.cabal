@@ -71,6 +71,7 @@ library
     Control.Monad.Prompt.Tool
     Control.Monad.Prompt.Tool.Web
     Data.Shroom.Class
+    Data.Shroom.Class.Promptable
 
   other-modules:
     Control.Monad.Prompt.Schema

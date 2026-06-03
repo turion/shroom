@@ -37,6 +37,7 @@ import Data.Universe.Class (Universe)
 
 -- shroom
 import Control.Monad.Prompt
+import Data.Shroom.Class.Promptable (DescriptionPrompt, Promptable)
 import Control.Monad.Prompt.TH (deriveDescribable)
 import Data.Shroom.Class
 

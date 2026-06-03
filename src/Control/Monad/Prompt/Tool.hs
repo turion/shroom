@@ -28,6 +28,7 @@ module Control.Monad.Prompt.Tool (module Control.Monad.Prompt.Tool) where
 -- base
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Char (isUpper, toLower)
+import Data.Functor ((<&>))
 import Data.List (intercalate)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable, tyConName, typeRep, typeRepTyCon)
@@ -52,9 +53,8 @@ import Data.SOP.NP ()
 -- shroom
 
 import Control.Monad.Prompt.Schema (ToolDef (..), schemaWithDefs)
-import Data.Shroom.Class (Promptable, describeType)
-
-import Data.Functor ((<&>))
+import Data.Shroom.Class (describeType)
+import Data.Shroom.Class.Promptable (Promptable)
 
 -- * Tool typeclass
 

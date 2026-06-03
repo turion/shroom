@@ -36,7 +36,8 @@ import Control.Monad.Prompt.Tool.Web (
   webFetchHandler,
   wikipediaSearchHandler,
  )
-import Data.Shroom.Class (Describable (..), DescriptionPrompt, Promptable, Surveyable (..))
+import Data.Shroom.Class (Describable (..), Surveyable (..))
+import Data.Shroom.Class.Promptable (DescriptionPrompt, Promptable)
 
 -- test
 import ConferenceTypes

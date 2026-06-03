@@ -24,6 +24,7 @@ import Data.Set qualified as S
 import Data.Universe.Class (Universe)
 
 -- shroom
+import Data.Shroom.Class.Promptable (DescriptionPrompt, Promptable)
 import Control.Monad.Prompt.TH (deriveDescribable)
 import Data.Shroom.Class
 

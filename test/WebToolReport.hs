@@ -41,7 +41,8 @@ import Data.Universe.Class (Universe)
 -- shroom
 import Control.Monad.Prompt (PromptT, context, prompt)
 import Control.Monad.Prompt.Tool (Toolable, toolName)
-import Data.Shroom.Class (Describable (..), DescriptionPrompt, Promptable, Surveyable (..))
+import Data.Shroom.Class (Describable (..), Surveyable (..))
+import Data.Shroom.Class.Promptable (DescriptionPrompt, Promptable)
 
 -- * Types
 

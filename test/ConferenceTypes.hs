@@ -57,6 +57,7 @@ import Control.Monad.Prompt
 import Control.Monad.Prompt.TH (deriveDescribable)
 import Control.Monad.Prompt.Tool (Toolable (..), ToolHandler (..))
 import Data.Shroom.Class
+import Data.Shroom.Class.Promptable (DescriptionPrompt, Promptable)
 
 -- * Types
 
