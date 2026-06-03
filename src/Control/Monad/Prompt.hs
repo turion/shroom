@@ -107,7 +107,7 @@ data PromptT m a where
   -}
   WithContext :: ContextItem -> PromptT m a -> PromptT m a
   -- | Request a typed value from the model using the accumulated context.
-  Prompt :: (ToSchema a, FromJSON a, Promptable a) => PromptT m a
+  PromptSingle :: (ToSchema a, FromJSON a, Promptable a) => PromptT m a
   -- | Embed a pure value into 'PromptT' without any LLM call or effect.
   Pure :: a -> PromptT m a
   -- | Lift an @m@ action into 'PromptT'. Supports 'MonadTrans' and 'MonadIO'.
@@ -178,11 +178,11 @@ context txt = AddContext (UserMessage txt)
 The model sees the accumulated context plus the type description.
 -}
 prompt :: (ToSchema a, FromJSON a, Promptable a) => PromptT m a
-prompt = Prompt
+prompt = PromptSingle
 
 -- | Like 'prompt', but with an extra piece of context scoped to this request only.
 promptWith :: (ToSchema a, FromJSON a, Promptable a) => Text -> PromptT m a
-promptWith txt = WithContext (UserMessage txt) Prompt
+promptWith txt = WithContext (UserMessage txt) PromptSingle
 
 {- | Run two independent prompts in parallel, returning both results.
 Both branches see the same context snapshot at the point of the call;
@@ -343,7 +343,7 @@ runPromptT promptCfg handlers p = do
     go cfg ctx (WithContext item inner) = do
       (a, _) <- go cfg (ctx <> [item]) inner
       pure (a, ctx)
-    go cfg ctx (Prompt :: PromptT m b) = do
+    go cfg ctx (PromptSingle :: PromptT m b) = do
       let prx = Proxy @b
           typeDesc = promptDescription prx
           schema = schemaWithDefs prx
