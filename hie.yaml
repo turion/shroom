@@ -7,13 +7,19 @@ cradle:
       component: "shroom:test:shroom-test"
 
     - path: "test"
-      component: "shroom:test:shroom-test-integration"
+      component: "shroom:test:shroom-test-integration-claude"
 
     - path: "test"
       component: "shroom:test:shroom-test-integration-ollama"
 
     - path: "test"
       component: "shroom:test:shroom-test-conference"
+
+    - path: "test"
+      component: "shroom:test:shroom-test-celebrity"
+
+    - path: "test"
+      component: "shroom:test:shroom-test-web-tools"
 
     - path: "app/Main.hs"
       component: "shroom:exe:shroom-dev"
@@ -26,3 +32,15 @@ cradle:
 
     - path: "test/ConferenceTypes.hs"
       component: "shroom:exe:shroom-dev"
+
+    - path: "app/Claude.hs"
+      component: "shroom:exe:shroom-conference-claude"
+
+    - path: "test/Claude.hs"
+      component: "shroom:exe:shroom-conference-claude"
+
+    - path: "app/ConferenceTypes.hs"
+      component: "shroom:exe:shroom-conference-claude"
+
+    - path: "test/ConferenceTypes.hs"
+      component: "shroom:exe:shroom-conference-claude"
