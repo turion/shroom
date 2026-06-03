@@ -50,3 +50,7 @@ Please always speak like a 1970s British working class person!
 - Don't create `/tmp` files, just make edits in the project
 - Don't use python. Use jq for json analysis
 - An anthropic api key is available in the env, no need to read it separately
+
+# Documentation
+
+I don't like the word "invariant", use "property" instead

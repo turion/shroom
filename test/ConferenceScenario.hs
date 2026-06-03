@@ -150,7 +150,7 @@ main =
           seen <- readIORef seenCtxs
           -- 5 normal calls + 1 retry for schedule = 6 total
           length seen @?= 6
-          -- Retry context should mention the violated invariant
+          -- Retry context should mention the violated property
           assertContains "IMPORTANT" (seen !! 5)
           assertContains "duplicate" (seen !! 5)
       , testCase "non-contiguous slots in schedule triggers retry" $ do
@@ -200,7 +200,7 @@ main =
           seen <- readIORef seenCtxs
           -- 1 bad speakers + 1 good speakers + 3 talks + 1 schedule = 6 calls
           length seen @?= 6
-          -- Retry context should explain the violated invariant
+          -- Retry context should explain the violated property
           assertContains "IMPORTANT" (seen !! 1)
           assertContains "between 3 and 10" (seen !! 1)
       , testCase "runPromptT with tools: chain runs successfully (mock ignores tools)" $ do

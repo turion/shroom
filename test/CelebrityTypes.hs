@@ -37,8 +37,8 @@ import Data.Universe.Class (Universe)
 
 -- shroom
 import Control.Monad.Prompt
-import Control.Monad.Prompt.TH (deriveDescribeType)
-import Data.Describe
+import Control.Monad.Prompt.TH (deriveDescribable)
+import Data.Shroom.Class
 
 -- * Types
 
@@ -70,21 +70,25 @@ data CelebrityFactProperty
   | CelebrityFactTriviaNotEmpty
   deriving (Bounded, Enum, Universe, Eq, Ord, Show)
 
-$(pure [])
+$(deriveDescribable ''CelebrityList)
 
-instance Describe CelebrityList where
+instance Surveyable CelebrityList where
   type Property CelebrityList = CelebrityListProperty
-  describeType = $(deriveDescribeType ''CelebrityList)
   describeProperties _ CelebrityListHasThree = Just "The list must contain exactly 3 celebrity names."
   propertyHolds cl CelebrityListHasThree = length cl.celebrities == 3
 
-instance Describe CelebrityFact where
+deriving via DescriptionPrompt CelebrityList instance Promptable CelebrityList
+
+$(deriveDescribable ''CelebrityFact)
+
+instance Surveyable CelebrityFact where
   type Property CelebrityFact = CelebrityFactProperty
-  describeType = $(deriveDescribeType ''CelebrityFact)
   describeProperties _ CelebrityFactNameNotEmpty  = Just "The celebrity name must not be empty."
   describeProperties _ CelebrityFactTriviaNotEmpty = Just "The trivia fact must not be empty."
   propertyHolds cf CelebrityFactNameNotEmpty   = not (T.null cf.celebrity)
   propertyHolds cf CelebrityFactTriviaNotEmpty = not (T.null cf.triviaFact)
+
+deriving via DescriptionPrompt CelebrityFact instance Promptable CelebrityFact
 
 -- * Prompt chain
 

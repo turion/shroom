@@ -54,6 +54,7 @@ common opts
 
   default-extensions:
     DefaultSignatures
+    DerivingVia
     OverloadedLists
     OverloadedRecordDot
     OverloadedStrings
@@ -69,7 +70,7 @@ library
     Control.Monad.Prompt.TH
     Control.Monad.Prompt.Tool
     Control.Monad.Prompt.Tool.Web
-    Data.Describe
+    Data.Shroom.Class
 
   other-modules:
     Control.Monad.Prompt.Schema

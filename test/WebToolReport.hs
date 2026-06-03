@@ -40,8 +40,8 @@ import Data.Universe.Class (Universe)
 
 -- shroom
 import Control.Monad.Prompt (PromptT, context, prompt)
-import Control.Monad.Prompt.Tool (IsTool, toolName)
-import Data.Describe (Describe (..))
+import Control.Monad.Prompt.Tool (Toolable, toolName)
+import Data.Shroom.Class (Describable (..), DescriptionPrompt, Promptable, Surveyable (..))
 
 -- * Types
 
@@ -79,9 +79,7 @@ data AllToolsTested = AllToolsTested
   deriving stock (Bounded, Enum, Eq, Ord, Show)
   deriving anyclass (Universe)
 
-instance (SListI tools, All IsTool tools) => Describe (WebToolReport tools) where
-  type Property (WebToolReport tools) = AllToolsTested
-
+instance (SListI tools, All Toolable tools) => Describable (WebToolReport tools) where
   describeType _ =
     "A report of tool tests. "
       <> "Call each available tool with a reasonable test input. "
@@ -94,6 +92,9 @@ instance (SListI tools, All IsTool tools) => Describe (WebToolReport tools) wher
       <> "]}. "
       <> "Example with one failure: {\"results\": [{\"resultToolName\": \"some_tool\", \"resultStatus\": \"HTTP 404: not found\"}]}"
 
+instance (SListI tools, All Toolable tools) => Surveyable (WebToolReport tools) where
+  type Property (WebToolReport tools) = AllToolsTested
+
   describeProperties _ AllToolsTested =
     Just $
       "The results list must contain exactly one entry per tool: "
@@ -103,15 +104,17 @@ instance (SListI tools, All IsTool tools) => Describe (WebToolReport tools) wher
     let names = fmap resultToolName (results r)
      in all (`elem` names) (expectedNames @tools)
 
--- | Extract the tool names for a type-level list of 'IsTool' types.
+deriving via DescriptionPrompt (WebToolReport tools) instance (SListI tools, All Toolable tools, Typeable tools) => Promptable (WebToolReport tools)
+
+-- | Extract the tool names for a type-level list of 'Toolable' types.
 expectedNames ::
   forall tools.
-  (SListI tools, All IsTool tools) =>
+  (SListI tools, All Toolable tools) =>
   [Text]
 expectedNames =
-  hcollapse (hcpure (Proxy @IsTool) nameK :: NP (K Text) tools)
+  hcollapse (hcpure (Proxy @Toolable) nameK :: NP (K Text) tools)
   where
-    nameK :: forall t. (IsTool t) => K Text t
+    nameK :: forall t. (Toolable t) => K Text t
     nameK = K (toolName (Proxy @t))
 
 -- * Chain
@@ -122,7 +125,7 @@ to record success\/failure per tool, so no extra context is needed.
 -}
 webToolReportChain ::
   forall tools m.
-  (Monad m, SListI tools, All IsTool tools, Typeable tools) =>
+  (Monad m, SListI tools, All Toolable tools, Typeable tools) =>
   PromptT m (WebToolReport tools)
 webToolReportChain = do
   context "You are a tool-testing assistant. Your job is to call each available tool exactly once with a reasonable test input, observe the result, then return a JSON report."

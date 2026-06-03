@@ -34,7 +34,6 @@ module ConferenceTypes (
 -- base
 import Control.Applicative (Alternative (..))
 import Data.List (nub)
-import Data.Void (Void)
 import GHC.Generics (Generic)
 
 -- text
@@ -55,9 +54,9 @@ import Data.Universe.Class (Universe)
 
 -- shroom
 import Control.Monad.Prompt
-import Control.Monad.Prompt.TH (deriveDescribeType)
-import Control.Monad.Prompt.Tool (IsTool (..), ToolHandler (..))
-import Data.Describe
+import Control.Monad.Prompt.TH (deriveDescribable)
+import Control.Monad.Prompt.Tool (Toolable (..), ToolHandler (..))
+import Data.Shroom.Class
 
 -- * Types
 
@@ -167,22 +166,25 @@ data ScheduleProperty
   | ScheduleStartsAtNine
   deriving (Bounded, Enum, Universe, Eq, Ord, Show)
 
--- We need a new declaration group so TH can reify the types defined above.
-$(pure [])
+$(deriveDescribable ''SpeakerName)
 
-instance Describe SpeakerName where
-  type Property SpeakerName = Void
-  describeType = $(deriveDescribeType ''SpeakerName)
+instance Surveyable SpeakerName
 
-instance Describe Speakers where
+deriving via DescriptionPrompt SpeakerName instance Promptable SpeakerName
+
+$(deriveDescribable ''Speakers)
+
+instance Surveyable Speakers where
   type Property Speakers = SpeakersProperty
-  describeType = $(deriveDescribeType ''Speakers)
   describeProperties _ SpeakersBetween3And10 = Just "The list must contain between 3 and 10 speakers (inclusive)."
   propertyHolds s SpeakersBetween3And10 = let n = length (speakers s) in n >= 3 && n <= 10
 
-instance Describe Speaker where
+deriving via DescriptionPrompt Speakers instance Promptable Speakers
+
+$(deriveDescribable ''Speaker)
+
+instance Surveyable Speaker where
   type Property Speaker = SpeakerProperty
-  describeType = $(deriveDescribeType ''Speaker)
   describeProperties _ SpeakerFirstNameNotEmpty = Just "The speaker's first name must not be empty."
   describeProperties _ SpeakerLastNameNotEmpty = Just "The speaker's last name must not be empty."
   describeProperties _ SpeakerAffiliationNotEmpty = Just "The speaker's affiliation must not be empty."
@@ -190,23 +192,32 @@ instance Describe Speaker where
   propertyHolds s SpeakerFirstNameNotEmpty = not (T.null (firstName (speakerName s)))
   propertyHolds s SpeakerAffiliationNotEmpty = not (T.null (speakerAffiliation s))
 
-instance Describe Talk where
+deriving via DescriptionPrompt Speaker instance Promptable Speaker
+
+$(deriveDescribable ''Talk)
+
+instance Surveyable Talk where
   type Property Talk = TalkProperty
-  describeType = $(deriveDescribeType ''Talk)
   describeProperties _ TalkTitleNotEmpty = Just "The talk title must not be empty."
   describeProperties _ TalkSpeakerNameNotEmpty = Just "The speaker's first and last name must not be empty."
   propertyHolds t TalkTitleNotEmpty = not (T.null (talkTitle t))
   propertyHolds t TalkSpeakerNameNotEmpty = not (T.null (firstName (talkSpeakerName t))) && not (T.null (lastName (talkSpeakerName t)))
 
-instance Describe Slot where
+deriving via DescriptionPrompt Talk instance Promptable Talk
+
+$(deriveDescribable ''Slot)
+
+instance Surveyable Slot where
   type Property Slot = SlotProperty
-  describeType = $(deriveDescribeType ''Slot)
   describeProperties _ SlotStartBeforeEnd = Just "The slot's start time must be strictly before its end time."
   propertyHolds s SlotStartBeforeEnd = slotStart s < slotEnd s
 
-instance Describe ConferenceSchedule where
+deriving via DescriptionPrompt Slot instance Promptable Slot
+
+$(deriveDescribable ''ConferenceSchedule)
+
+instance Surveyable ConferenceSchedule where
   type Property ConferenceSchedule = ScheduleProperty
-  describeType = $(deriveDescribeType ''ConferenceSchedule)
   describeProperties _ ScheduleHasAtLeastOneSlot = Just "The schedule must contain at least one slot."
   describeProperties _ ScheduleSlotsAreContiguous = Just "Slots must be contiguous: each slot's end time must equal the next slot's start time."
   describeProperties _ ScheduleEachTalkOccursOnce = Just "Each talk must appear in exactly one slot (no duplicate talks)."
@@ -223,6 +234,8 @@ instance Describe ConferenceSchedule where
     case scheduleSlots s of
       [] -> False
       (first : _) -> utctDayTime (slotStart first) == secondsToDiffTime (7 * 3600)
+
+deriving via DescriptionPrompt ConferenceSchedule instance Promptable ConferenceSchedule
 
 -- * Prompt chain
 
@@ -289,7 +302,7 @@ conferenceChain = do
             talks
         )
 
-  -- Try a short prompt first (cheap); if the model can't satisfy the type invariants
+  -- Try a short prompt first (cheap); if the model can't satisfy the type properties
   -- after retries, fall back to the detailed prompt that explicitly spells them out.
   schedule <-
     promptWith @ConferenceSchedule
@@ -313,12 +326,13 @@ newtype SpeakerLookup = SpeakerLookup
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema)
 
-$(pure [])
+$(deriveDescribable ''SpeakerLookup)
 
-instance Describe SpeakerLookup where
-  describeType = $(deriveDescribeType ''SpeakerLookup)
+instance Surveyable SpeakerLookup
 
-instance IsTool SpeakerLookup where
+deriving via DescriptionPrompt SpeakerLookup instance Promptable SpeakerLookup
+
+instance Toolable SpeakerLookup where
   toolDescription _ = Just "Look up a speaker's background, research interests, and past talks."
 
 -- | Canned handler: returns one of 3 bios based on name length mod 3.

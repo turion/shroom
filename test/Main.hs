@@ -21,7 +21,7 @@ import Test.Tasty.HUnit (assertFailure, testCase, (@?=))
 import Control.Monad.Prompt
 import Control.Monad.Prompt.Ollama (schemaToFormatAndUnwrap, unwrapResult)
 import Control.Monad.Prompt.Tool.Web
-import Data.Describe (Describe (..), description)
+import Data.Shroom.Class (Describable (..), Surveyable (..), description)
 
 -- test
 import TestUtils
@@ -64,12 +64,12 @@ main =
               -- Should contain type description
               assertContains "Produce a value of the following type:" d
               -- Should NOT contain the properties header
-              assertNotContains "The following invariants MUST hold in your response:" d
+              assertNotContains "The following properties MUST hold in your response:" d
               -- Should contain the example
               assertContains "Example valid JSON responses:" d
           , testCase "properties section present when Property a has constructors (User)" $ do
               let d = description (Proxy @User)
-              assertContains "The following invariants MUST hold in your response:" d
+              assertContains "The following properties MUST hold in your response:" d
               assertContains "The email address is not empty." d
           ]
       , testGroup

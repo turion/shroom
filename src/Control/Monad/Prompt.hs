@@ -69,13 +69,13 @@ import Data.SOP (All, NP (..), SListI)
 
 -- shroom (internal)
 import Control.Monad.Prompt.Schema (ToolDef, ToolDispatcher, schemaWithDefs)
-import Control.Monad.Prompt.Tool (IsTool, ToolHandler, makeDispatcher, toolDefsRaw)
+import Control.Monad.Prompt.Tool (ToolHandler, Toolable, makeDispatcher, toolDefsRaw)
 
 -- universe-base
 import Data.Universe.Class (universe)
 
 -- shroom
-import Data.Describe
+import Data.Shroom.Class
 
 -- * Context items
 
@@ -107,7 +107,7 @@ data PromptT m a where
   -}
   WithContext :: ContextItem -> PromptT m a -> PromptT m a
   -- | Request a typed value from the model using the accumulated context.
-  Prompt :: (ToSchema a, FromJSON a, Describe a) => PromptT m a
+  Prompt :: (ToSchema a, FromJSON a, Promptable a) => PromptT m a
   -- | Embed a pure value into 'PromptT' without any LLM call or effect.
   Pure :: a -> PromptT m a
   -- | Lift an @m@ action into 'PromptT'. Supports 'MonadTrans' and 'MonadIO'.
@@ -177,11 +177,11 @@ context txt = AddContext (UserMessage txt)
 {- | Request a value of type @a@ from the model.
 The model sees the accumulated context plus the type description.
 -}
-prompt :: (ToSchema a, FromJSON a, Describe a) => PromptT m a
+prompt :: (ToSchema a, FromJSON a, Promptable a) => PromptT m a
 prompt = Prompt
 
 -- | Like 'prompt', but with an extra piece of context scoped to this request only.
-promptWith :: (ToSchema a, FromJSON a, Describe a) => Text -> PromptT m a
+promptWith :: (ToSchema a, FromJSON a, Promptable a) => Text -> PromptT m a
 promptWith txt = WithContext (UserMessage txt) Prompt
 
 {- | Run two independent prompts in parallel, returning both results.
@@ -323,7 +323,7 @@ Run the result with 'runPromptResultTWith'.
 -}
 runPromptT ::
   forall tools cfg m a.
-  (LLMBackend cfg, MonadUnliftIO m, SListI tools, All IsTool tools) =>
+  (LLMBackend cfg, MonadUnliftIO m, SListI tools, All Toolable tools) =>
   PromptConfig ->
   -- | Available tools; pass 'Nil' for none.
   NP ToolHandler tools ->
@@ -345,7 +345,7 @@ runPromptT promptCfg handlers p = do
       pure (a, ctx)
     go cfg ctx (Prompt :: PromptT m b) = do
       let prx = Proxy @b
-          typeDesc = description prx
+          typeDesc = promptDescription prx
           schema = schemaWithDefs prx
           checkProps a =
             [ desc
@@ -445,10 +445,10 @@ runPromptT promptCfg handlers p = do
                                 ctx
                                   <> [ AssistantMessage rawTxt
                                      , UserMessage $
-                                         "IMPORTANT: Your previous response was rejected because it violated required invariants.\n"
-                                           <> "Violated invariants:\n"
+                                         "IMPORTANT: Your previous response was rejected because it violated required properties.\n"
+                                           <> "Violated properties:\n"
                                            <> T.unlines (fmap ("- " <>) failDescs)
-                                           <> "\nGenerate a new, corrected JSON response that satisfies ALL invariants listed above."
+                                           <> "\nGenerate a new, corrected JSON response that satisfies ALL properties listed above."
                                      ]
                           attempt cfg retryCtx typeDesc schema checkProps totalRetries (retriesLeft - 1)
 

@@ -2,36 +2,41 @@
 
 > *Type-safe AI hallucinations for Haskell.*
 
-LLMs hallucinate. That's basically their whole thing. But with **shroom**, at
-least your hallucinations will be well-typed, `FromJSON`-parsed, and validated
-against your invariants. If the model makes something up, it'll be a *properly
-structured* something.
+LLMs hallucinate.
+But with **shroom**, at least your hallucinations will be well-typed and guaranteed to fulfill your specs.
+If the model makes something up, it'll be a properly structured something.
 
 ## What is it?
 
-**shroom** is a small Haskell library for structured LLM prompting. You write a
+**shroom** is a Haskell library for structured LLM prompting. You write a
 monadic program using `context` and `prompt`, pick a backend
 (Anthropic Claude or a local Ollama model), and get back a typed Haskell value
 — or a `Text` error explaining what went wrong.
 
 ```haskell
+-- | A user with a name and an email address.
 data User = User { userName :: Text, userEmail :: Text }
-  deriving (Generic, ToJSON, FromJSON, ToSchema)
+  deriving (Generic, ToJSON, FromJSON, ToSchema, Show)
 
-instance Describe User where
-  describeType = $(deriveDescribeType ''User)
+$(deriveDescribable ''User)
+
+data UserProperty = UserEmailHasAtSign
+  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+
+instance Surveyable User where
+  type Property User = UserProperty
+  describeProperties _ UserEmailHasAtSign = Just "The email address must contain an '@' character."
+  propertyHolds user UserEmailHasAtSign = T.elem '@' (userEmail user)
+
+deriving via DescriptionPrompt User instance Promptable User
+
+main = do
+  user <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig $ do
+    context "Give me a user starting with A"
+    prompt @User
+  print user -- Might print User { userName = "Alice", userEmail = "alice@example.org" } or something else entirely
 ```
-
-```haskell
-result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig $ do
-  context "The user's name is Alice and her email is alice@example.com."
-  prompt @User
-
--- result :: Either Text User
-```
-
-The model hallucinates a `User`. The library parses it. You get a `Right User`.
-Everyone wins.
+The model hallucinates something. `shroom` ensures it's a type-checking `User`.
 
 ## Backends
 
@@ -41,16 +46,29 @@ Everyone wins.
 | Ollama (local) | `OllamaBackendConfig` | `Control.Monad.Prompt.Ollama` | Free, offline, slower; defaults to `llama3.2:3b` |
 | File mock | `FileMockConfig` | `Control.Monad.Prompt.FileMock` | Reads canned JSON responses from files; useful for dev/testing |
 
-## The `Describe` typeclass
+## The typeclass hierarchy
 
-`Describe` lets you attach three things to a type:
+shroom uses three typeclasses that form a hierarchy:
 
-- **`describeType`** — a one-sentence description sent to the model
-- **`propertyHolds`** / **`describeProperties`** — invariants to validate after parsing
-- **`examples`** — sample values to include in the prompt
+```
+Describable          — describeType: one sentence (auto-derived from Haddock)
+    └── Surveyable   — Property, propertyHolds, describeProperties, examples (user-filled)
+            └── Promptable (+ ToSchema)  — promptDescription: how to render the full prompt
+```
 
-Use `deriveDescribeType` from `Control.Monad.Prompt.TH` to derive
-`describeType` automatically from your Haddock comment.
+- **`Describable`** — attach a one-sentence description to a type.
+  Use `$(deriveDescribable ''MyType)` from `Control.Monad.Prompt.TH` to derive
+  `describeType` automatically from your Haddock comment.
+
+- **`Surveyable`** — the main user-filled class. Override what you need:
+  - `Property` — an enumeration of properties (default: none)
+  - `propertyHolds` / `describeProperties` — properties to validate after parsing
+  - `examples` — sample values to include in the prompt
+
+- **`Promptable`** — determines how the full prompt fragment is rendered.
+  The default (`promptDescription = description`) renders the type description,
+  properties, and examples annotated with JSON field types.
+  Override `promptDescription` for fully custom prompt text.
 
 ## Prompt chaining
 
@@ -60,9 +78,9 @@ accumulated context:
 
 ```haskell
 result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig $ do
-  context "Alice is 30 years old."
+  context "The user Alice is an expert programmer:"
   user  <- prompt @User                                         -- first LLM call
-  score <- promptWith @Score "Rate this user's awesomeness."   -- second LLM call, still sees "Alice is 30..."
+  score <- promptWith @Score "Rate this user's awesomeness."   -- second LLM call, still sees "The user Alice is an expert programmer:"
   pure (user, score)
 ```
 
@@ -73,12 +91,19 @@ Independent prompts can run concurrently. The `Applicative` instance uses
 the same time:
 
 ```haskell
--- Two independent prompts run concurrently:
-(user, score) <- promptPar (prompt @User) (prompt @Score)
+-- Two independent prompts run concurrently — plain Applicative:
+(user, score) <- (,) <$> prompt @User <*> prompt @Score
 
 -- A list of independent prompts, all in parallel:
-talks <- promptsParallel
+talks <- sequenceA
   [ promptWith @Talk ("Speaker: " <> speakerName spk) | spk <- speakers ]
+```
+
+`promptPar` and `promptsParallel` are convenience aliases for the above:
+
+```haskell
+(user, score) <- promptPar (prompt @User) (prompt @Score)
+talks <- promptsParallel [ promptWith @Talk ... | spk <- speakers ]
 ```
 
 Context added *inside* a parallel branch is local to that branch — it does not
@@ -127,7 +152,7 @@ declaration needed. Field names can embed human-readable descriptions
 (`"The character's personal arc": Text`), sum types model tool selection, and
 `import prompt` lets a model generate Grace expressions (recursive prompt chains).
 
-Grace is a proof-of-concept research prototype (not production-ready). It lives on
+Grace is a proof-of-concept research prototype. It lives on
 the [`gabriella/llm`](https://github.com/Gabriella439/grace) branch of the Grace
 repository.
 
@@ -141,7 +166,7 @@ The tradeoff:
 |---|---|---|
 | Schema source | Inferred from usage | Explicit `ToSchema` instance |
 | Sum-type routing | ✓ (inferred) | ✓ (`prompt @SumType`, then `case`) |
-| Property validation + retry | — | ✓ (`Describe` / `propertyHolds`) |
+| Property validation + retry | — | ✓ (`Surveyable` / `propertyHolds`) |
 | Parallel prompts | — | ✓ (`promptPar`, `promptsParallel`) |
 | Multiple LLM backends | — | ✓ (Claude, Ollama, FileMock) |
 | Code generation | ✓ | — |
@@ -151,7 +176,7 @@ The tradeoff:
 | `FromJSON` / schema must agree | n/a | ✓ (not enforced automatically — must be consistent) |
 
 The main thing shroom does *not* have from Grace is automatic schema inference —
-you write `ToSchema` and `Describe` instances yourself (or derive them). In
+you write `ToSchema` and `Describable`/`Surveyable` instances yourself (or derive them). In
 exchange you get property validation, automatic retry with feedback, and backends
 that actually work today.
 
@@ -161,7 +186,7 @@ that actually work today.
 
 | | **intelli-monad** | **shroom** |
 |---|---|---|
-| Schema derivation | `Generic` + custom `GSchema` (no TH) | `ToSchema` from `openapi3` + `Describe` |
+| Schema derivation | `Generic` + custom `GSchema` (no TH) | `ToSchema` from `openapi3` + `Describable` |
 | Sequential prompt chaining | ✓ | ✓ |
 | Parallel prompts | — | ✓ `<*>` / `promptPar` via `concurrently` |
 | Scoped context | — (all context globally persistent) | ✓ `WithContext` — does not leak |
@@ -177,7 +202,7 @@ that actually work today.
 | Test coverage | Minimal | 37 unit tests + integration tests |
 | Hackage | ✓ | — (not yet) |
 
-**The Haddock advantage.** shroom's `deriveDescribeType` (a TH splice) extracts the Haddock comment and all record-field docs from the type declaration at compile time, and `annotateFieldTypes` annotates each field with its JSON type from the OpenAPI schema. The result: your documentation *is* your prompt engineering — they cannot drift. intelli-monad's `HasFunctionObject` requires manually written string literals for descriptions, entirely separate from any comments.
+**The Haddock advantage.** shroom's `deriveDescribable` (a TH splice) extracts the Haddock comment and all record-field docs from the type declaration at compile time, and `annotateFieldTypes` annotates each field with its JSON type from the OpenAPI schema. The result: your documentation *is* your prompt engineering — they cannot drift. intelli-monad's `HasFunctionObject` requires manually written string literals for descriptions, entirely separate from any comments.
 
 **Schema / `FromJSON` consistency.** Both libraries require that the schema sent to the LLM and the `FromJSON` instance used to parse the response agree on the wire format — the schema instructs the LLM what to produce, and `FromJSON` deserialises what it produces. Neither library enforces this automatically. A custom `FromJSON` that expects a different encoding to what the schema describes will silently fail to parse.
 
@@ -186,11 +211,11 @@ that actually work today.
 shroom follows [Anthropic's prompt chaining recommendations](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/chain-prompts):
 
 - **One prompt, one type** — each `prompt @T` call targets a single type.
-- **Explicit context passing** — `context` for global state, `promptWith` for local.
+- **Explicit context passing** — `context` for global state, `promptWith`/`withContext` for local.
 - **Validation checkpoints** — `propertyHolds` validates each response before
   the chain continues.
 - **Self-correction** — on failure the model is re-prompted with the invalid response
-  and a description of the violated invariants.
+  and a description of the violated properties.
 - **Typed handoffs** — every step in the chain produces a well-typed Haskell value.
 
 **Branching and routing** are fully supported: `prompt @SumType` returns a typed

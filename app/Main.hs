@@ -8,7 +8,7 @@ To use:
 
 1. Run @cabal run shroom-dev@ to see the prompts and results.
 2. Edit @dev\/mock-responses\/response-NNN.json@ to change what the mock LLM returns.
-3. Iterate on prompt quality in @Data.Describe@ or @Control.Monad.Prompt@.
+3. Iterate on prompt quality in @Data.Shroom.Class@ or @Control.Monad.Prompt@.
 -}
 module Main (main) where
 

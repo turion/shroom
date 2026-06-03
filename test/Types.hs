@@ -24,9 +24,8 @@ import Data.Set qualified as S
 import Data.Universe.Class (Universe)
 
 -- shroom
-
-import Control.Monad.Prompt.TH (deriveDescribeType)
-import Data.Describe
+import Control.Monad.Prompt.TH (deriveDescribable)
+import Data.Shroom.Class
 
 -- | A user with a name and an email address.
 data User = User
@@ -52,21 +51,29 @@ data Coordinate = Coordinate
   deriving (Generic, ToJSON, FromJSON, ToSchema)
 
 -- | A property of a user that should hold.
-data UserProperty = UserEmailNotEmpty
+data UserProperty = UserEmailNotEmpty | UserEmailHasAtSign
   deriving (Bounded, Enum, Universe, Eq, Ord, Show)
 
--- We need a new declaration group so TH can reify the types defined above.
-$(pure [])
+$(deriveDescribable ''User)
 
-instance Describe User where
+instance Surveyable User where
   type Property User = UserProperty
-  describeType = $(deriveDescribeType ''User)
   describeProperties _ UserEmailNotEmpty = Just "The email address is not empty."
+  describeProperties _ UserEmailHasAtSign = Just "The email address must contain an '@' character."
   propertyHolds user UserEmailNotEmpty = not (T.null (userEmail user))
+  propertyHolds user UserEmailHasAtSign = T.elem '@' (userEmail user)
 
-instance Describe Counter where
-  describeType = $(deriveDescribeType ''Counter)
+deriving via DescriptionPrompt User instance Promptable User
+
+$(deriveDescribable ''Counter)
+
+instance Surveyable Counter where
   examples _ = S.singleton (Counter 0)
 
-instance Describe Coordinate where
-  describeType = $(deriveDescribeType ''Coordinate)
+deriving via DescriptionPrompt Counter instance Promptable Counter
+
+$(deriveDescribable ''Coordinate)
+
+instance Surveyable Coordinate
+
+deriving via DescriptionPrompt Coordinate instance Promptable Coordinate

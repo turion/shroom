@@ -4,7 +4,6 @@ module Main (main) where
 
 -- base
 import Data.IORef
-import Data.Void (Void)
 import GHC.Generics (Generic)
 import System.Environment (lookupEnv)
 
@@ -28,7 +27,7 @@ import Data.SOP (NP (..))
 -- shroom
 import Control.Monad.Prompt
 import Control.Monad.Prompt.Anthropic
-import Control.Monad.Prompt.Tool (IsTool (..), ToolHandler (..))
+import Control.Monad.Prompt.Tool (ToolHandler (..), Toolable (..))
 import Control.Monad.Prompt.Tool.Web (
   DuckDuckGoSearch,
   WebFetch,
@@ -37,7 +36,7 @@ import Control.Monad.Prompt.Tool.Web (
   webFetchHandler,
   wikipediaSearchHandler,
  )
-import Data.Describe (Describe (..))
+import Data.Shroom.Class (Describable (..), DescriptionPrompt, Promptable, Surveyable (..))
 
 -- test
 import ConferenceTypes
@@ -50,11 +49,14 @@ newtype FakeBrokenSearch = FakeBrokenSearch {brokenQuery :: Text}
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema)
 
-instance Describe FakeBrokenSearch where
-  type Property FakeBrokenSearch = Void
+instance Describable FakeBrokenSearch where
   describeType _ = "A search query that always fails with a 404 error."
 
-instance IsTool FakeBrokenSearch where
+instance Surveyable FakeBrokenSearch
+
+deriving via DescriptionPrompt FakeBrokenSearch instance Promptable FakeBrokenSearch
+
+instance Toolable FakeBrokenSearch where
   toolDescription _ = Just "Always returns an HTTP 404 error."
 
 fakeBrokenSearchHandler :: ToolHandler FakeBrokenSearch

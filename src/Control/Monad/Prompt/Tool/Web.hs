@@ -72,9 +72,9 @@ import Data.Universe.Class (Universe)
 
 -- shroom
 
-import Control.Monad.Prompt.TH (deriveDescribeType)
-import Control.Monad.Prompt.Tool (IsTool (..), ToolHandler (..))
-import Data.Describe (Describe (..))
+import Control.Monad.Prompt.TH (deriveDescribable)
+import Control.Monad.Prompt.Tool (ToolHandler (..), Toolable (..))
+import Data.Shroom.Class (DescriptionPrompt, Promptable, Surveyable (..))
 
 -- * WebFetch
 
@@ -88,9 +88,6 @@ newtype WebFetch = WebFetch
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema)
 
--- We need a new declaration group so TH can reify the type defined above.
-$(pure [])
-
 data WebFetchProperty
   = -- | Must start with http:// or https://
     WebFetchUrlScheme
@@ -98,9 +95,10 @@ data WebFetchProperty
     WebFetchUrlSafeChars
   deriving (Bounded, Enum, Universe, Eq, Ord, Show)
 
-instance Describe WebFetch where
+$(deriveDescribable ''WebFetch)
+
+instance Surveyable WebFetch where
   type Property WebFetch = WebFetchProperty
-  describeType = $(deriveDescribeType ''WebFetch)
   describeProperties _ WebFetchUrlScheme =
     Just "The URL must start with \"https://\" or \"http://\"."
   describeProperties _ WebFetchUrlSafeChars =
@@ -115,7 +113,9 @@ instance Describe WebFetch where
       , WebFetch "https://en.wikipedia.org/wiki/Haskell_%28programming_language%29"
       ]
 
-instance IsTool WebFetch where
+deriving via DescriptionPrompt WebFetch instance Promptable WebFetch
+
+instance Toolable WebFetch where
   toolDescription _ = Just "Returns up to 2000 characters of the page body."
 
 -- | Perform an HTTP GET, strip HTML tags, truncate to 2000 characters.
@@ -164,8 +164,7 @@ newtype DuckDuckGoSearch = DuckDuckGoSearch
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema)
 
--- We need a new declaration group so TH can reify the type defined above.
-$(pure [])
+$(deriveDescribable ''DuckDuckGoSearch)
 
 data DuckDuckGoSearchProperty
   = -- | Must not be empty
@@ -174,9 +173,8 @@ data DuckDuckGoSearchProperty
     DuckDuckGoSearchQuerySafeChars
   deriving (Bounded, Enum, Universe, Eq, Ord, Show)
 
-instance Describe DuckDuckGoSearch where
+instance Surveyable DuckDuckGoSearch where
   type Property DuckDuckGoSearch = DuckDuckGoSearchProperty
-  describeType = $(deriveDescribeType ''DuckDuckGoSearch)
   describeProperties _ DuckDuckGoSearchQueryNotEmpty =
     Just "The search query must not be empty."
   describeProperties _ DuckDuckGoSearchQuerySafeChars =
@@ -190,7 +188,9 @@ instance Describe DuckDuckGoSearch where
       , DuckDuckGoSearch "Simon Peyton Jones"
       ]
 
-instance IsTool DuckDuckGoSearch where
+deriving via DescriptionPrompt DuckDuckGoSearch instance Promptable DuckDuckGoSearch
+
+instance Toolable DuckDuckGoSearch where
   toolDescription _ = Just "DuckDuckGo Instant Answer: returns a short abstract for well-known named entities (people, places) that have a Wikipedia article. Returns no result for vague or multi-word queries — use wikipedia_search instead."
 
 -- | DuckDuckGo Instant Answer API response (partial).
@@ -253,9 +253,6 @@ newtype WikipediaSearch = WikipediaSearch
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema)
 
--- We need a new declaration group so TH can reify the type defined above.
-$(pure [])
-
 data WikipediaSearchProperty
   = -- | Must not be empty
     WikipediaSearchQueryNotEmpty
@@ -263,9 +260,10 @@ data WikipediaSearchProperty
     WikipediaSearchQuerySafeChars
   deriving (Bounded, Enum, Universe, Eq, Ord, Show)
 
-instance Describe WikipediaSearch where
+$(deriveDescribable ''WikipediaSearch)
+
+instance Surveyable WikipediaSearch where
   type Property WikipediaSearch = WikipediaSearchProperty
-  describeType = $(deriveDescribeType ''WikipediaSearch)
   describeProperties _ WikipediaSearchQueryNotEmpty =
     Just "The search query must not be empty."
   describeProperties _ WikipediaSearchQuerySafeChars =
@@ -279,7 +277,9 @@ instance Describe WikipediaSearch where
       , WikipediaSearch "functional programming"
       ]
 
-instance IsTool WikipediaSearch where
+deriving via DescriptionPrompt WikipediaSearch instance Promptable WikipediaSearch
+
+instance Toolable WikipediaSearch where
   toolDescription _ = Just "Returns up to 5 Wikipedia article titles and URLs matching the query."
 
 {- | Query the Wikipedia OpenSearch API, return article titles and URLs.

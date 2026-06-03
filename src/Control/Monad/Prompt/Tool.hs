@@ -5,13 +5,15 @@ Define tools as Haskell types, provide handlers, and pass them to
 'prompt' \/ 'promptWith' if the model requests them.
 
 @
+-- | A web search query.
 data MySearch = MySearch { query :: Text }
   deriving (Generic, ToJSON, FromJSON, ToSchema)
 
-instance Describe MySearch where
-  describeType _ = "A web search query."
+\$(deriveDescribable ''MySearch)
+instance Surveyable MySearch
+instance Promptable MySearch
 
-instance IsTool MySearch where
+instance Toolable MySearch where
   toolDescription _ = Just "Returns results from the search API."
 
 mySearchHandler :: ToolHandler MySearch
@@ -50,12 +52,9 @@ import Data.SOP.NP ()
 -- shroom
 
 import Control.Monad.Prompt.Schema (ToolDef (..), schemaWithDefs)
-import Data.Describe (Describe, describeType)
-
--- openapi3
+import Data.Shroom.Class (Promptable, describeType)
 
 import Data.Functor ((<&>))
-import Data.OpenApi (ToSchema)
 
 -- * Tool typeclass
 
@@ -69,7 +68,7 @@ result back before continuing.
 
 Minimal complete definition: none — all methods have defaults.
 -}
-class (Describe t, ToSchema t, FromJSON t, Typeable t) => IsTool t where
+class (Promptable t, FromJSON t, Typeable t) => Toolable t where
   {- | Additional description appended to 'describeType' when sending tool
   metadata to the LLM.  Use this for operational details not obvious from
   the type (e.g. rate limits, return format).  'Nothing' means no extra text.
@@ -113,18 +112,18 @@ list of available tool names) or parse errors, @Right@ on success.
 -}
 makeDispatcher ::
   forall tools m.
-  (SListI tools, All IsTool tools, MonadIO m) =>
+  (SListI tools, All Toolable tools, MonadIO m) =>
   NP ToolHandler tools ->
   ToolDispatcher m
 makeDispatcher handlers name input = go handlers name input
   where
     allNames :: [Text]
-    allNames = hcollapse $ hcmap (Proxy @IsTool) extractName handlers
+    allNames = hcollapse $ hcmap (Proxy @Toolable) extractName handlers
       where
-        extractName :: forall t. (IsTool t) => ToolHandler t -> K Text t
+        extractName :: forall t. (Toolable t) => ToolHandler t -> K Text t
         extractName _ = K (toolName (Proxy @t))
 
-    go :: forall ts. (All IsTool ts) => NP ToolHandler ts -> ToolDispatcher m
+    go :: forall ts. (All Toolable ts) => NP ToolHandler ts -> ToolDispatcher m
     go Nil n _ =
       pure $ Left ("Unknown tool: " <> n <> ". Available tools: " <> T.intercalate ", " allNames)
     go (h :* rest) n inp
@@ -142,12 +141,12 @@ Passed to backends so they can register the tools with the LLM API.
 -}
 toolDefsRaw ::
   forall tools.
-  (SListI tools, All IsTool tools) =>
+  (SListI tools, All Toolable tools) =>
   NP ToolHandler tools ->
   [ToolDef]
-toolDefsRaw = hcollapse . hcmap (Proxy @IsTool) extract
+toolDefsRaw = hcollapse . hcmap (Proxy @Toolable) extract
   where
-    extract :: forall t. (IsTool t) => ToolHandler t -> K ToolDef t
+    extract :: forall t. (Toolable t) => ToolHandler t -> K ToolDef t
     extract _ =
       K
         ToolDef

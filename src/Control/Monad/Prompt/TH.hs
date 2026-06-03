@@ -1,9 +1,9 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-{- | Template Haskell utilities for deriving 'Describe' instances from Haddock
+{- | Template Haskell utilities for deriving 'Describable' instances from Haddock
 documentation comments.
 -}
-module Control.Monad.Prompt.TH (deriveDescribeType) where
+module Control.Monad.Prompt.TH (deriveDescribable, deriveDescribableExp) where
 
 -- template-haskell
 import Language.Haskell.TH
@@ -11,35 +11,70 @@ import Language.Haskell.TH
 -- text
 import Data.Text (pack)
 
-{- | Produce the 'describeType' method body for a type, using its Haddock
-documentation comment.  Use this inside a manually written
-'Describe' instance so you can also fill in the other methods:
+-- shroom
+import Data.Shroom.Class (Describable (describeType))
+
+{- | Generate a complete 'Describable' instance for a type, deriving
+'describeType' from its Haddock documentation comment.  Use this when
+you don't need to customise the description:
 
 @
 -- | A user with a name and an email address.
 data User = User { userName :: Text, userEmail :: Text }
--}
 
-{- $(pure [])
+\$(deriveDescribable ''User)
+@
 
-instance Describe User where
-  describeType = $(deriveDescribeType ''User)
+This generates:
+
+@
+instance Describable User where
+  describeType = \_ -> pack "A user with a name and an email address.\\n..."
+@
+
+To override 'describeType' manually, write the 'Describable' instance by hand.
+You can use 'deriveDescribableExp' for the body, and modify it as needed.
+
+@
+instance Describable MyType where
+  describeType = \$(deriveDescribableExp ''MyType)
 @
 
 This requires the module to be compiled with the @-haddock@ GHC flag,
 which is set automatically when using this package's build configuration.
 
-__Error__: If no Haddock documentation is found for the given type, a
-compile-time error is raised with a helpful message.
+__Error__: A compile-time error is raised if no Haddock documentation is found.
 -}
+deriveDescribable :: Name -> Q [Dec]
+deriveDescribable name = do
+  body <- deriveDescribableExp name
+  let describeTypeClause = ValD (VarP 'describeType) (NormalB body) []
+  pure
+    [ InstanceD
+        Nothing
+        []
+        (AppT (ConT ''Describable) (ConT name))
+        [describeTypeClause]
+    ]
 
-deriveDescribeType :: Name -> Q Exp
-deriveDescribeType name = do
+{- | Produce the 'describeType' method body for a type, using its Haddock
+documentation comment.  Use this inside a manually written
+'Describable' instance:
+
+@
+instance Describable MyType where
+  describeType = \$(deriveDescribableExp ''MyType)
+@
+
+Prefer 'deriveDescribable' for the common case where a full instance is needed.
+-}
+deriveDescribableExp :: Name -> Q Exp
+deriveDescribableExp name = do
   mdoc <- getDoc (DeclDoc name)
   doc <- case mdoc of
     Nothing ->
       fail $
-        "deriveDescribeType: No Haddock documentation found for '"
+        "deriveDescribable: No Haddock documentation found for '"
           <> nameBase name
           <> "'.\n"
           <> "Make sure to:\n"
