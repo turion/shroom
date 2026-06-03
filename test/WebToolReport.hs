@@ -42,7 +42,7 @@ import Data.Universe.Class (Universe)
 import Control.Monad.Prompt (PromptT, context, prompt)
 import Control.Monad.Prompt.Tool (Toolable, toolName)
 import Data.Shroom.Class (Describable (..), Surveyable (..))
-import Data.Shroom.Class.Promptable (DescriptionPrompt, Promptable)
+import Data.Shroom.Class.Promptable (Promptable)
 
 -- * Types
 
@@ -105,7 +105,7 @@ instance (SListI tools, All Toolable tools) => Surveyable (WebToolReport tools) 
     let names = fmap resultToolName (results r)
      in all (`elem` names) (expectedNames @tools)
 
-deriving via DescriptionPrompt (WebToolReport tools) instance (SListI tools, All Toolable tools, Typeable tools) => Promptable (WebToolReport tools)
+instance (SListI tools, All Toolable tools, Typeable tools) => Promptable (WebToolReport tools)
 
 -- | Extract the tool names for a type-level list of 'Toolable' types.
 expectedNames ::

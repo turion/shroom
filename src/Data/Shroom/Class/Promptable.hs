@@ -1,54 +1,80 @@
+{- | The 'Promptable' typeclass: defines the default way to request a value of
+a type from an LLM backend.
+
+@
+class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
+  prompt :: forall m. PromptT m a
+  prompt = PromptSingle
+@
+
+The default 'prompt' sends a 'PromptSingle' request, which uses 'description'
+to build the prompt text from the type's 'Surveyable' metadata.
+
+Override 'prompt' to add type-specific context, fallback logic, or any other
+custom 'PromptT' program:
+
+@
+instance Promptable MyType where
+  prompt = WithContext (UserMessage "Always prefer metric units.") PromptSingle
+@
+
+Typical usage (no override needed):
+
+@
+\$(deriveDescribable ''MyType)
+
+instance Surveyable MyType where ...
+
+deriving via DescriptionPrompt MyType instance Promptable MyType
+@
+-}
 module Data.Shroom.Class.Promptable (module Data.Shroom.Class.Promptable) where
 
 -- base
 import Data.Proxy (Proxy (..))
 
--- text
-import Data.Text (Text)
-
 -- aeson
 import Data.Aeson (FromJSON, ToJSON)
 
 -- openapi3
-import Data.OpenApi.Schema
+import Data.OpenApi (ToSchema)
 
 -- shroom
+
+import Control.Monad.Prompt.Core (PromptT (..))
 import Data.Shroom.Class
 
 -- * Promptable
 
-{- | Determines how to render the full prompt description for a type.
+{- | Attach a default prompting strategy to a type.
 
-The default 'promptDescription' calls 'description', which renders:
+The single method 'prompt' is a 'PromptT' program that requests a value of
+type @a@ from the LLM.  The default implementation uses 'PromptSingle', which
+builds the prompt from 'description' (the type description, properties, and
+examples from the 'Surveyable' instance).
 
-* 'describeType' — the one-sentence description
-* properties from 'describeProperties'
-* example values from 'examples'
-* field types annotated from the OpenAPI schema
-
-Override 'promptDescription' for fully custom prompt text.
-
-Superclass: 'Surveyable' and 'ToSchema'.
+Superclasses: 'Surveyable', 'ToSchema', 'FromJSON'.
 -}
-class (Surveyable a, ToSchema a) => Promptable a where
-  {- | Render the full prompt fragment for a type, sent to the LLM alongside
-    the JSON schema.
+class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
+  {- | A 'PromptT' program that requests a value of type @a@ from the LLM.
+
+  Override to add type-specific context, fallback logic, parallel sub-prompts,
+  or any other custom behaviour.
   -}
-  promptDescription :: Proxy a -> Text
+  prompt :: forall m. PromptT m a
+  prompt = PromptSingle
 
-{- | Helper newtype for using the default description-based prompt rendering strategy.
-
-Use with `DerivingVia`:
+{- | Helper newtype for using the default description-based prompting strategy
+via @DerivingVia@.
 
 @
 data MyType = MyType { ... }
 
--- TH call: Must go first
 \$(deriveDescribable ''MyType)
 
-instance Surveyable User where
+instance Surveyable MyType where ...
 
--- Must come after TH call, therefore standalone deriving via
+-- Must come after TH call, hence standalone deriving:
 deriving via DescriptionPrompt MyType instance Promptable MyType
 @
 -}
@@ -64,5 +90,5 @@ instance (Surveyable a) => Surveyable (DescriptionPrompt a) where
   describeProperties _ = describeProperties (Proxy @a)
   propertyHolds (DescriptionPrompt x) = propertyHolds x
 
-instance (Surveyable a, ToSchema a) => Promptable (DescriptionPrompt a) where
-  promptDescription _ = description (Proxy @a)
+-- | Uses the default 'prompt' = 'PromptSingle'.
+instance (Surveyable a, ToSchema a, FromJSON a) => Promptable (DescriptionPrompt a)

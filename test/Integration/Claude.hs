@@ -36,8 +36,8 @@ import Control.Monad.Prompt.Tool.Web (
   webFetchHandler,
   wikipediaSearchHandler,
  )
+
 import Data.Shroom.Class (Describable (..), Surveyable (..))
-import Data.Shroom.Class.Promptable (DescriptionPrompt, Promptable)
 
 -- test
 import ConferenceTypes
@@ -55,7 +55,7 @@ instance Describable FakeBrokenSearch where
 
 instance Surveyable FakeBrokenSearch
 
-deriving via DescriptionPrompt FakeBrokenSearch instance Promptable FakeBrokenSearch
+instance Promptable FakeBrokenSearch
 
 instance Toolable FakeBrokenSearch where
   toolDescription _ = Just "Always returns an HTTP 404 error."

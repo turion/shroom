@@ -57,7 +57,7 @@ import Control.Monad.Prompt
 import Control.Monad.Prompt.TH (deriveDescribable)
 import Control.Monad.Prompt.Tool (Toolable (..), ToolHandler (..))
 import Data.Shroom.Class
-import Data.Shroom.Class.Promptable (DescriptionPrompt, Promptable)
+
 
 -- * Types
 
@@ -171,7 +171,7 @@ $(deriveDescribable ''SpeakerName)
 
 instance Surveyable SpeakerName
 
-deriving via DescriptionPrompt SpeakerName instance Promptable SpeakerName
+instance Promptable SpeakerName
 
 $(deriveDescribable ''Speakers)
 
@@ -180,7 +180,7 @@ instance Surveyable Speakers where
   describeProperties _ SpeakersBetween3And10 = Just "The list must contain between 3 and 10 speakers (inclusive)."
   propertyHolds s SpeakersBetween3And10 = let n = length (speakers s) in n >= 3 && n <= 10
 
-deriving via DescriptionPrompt Speakers instance Promptable Speakers
+instance Promptable Speakers
 
 $(deriveDescribable ''Speaker)
 
@@ -193,7 +193,7 @@ instance Surveyable Speaker where
   propertyHolds s SpeakerFirstNameNotEmpty = not (T.null (firstName (speakerName s)))
   propertyHolds s SpeakerAffiliationNotEmpty = not (T.null (speakerAffiliation s))
 
-deriving via DescriptionPrompt Speaker instance Promptable Speaker
+instance Promptable Speaker
 
 $(deriveDescribable ''Talk)
 
@@ -204,7 +204,7 @@ instance Surveyable Talk where
   propertyHolds t TalkTitleNotEmpty = not (T.null (talkTitle t))
   propertyHolds t TalkSpeakerNameNotEmpty = not (T.null (firstName (talkSpeakerName t))) && not (T.null (lastName (talkSpeakerName t)))
 
-deriving via DescriptionPrompt Talk instance Promptable Talk
+instance Promptable Talk
 
 $(deriveDescribable ''Slot)
 
@@ -213,7 +213,7 @@ instance Surveyable Slot where
   describeProperties _ SlotStartBeforeEnd = Just "The slot's start time must be strictly before its end time."
   propertyHolds s SlotStartBeforeEnd = slotStart s < slotEnd s
 
-deriving via DescriptionPrompt Slot instance Promptable Slot
+instance Promptable Slot
 
 $(deriveDescribable ''ConferenceSchedule)
 
@@ -236,7 +236,7 @@ instance Surveyable ConferenceSchedule where
       [] -> False
       (first : _) -> utctDayTime (slotStart first) == secondsToDiffTime (7 * 3600)
 
-deriving via DescriptionPrompt ConferenceSchedule instance Promptable ConferenceSchedule
+instance Promptable ConferenceSchedule
 
 -- * Prompt chain
 
@@ -331,7 +331,7 @@ $(deriveDescribable ''SpeakerLookup)
 
 instance Surveyable SpeakerLookup
 
-deriving via DescriptionPrompt SpeakerLookup instance Promptable SpeakerLookup
+instance Promptable SpeakerLookup
 
 instance Toolable SpeakerLookup where
   toolDescription _ = Just "Look up a speaker's background, research interests, and past talks."

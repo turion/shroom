@@ -36,11 +36,9 @@ result <- runPromptResultTWith cfg $ runPromptT $ do
   prompt \@User
 @
 -}
-module Control.Monad.Prompt (module Control.Monad.Prompt) where
+module Control.Monad.Prompt (module Control.Monad.Prompt, module Control.Monad.Prompt.Core, module Data.Shroom.Class.Promptable) where
 
 -- base
-import Control.Applicative (Alternative (..))
-import Control.Monad (MonadPlus (..))
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Proxy (Proxy (..))
 
@@ -62,12 +60,12 @@ import UnliftIO (MonadUnliftIO, withRunInIO)
 import UnliftIO.Async (concurrently)
 
 import Data.Aeson (FromJSON, Value (..), eitherDecodeStrictText)
-import Data.OpenApi (ToSchema)
 
 -- sop-core
 import Data.SOP (All, NP (..), SListI)
 
 -- shroom (internal)
+import Control.Monad.Prompt.Core (ContextItem (..), PromptT (..))
 import Control.Monad.Prompt.Schema (ToolDef, ToolDispatcher, schemaWithDefs)
 import Control.Monad.Prompt.Tool (ToolHandler, Toolable, makeDispatcher, toolDefsRaw)
 
@@ -75,81 +73,8 @@ import Control.Monad.Prompt.Tool (ToolHandler, Toolable, makeDispatcher, toolDef
 import Data.Universe.Class (universe)
 
 -- shroom
-import Data.Shroom.Class
+import Data.Shroom.Class (describeProperties, description, propertyHolds)
 import Data.Shroom.Class.Promptable (Promptable (..))
-
--- * Context items
-
-{- | A single item in the LLM conversation history.
-Backends map these to their native message types (Anthropic: @system@ field
-or @user@\/@assistant@ roles; Ollama: @system@\/@user@\/@assistant@ roles).
--}
-data ContextItem
-  = -- | Instructions or persona, sent before any user turns.
-    SystemMessage Text
-  | -- | A user turn in the conversation.
-    UserMessage Text
-  | {- | A previous model response. Appended automatically after each successful
-      'prompt' call so subsequent prompts can reference prior outputs naturally.
-    -}
-    AssistantMessage Text
-  deriving (Eq, Show)
-
--- * Prompt DSL
-
--- | A monad transformer for building LLM prompt programs.
-data PromptT m a where
-  {- | Append a 'ContextItem' to the accumulated context for all subsequent
-    steps in the current chain. This is a persistent, non-scoped addition.
-  -}
-  AddContext :: ContextItem -> PromptT m ()
-  {- | Add a 'ContextItem' to the LLM context for the scoped sub-program only.
-    Context does not leak outside the 'WithContext' node.
-  -}
-  WithContext :: ContextItem -> PromptT m a -> PromptT m a
-  -- | Request a typed value from the model using the accumulated context.
-  PromptSingle :: (ToSchema a, FromJSON a, Promptable a) => PromptT m a
-  -- | Embed a pure value into 'PromptT' without any LLM call or effect.
-  Pure :: a -> PromptT m a
-  -- | Lift an @m@ action into 'PromptT'. Supports 'MonadTrans' and 'MonadIO'.
-  Lift :: m a -> PromptT m a
-  -- | Sequentially bind: run the first action, pass the result to the continuation.
-  Bind :: PromptT m a -> (a -> PromptT m b) -> PromptT m b
-  {- | Apply a function to a value, running both branches in parallel.
-    Both branches see the same context snapshot at the point of 'Ap'.
-  -}
-  Ap :: PromptT m (a -> b) -> PromptT m a -> PromptT m b
-  -- | Always fail with the given error message. Used as 'empty' and via 'MonadFail'.
-  Fail :: Text -> PromptT m a
-  {- | Try the first branch; if it fails, run the second from the original context.
-    Context accumulated inside a failing branch is discarded.
-  -}
-  Alt :: PromptT m a -> PromptT m a -> PromptT m a
-
-instance Functor (PromptT m) where
-  fmap f p = Bind p (Pure . f)
-
-instance Applicative (PromptT m) where
-  pure = Pure
-  (<*>) = Ap
-
-instance Monad (PromptT m) where
-  (>>=) = Bind
-
-instance MonadTrans PromptT where
-  lift = Lift
-
-instance (MonadIO m) => MonadIO (PromptT m) where
-  liftIO = Lift . liftIO
-
-instance Alternative (PromptT m) where
-  empty = Fail "empty"
-  (<|>) = Alt
-
-instance MonadPlus (PromptT m)
-
-instance MonadFail (PromptT m) where
-  fail = Fail . T.pack
 
 {- | Scope a 'ContextItem' to a sub-program.
 The item is only visible within @p@ and does not persist afterwards.
@@ -175,15 +100,9 @@ current do-block (via 'Bind'). Context does not persist past the enclosing scope
 context :: Text -> PromptT m ()
 context txt = AddContext (UserMessage txt)
 
-{- | Request a value of type @a@ from the model.
-The model sees the accumulated context plus the type description.
--}
-prompt :: (ToSchema a, FromJSON a, Promptable a) => PromptT m a
-prompt = PromptSingle
-
 -- | Like 'prompt', but with an extra piece of context scoped to this request only.
-promptWith :: (ToSchema a, FromJSON a, Promptable a) => Text -> PromptT m a
-promptWith txt = WithContext (UserMessage txt) PromptSingle
+promptWith :: (Promptable a) => Text -> PromptT m a
+promptWith txt = WithContext (UserMessage txt) prompt
 
 {- | Run two independent prompts in parallel, returning both results.
 Both branches see the same context snapshot at the point of the call;
@@ -346,7 +265,7 @@ runPromptT promptCfg handlers p = do
       pure (a, ctx)
     go cfg ctx (PromptSingle :: PromptT m b) = do
       let prx = Proxy @b
-          typeDesc = promptDescription prx
+          typeDesc = description prx
           schema = schemaWithDefs prx
           checkProps a =
             [ desc

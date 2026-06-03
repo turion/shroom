@@ -75,7 +75,7 @@ import Data.Universe.Class (Universe)
 import Control.Monad.Prompt.TH (deriveDescribable)
 import Control.Monad.Prompt.Tool (ToolHandler (..), Toolable (..))
 import Data.Shroom.Class (Surveyable (..))
-import Data.Shroom.Class.Promptable (DescriptionPrompt, Promptable)
+import Data.Shroom.Class.Promptable (Promptable)
 
 -- * WebFetch
 
@@ -114,7 +114,7 @@ instance Surveyable WebFetch where
       , WebFetch "https://en.wikipedia.org/wiki/Haskell_%28programming_language%29"
       ]
 
-deriving via DescriptionPrompt WebFetch instance Promptable WebFetch
+instance Promptable WebFetch
 
 instance Toolable WebFetch where
   toolDescription _ = Just "Returns up to 2000 characters of the page body."
@@ -189,7 +189,7 @@ instance Surveyable DuckDuckGoSearch where
       , DuckDuckGoSearch "Simon Peyton Jones"
       ]
 
-deriving via DescriptionPrompt DuckDuckGoSearch instance Promptable DuckDuckGoSearch
+instance Promptable DuckDuckGoSearch
 
 instance Toolable DuckDuckGoSearch where
   toolDescription _ = Just "DuckDuckGo Instant Answer: returns a short abstract for well-known named entities (people, places) that have a Wikipedia article. Returns no result for vague or multi-word queries — use wikipedia_search instead."
@@ -278,7 +278,7 @@ instance Surveyable WikipediaSearch where
       , WikipediaSearch "functional programming"
       ]
 
-deriving via DescriptionPrompt WikipediaSearch instance Promptable WikipediaSearch
+instance Promptable WikipediaSearch
 
 instance Toolable WikipediaSearch where
   toolDescription _ = Just "Returns up to 5 Wikipedia article titles and URLs matching the query."

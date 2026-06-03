@@ -37,7 +37,7 @@ import Data.Universe.Class (Universe)
 
 -- shroom
 import Control.Monad.Prompt
-import Data.Shroom.Class.Promptable (DescriptionPrompt, Promptable)
+
 import Control.Monad.Prompt.TH (deriveDescribable)
 import Data.Shroom.Class
 
@@ -78,7 +78,7 @@ instance Surveyable CelebrityList where
   describeProperties _ CelebrityListHasThree = Just "The list must contain exactly 3 celebrity names."
   propertyHolds cl CelebrityListHasThree = length cl.celebrities == 3
 
-deriving via DescriptionPrompt CelebrityList instance Promptable CelebrityList
+instance Promptable CelebrityList
 
 $(deriveDescribable ''CelebrityFact)
 
@@ -89,7 +89,7 @@ instance Surveyable CelebrityFact where
   propertyHolds cf CelebrityFactNameNotEmpty   = not (T.null cf.celebrity)
   propertyHolds cf CelebrityFactTriviaNotEmpty = not (T.null cf.triviaFact)
 
-deriving via DescriptionPrompt CelebrityFact instance Promptable CelebrityFact
+instance Promptable CelebrityFact
 
 -- * Prompt chain
 

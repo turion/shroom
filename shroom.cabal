@@ -74,6 +74,7 @@ library
     Data.Shroom.Class.Promptable
 
   other-modules:
+    Control.Monad.Prompt.Core
     Control.Monad.Prompt.Schema
 
   hs-source-dirs: src

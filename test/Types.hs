@@ -24,7 +24,7 @@ import Data.Set qualified as S
 import Data.Universe.Class (Universe)
 
 -- shroom
-import Data.Shroom.Class.Promptable (DescriptionPrompt, Promptable)
+import Data.Shroom.Class.Promptable (Promptable)
 import Control.Monad.Prompt.TH (deriveDescribable)
 import Data.Shroom.Class
 
@@ -64,17 +64,17 @@ instance Surveyable User where
   propertyHolds user UserEmailNotEmpty = not (T.null (userEmail user))
   propertyHolds user UserEmailHasAtSign = T.elem '@' (userEmail user)
 
-deriving via DescriptionPrompt User instance Promptable User
+instance Promptable User
 
 $(deriveDescribable ''Counter)
 
 instance Surveyable Counter where
   examples _ = S.singleton (Counter 0)
 
-deriving via DescriptionPrompt Counter instance Promptable Counter
+instance Promptable Counter
 
 $(deriveDescribable ''Coordinate)
 
 instance Surveyable Coordinate
 
-deriving via DescriptionPrompt Coordinate instance Promptable Coordinate
+instance Promptable Coordinate
