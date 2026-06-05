@@ -80,115 +80,86 @@ library
   hs-source-dirs: src
   default-language: GHC2024
 
-test-suite shroom-test
+library test-utils
   import: opts
+  hs-source-dirs: test-utils
   default-language: GHC2024
-  type: exitcode-stdio-1.0
-  hs-source-dirs: test
-  main-is: Main.hs
-  other-modules:
+  build-depends:
+    shroom
+
+  exposed-modules:
+    CelebrityTypes
+    ConferenceTypes
     TestUtils
     Types
 
+common test-opts
   build-depends:
     shroom,
     tasty ^>=1.4,
     tasty-hunit ^>=0.10,
+    test-utils,
+
+test-suite shroom-test
+  import: opts, test-opts
+  default-language: GHC2024
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Main.hs
 
 test-suite shroom-test-integration-claude
-  import: opts
+  import: opts, test-opts
   default-language: GHC2024
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: Integration/Claude.hs
   other-modules:
-    ConferenceTypes
-    Types
     WebToolReport
 
-  build-depends:
-    shroom,
-    tasty ^>=1.4,
-    tasty-hunit ^>=0.10,
-
 test-suite shroom-test-integration-ollama
-  import: opts
+  import: opts, test-opts
   default-language: GHC2024
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: Integration/Ollama.hs
-  other-modules:
-    CelebrityTypes
-    ConferenceTypes
-    Types
-
-  build-depends:
-    shroom,
-    tasty ^>=1.4,
-    tasty-hunit ^>=0.10,
 
 test-suite shroom-test-conference
-  import: opts
+  import: opts, test-opts
   default-language: GHC2024
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: ConferenceScenario.hs
-  other-modules:
-    ConferenceTypes
-    TestUtils
-
-  build-depends:
-    shroom,
-    tasty ^>=1.4,
-    tasty-hunit ^>=0.10,
 
 test-suite shroom-test-celebrity
-  import: opts
+  import: opts, test-opts
   default-language: GHC2024
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: CelebrityScenario.hs
-  other-modules:
-    CelebrityTypes
-    TestUtils
-
-  build-depends:
-    shroom,
-    tasty ^>=1.4,
-    tasty-hunit ^>=0.10,
 
 test-suite shroom-test-web-tools
-  import: opts
+  import: opts, test-opts
   default-language: GHC2024
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: WebToolsScenario.hs
   build-depends:
-    shroom,
-    tasty ^>=1.4,
-    tasty-hunit ^>=0.10,
-    text,
+    text
 
 executable shroom-dev
-  import: opts
+  import: opts, test-opts
   default-language: GHC2024
   hs-source-dirs:
     app
     test
 
   main-is: Main.hs
-  other-modules: ConferenceTypes
-  build-depends:
-    shroom
 
 executable shroom-conference-claude
-  import: opts
+  import: opts, test-opts
   default-language: GHC2024
   hs-source-dirs:
     app
     test
 
   main-is: Claude.hs
-  other-modules: ConferenceTypes
-  build-depends:
-    shroom

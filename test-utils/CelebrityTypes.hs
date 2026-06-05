@@ -84,9 +84,9 @@ $(deriveDescribable ''CelebrityFact)
 
 instance Surveyable CelebrityFact where
   type Property CelebrityFact = CelebrityFactProperty
-  describeProperties _ CelebrityFactNameNotEmpty  = Just "The celebrity name must not be empty."
+  describeProperties _ CelebrityFactNameNotEmpty = Just "The celebrity name must not be empty."
   describeProperties _ CelebrityFactTriviaNotEmpty = Just "The trivia fact must not be empty."
-  propertyHolds cf CelebrityFactNameNotEmpty   = not (T.null cf.celebrity)
+  propertyHolds cf CelebrityFactNameNotEmpty = not (T.null cf.celebrity)
   propertyHolds cf CelebrityFactTriviaNotEmpty = not (T.null cf.triviaFact)
 
 instance Promptable CelebrityFact

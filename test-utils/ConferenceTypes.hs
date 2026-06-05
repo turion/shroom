@@ -55,9 +55,8 @@ import Data.Universe.Class (Universe)
 -- shroom
 import Control.Monad.Prompt
 import Control.Monad.Prompt.TH (deriveDescribable)
-import Control.Monad.Prompt.Tool (Toolable (..), ToolHandler (..))
+import Control.Monad.Prompt.Tool (ToolHandler (..), Toolable (..))
 import Data.Shroom.Class
-
 
 -- * Types
 
