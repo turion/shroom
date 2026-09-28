@@ -90,45 +90,12 @@
             haskellPackagesFor;
 
           formatter = pkgs.nixpkgs-fmt;
-
-          # Start a local Ollama server with llama3.2:3b pre-pulled.
-          # Usage: nix run .#ollama-server
-          # Then in another terminal: cabal test shroom-test-integration-ollama
-          apps.ollama-server = {
-            type = "app";
-            program = toString (pkgs.writeShellScript "ollama-server" ''
-              export OLLAMA_MODELS="''${OLLAMA_MODELS:-$HOME/.ollama/models}"
-              export OLLAMA_HOST="''${OLLAMA_HOST:-127.0.0.1:11434}"
-
-              echo "Starting ollama server..."
-              ${pkgs.ollama}/bin/ollama serve &
-              OLLAMA_PID=$!
-
-              echo "Waiting for ollama to be ready..."
-              for i in $(${pkgs.coreutils}/bin/seq 1 30); do
-                if ${pkgs.curl}/bin/curl -sf "http://''${OLLAMA_HOST}/api/tags" > /dev/null 2>&1; then
-                  echo "Ollama is ready."
-                  break
-                fi
-                sleep 1
-              done
-
-              echo "Pulling llama3.2:3b (this may take a while on first run)..."
-              ${pkgs.ollama}/bin/ollama pull llama3.2:3b
-
-              echo ""
-              echo "Ollama server is running."
-              echo "  Model: llama3.2:3b"
-              echo "  Host:  http://''${OLLAMA_HOST}"
-              echo ""
-              echo "Run integration tests with:"
-              echo "  cabal test shroom-test-integration-ollama"
-              echo ""
-              echo "Press Ctrl+C to stop."
-              wait $OLLAMA_PID
-            '');
-          };
         }) // {
       inherit supportedGhcs;
+
+      # Import into a NixOS configuration as `services.ollama.shroom.enable = true;`
+      # (laptop), or with `auth.mode = "ssh-tunnel";` added (server reachable from CI).
+      # See nix/ollama-shroom.nix and research/remote-ollama-ci.md in the plan directory.
+      nixosModules.ollama-testing = import ./nix/ollama-shroom.nix;
     };
 }
