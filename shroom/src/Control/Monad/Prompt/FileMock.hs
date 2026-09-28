@@ -18,9 +18,11 @@ cfg <- defaultFileMockConfig
 result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig myChain
 @
 
-Response files are read from @dev\/mock-responses\/@ by default.
-Create @response-001.json@, @response-002.json@, etc. with the JSON
-that a real LLM would return for each step.
+Response files are read from the package's @dev\/mock-responses\/@ directory by
+default, resolved against the package root rather than the process's current
+working directory — so @cabal run shroom-dev@ finds them regardless of where
+it is invoked from. Create @response-001.json@, @response-002.json@, etc. with
+the JSON that a real LLM would return for each step.
 -}
 module Control.Monad.Prompt.FileMock (FileMockConfig (..), defaultFileMockConfig) where
 
@@ -38,12 +40,14 @@ import Data.Text.IO qualified as TIO
 
 -- shroom
 import Control.Monad.Prompt (LLMBackend (..), renderContextItems)
+import Paths_shroom (getDataDir)
 
 -- | Configuration for the file-based mock backend.
 data FileMockConfig = FileMockConfig
   { responseDir :: FilePath
   {- ^ Directory containing numbered response files (@response-001.json@, …).
-    Default: @"dev\/mock-responses"@.
+    Default: the package's @dev\/mock-responses\/@, resolved via the Cabal-generated
+    'getDataDir' so it works regardless of the process's current working directory.
   -}
   , promptLogFn :: Text -> IO ()
   {- ^ Called with the full prompt text (context \<\> type description) before
@@ -56,14 +60,15 @@ data FileMockConfig = FileMockConfig
   }
 
 {- | Create a 'FileMockConfig' with default settings:
-reads from @dev\/mock-responses\/@, logs prompts to stdout.
+reads from the package's @dev\/mock-responses\/@ directory, logs prompts to stdout.
 -}
 defaultFileMockConfig :: IO FileMockConfig
 defaultFileMockConfig = do
   counter <- newIORef 0
+  dataDir <- getDataDir
   pure
     FileMockConfig
-      { responseDir = "dev/mock-responses"
+      { responseDir = dataDir </> "dev/mock-responses"
       , promptLogFn = TIO.putStrLn
       , stepCounter = counter
       }

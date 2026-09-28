@@ -1,1 +1,6 @@
-{"talkTitle":"Monads and Mechanical Minds: Functional Abstractions for Analytical Engines","talkAbstract":"We explore how the monad abstraction maps onto sequential computation in historical mechanical computers, drawing parallels between Lovelace's algorithm notes and modern pure functional programming.","talkSpeakerName":"Ada Lovelace"}
+{
+  "talkTitle": "Monads and Mechanical Minds: Functional Abstractions for Analytical Engines",
+  "talkAbstract": "We explore how the monad abstraction maps onto sequential computation in historical mechanical computers, drawing parallels between Lovelace's algorithm notes and modern pure functional programming.",
+  "talkSpeakerName": { "firstName": "Ada", "lastName": "Lovelace" },
+  "talkExtensions": ["TypeFamilies"]
+}

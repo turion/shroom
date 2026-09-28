@@ -17,6 +17,9 @@ maintainer: programming@manuelbaerenz.de
 -- copyright:
 build-type: Simple
 extra-doc-files: CHANGELOG.md
+data-files:
+  dev/mock-responses/*.json
+
 -- extra-source-files:
 tested-with:
   ghc ==9.10
@@ -100,6 +103,10 @@ library
   other-modules:
     Control.Monad.Prompt.Core
     Control.Monad.Prompt.Schema
+    Paths_shroom
+
+  autogen-modules:
+    Paths_shroom
 
   hs-source-dirs: src
   default-language: GHC2024
