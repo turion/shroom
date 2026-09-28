@@ -36,7 +36,7 @@ result <- runPromptResultTWith cfg $ runPromptT $ do
   prompt \@User
 @
 -}
-module Control.Monad.Prompt (module Control.Monad.Prompt, module Control.Monad.Prompt.Core, module Data.Shroom.Class.Promptable) where
+module Control.Monad.Prompt (module Control.Monad.Prompt, module Control.Monad.Prompt.Core, module Control.Monad.Prompt.Promptable) where
 
 -- base
 import Control.Monad.IO.Class (MonadIO (..))
@@ -66,6 +66,7 @@ import Data.SOP (All, NP (..), SListI)
 
 -- shroom (internal)
 import Control.Monad.Prompt.Core (ContextItem (..), PromptT (..))
+import Control.Monad.Prompt.Promptable (Promptable (..))
 import Control.Monad.Prompt.Schema (ToolDef, ToolDispatcher, schemaWithDefs)
 import Control.Monad.Prompt.Tool (ToolHandler, Toolable, makeDispatcher, toolDefsRaw)
 
@@ -74,7 +75,6 @@ import Data.Universe.Class (universe)
 
 -- shroom
 import Data.Shroom.Class (describeProperties, description, propertyHolds)
-import Data.Shroom.Class.Promptable (Promptable (..))
 
 {- | Scope a 'ContextItem' to a sub-program.
 The item is only visible within @p@ and does not persist afterwards.

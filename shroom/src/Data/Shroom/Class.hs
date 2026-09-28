@@ -1,15 +1,17 @@
-{- | The 'Describable', 'Surveyable', and 'Promptable' typeclasses: attach a
-human-readable description, property properties, example values, and a prompt
-rendering strategy to a type, so that an LLM backend can understand what it
-should produce.
+{- | The 'Describable' and 'Surveyable' typeclasses: attach a human-readable
+description, property properties, and example values to a type, so that an
+LLM backend — or anything else that renders a type for a reader, human or
+model — can understand what it should produce.
 
 == Typeclass hierarchy
 
 @
 Describable          — 'describeType': one sentence from Haddock (auto-derived)
     └── Surveyable   — 'Property', 'propertyHolds', 'describeProperties', 'examples' (user-filled)
-            └── Promptable (+ ToSchema)  — 'promptDescription': how to render the full prompt
 @
+
+'Promptable', which builds on 'Surveyable' to render a full prompt, lives on
+the far side of the pure\/effectful boundary — see below.
 
 Typical usage:
 
@@ -25,8 +27,19 @@ instance Surveyable User where
   propertyHolds u UserEmailNotEmpty = not (T.null (userEmail u))
   describeProperties _ UserEmailNotEmpty = Just "The email must not be empty."
 
-instance Promptable User  -- uses default: description-based prompt rendering
+instance Promptable User  -- from "Control.Monad.Prompt.Promptable"; uses the
+                          -- default description-based prompt rendering
 @
+
+== Pure\/effectful boundary
+
+This module is pure: it depends only on @aeson@, @text@, @containers@,
+@openapi3@ and @universe-base@, and nothing under @Data.Shroom.@ may import
+"Control.Monad.Prompt" or any of its submodules. That is deliberate, not
+incidental — a later arc (shroom-shikumi, "C3") needs exactly this pure half,
+with no program layer attached, to feed shikumi's own instruction and
+validation machinery. Keep it that way: an import of "Control.Monad.Prompt"
+here would put the program layer back in C3's way.
 -}
 module Data.Shroom.Class (module Data.Shroom.Class) where
 

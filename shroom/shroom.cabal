@@ -94,11 +94,11 @@ library
     Control.Monad.Prompt.Anthropic
     Control.Monad.Prompt.FileMock
     Control.Monad.Prompt.Ollama
+    Control.Monad.Prompt.Promptable
     Control.Monad.Prompt.TH
     Control.Monad.Prompt.Tool
     Control.Monad.Prompt.Tool.Web
     Data.Shroom.Class
-    Data.Shroom.Class.Promptable
 
   other-modules:
     Control.Monad.Prompt.Core

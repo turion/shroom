@@ -27,8 +27,16 @@ instance Surveyable MyType where ...
 
 deriving via DescriptionPrompt MyType instance Promptable MyType
 @
+
+== Pure\/effectful boundary
+
+This module is the effectful side of the line drawn against "Data.Shroom.Class":
+'Promptable'\'s method is a 'PromptT' program, so anything that names 'Promptable'
+or 'DescriptionPrompt' depends on the program layer and must live under
+"Control.Monad.Prompt", never under @Data.Shroom.@. Nothing under @Data.Shroom.@
+may import this module.
 -}
-module Data.Shroom.Class.Promptable (module Data.Shroom.Class.Promptable) where
+module Control.Monad.Prompt.Promptable (module Control.Monad.Prompt.Promptable) where
 
 -- base
 import Data.Proxy (Proxy (..))

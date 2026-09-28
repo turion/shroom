@@ -52,9 +52,9 @@ import Data.SOP.NP ()
 
 -- shroom
 
+import Control.Monad.Prompt.Promptable (Promptable)
 import Control.Monad.Prompt.Schema (ToolDef (..), schemaWithDefs)
 import Data.Shroom.Class (describeType)
-import Data.Shroom.Class.Promptable (Promptable)
 
 -- * Tool typeclass
 
