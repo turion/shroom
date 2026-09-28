@@ -2,9 +2,13 @@ module Main (main) where
 
 -- base
 import Control.Applicative (Alternative (..))
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.MVar (MVar, modifyMVar_, newMVar, readMVar)
 import Control.Monad (MonadPlus (..), forM_)
+import Control.Monad.IO.Class (liftIO)
 import Data.IORef
 import Data.Proxy (Proxy (..))
+import System.Timeout (timeout)
 
 -- aeson
 import Data.Aeson (Value (..))
@@ -19,6 +23,7 @@ import Test.Tasty.HUnit (assertFailure, testCase, (@?=))
 
 -- shroom
 import Control.Monad.Prompt
+import Control.Monad.Prompt.Effect qualified as Eff
 import Control.Monad.Prompt.Ollama (schemaToFormatAndUnwrap, unwrapResult)
 import Control.Monad.Prompt.Tool.Web
 import Data.Shroom.Class (Describable (..), Surveyable (..), description)
@@ -26,6 +31,30 @@ import Data.Shroom.Class (Describable (..), Surveyable (..), description)
 -- test
 import TestUtils
 import Types
+
+-- * Mock backends
+
+{- | A mock 'LLMBackend' that blocks every call until @expected@ calls have
+all entered, then lets them all through together.
+
+This proves genuine concurrency without a timing assertion: if the calling
+branches ran one after another rather than concurrently, the first call
+would still be blocked waiting for a second call that has not even started
+yet, so the whole computation hangs until the test's outer 'timeout' kills
+it. There is no race window to get unlucky on — under real concurrency the
+wait resolves as soon as the last branch starts; under sequential
+execution it never resolves at all.
+-}
+data BarrierMockConfig = BarrierMockConfig (MVar Int) Int
+
+instance LLMBackend BarrierMockConfig where
+  runChatWithTools (BarrierMockConfig entered expected) _ _ _ _ _ _ _ = liftIO $ do
+    modifyMVar_ entered (pure . (+ 1))
+    let waitForAll = do
+          n <- readMVar entered
+          if n >= expected then pure () else threadDelay 1000 >> waitForAll
+    waitForAll
+    pure (Right "0")
 
 -- * Tests
 
@@ -405,5 +434,96 @@ main =
               propertyHolds (WikipediaSearch "foo\nbar") WikipediaSearchQuerySafeChars @?= False
           , testCase "empty Wikipedia query fails not-empty check" $
               propertyHolds (WikipediaSearch "") WikipediaSearchQueryNotEmpty @?= False
+          ]
+      , testGroup
+          "Prompt effect (effectful)"
+          [ testGroup
+              "retry loop parity with PromptT"
+              [ testCase "validation fails then passes — retry succeeds" $ do
+                  responses <-
+                    newIORef
+                      [ "{\"userName\":\"Alice\",\"userEmail\":\"\"}"
+                      , "{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}"
+                      ]
+                  seenContexts <- newIORef ([] :: [Text])
+                  let cfg = SeqMockConfig responses seenContexts
+                  result <-
+                    Eff.runPromptResultEff cfg (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.prompt @User
+                  result @?= Right (User "Alice" "alice@example.com")
+                  seen <- readIORef seenContexts
+                  length seen @?= 2
+              , testCase "retry context includes the property-violation description" $ do
+                  responses <-
+                    newIORef
+                      [ "{\"userName\":\"Alice\",\"userEmail\":\"\"}"
+                      , "{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}"
+                      ]
+                  seenContexts <- newIORef ([] :: [Text])
+                  let cfg = SeqMockConfig responses seenContexts
+                  _ <-
+                    Eff.runPromptResultEff cfg (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.prompt @User
+                  seen <- readIORef seenContexts
+                  assertContains "The email address is not empty." (seen !! 1)
+                  assertContains "Generate a new, corrected JSON response" (seen !! 1)
+              , testCase "JSON decode error triggers retry — distinct wording from a property violation" $ do
+                  responses <-
+                    newIORef
+                      [ "not valid json"
+                      , "{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}"
+                      ]
+                  seenContexts <- newIORef ([] :: [Text])
+                  let cfg = SeqMockConfig responses seenContexts
+                  result <-
+                    Eff.runPromptResultEff cfg (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.prompt @User
+                  result @?= Right (User "Alice" "alice@example.com")
+                  seen <- readIORef seenContexts
+                  length seen @?= 2
+                  assertContains "IMPORTANT: Your previous response could not be parsed" (seen !! 1)
+                  assertNotContains "violated required properties" (seen !! 1)
+              , testCase "validation always fails — same retry count as PromptT (1 + maxRetries)" $ do
+                  responses <- newIORef (repeat "{\"userName\":\"Alice\",\"userEmail\":\"\"}")
+                  seenContexts <- newIORef ([] :: [Text])
+                  let cfg = SeqMockConfig responses seenContexts
+                  result <-
+                    Eff.runPromptResultEff cfg (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.prompt @User
+                  case result of
+                    Left err -> assertContains "The email address is not empty." err
+                    Right _ -> assertFailure "Expected Left but got Right"
+                  seen <- readIORef seenContexts
+                  length seen @?= 3
+              ]
+          , testGroup
+              "promptPar / promptsParallel genuinely run concurrently"
+              [ testCase "promptPar: two branches meet at a barrier — sequential execution would deadlock" $ do
+                  entered <- newMVar (0 :: Int)
+                  let cfg = BarrierMockConfig entered 2
+                  outcome <-
+                    timeout (5 * 1000 * 1000) $
+                      Eff.runPromptResultEff cfg defaultPromptConfig $
+                        Eff.promptPar (Eff.prompt @Counter) (Eff.prompt @Counter)
+                  case outcome of
+                    Nothing ->
+                      assertFailure
+                        "promptPar branches never both entered the backend within 5s: they did not run concurrently"
+                    Just (Left err) -> assertFailure (show err)
+                    Just (Right _) -> pure ()
+              , testCase "promptsParallel: three branches meet at a barrier" $ do
+                  entered <- newMVar (0 :: Int)
+                  let cfg = BarrierMockConfig entered 3
+                  outcome <-
+                    timeout (5 * 1000 * 1000) $
+                      Eff.runPromptResultEff cfg defaultPromptConfig $
+                        Eff.promptsParallel (replicate 3 (Eff.prompt @Counter))
+                  case outcome of
+                    Nothing ->
+                      assertFailure
+                        "promptsParallel branches never all entered the backend within 5s: they did not run concurrently"
+                    Just (Left err) -> assertFailure (show err)
+                    Just (Right xs) -> length xs @?= 3
+              ]
           ]
       ]
