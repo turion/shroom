@@ -13,7 +13,7 @@
       inherit (nixpkgs) lib;
       projectName = "shroom";
       localPackages = {
-        shroom = ./.;
+        shroom = ./shroom;
       };
 
       # Always keep in sync with the tested-with section in the cabal file
