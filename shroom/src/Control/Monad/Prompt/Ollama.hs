@@ -90,6 +90,12 @@ contextItemsToOllama items typeDesc =
 
 {- | Convert a 'ToolDef' to an Ollama 'InputTool'.
 Extracts properties and required fields from the JSON schema.
+
+The schema is inlined first: 'FunctionParameters' has no field for @$ref@ or
+@$defs@ at all, and 'Control.Monad.Prompt.Schema.schemaWithDefs' always
+@$ref@s its own root, so passing it un-inlined loses every property
+(confirmed directly in @cabal repl@) regardless of what the Ollama server
+does with @$ref@ on the wire.
 -}
 toOllamaTool :: ToolDef -> InputTool
 toOllamaTool td =
@@ -234,8 +240,16 @@ instance LLMBackend OllamaBackendConfig where
 {- | Build an Ollama 'Format' from an OpenAPI schema 'Value'.
 Returns @(format, unwrapFn)@ where @unwrapFn@ strips the @{\"result\":...}@
 wrapper that is added for non-object schemas (scalars, arrays).
-The schema is inlined via 'inlineSchema' before conversion, because Ollama
-does not resolve @$ref@ in the @format@ field.
+
+The schema is inlined via 'inlineSchema' first. This is not because Ollama's
+server fails to resolve @$ref@ on the wire — a live test against Ollama
+0.30.6 showed it does, on both this field and a tool's parameters — but
+because this module's own 'Format' \/ 'Data.Ollama.Common.SchemaBuilder.Schema'
+have no way to represent @$ref@ or @$defs@ at all. Since
+'Control.Monad.Prompt.Schema.schemaWithDefs' always @$ref@s its own root,
+skipping the inline step turns /every/ record type's schema into an
+unconstrained 'JsonFormat' here, not just ones with nested records
+(confirmed directly in @cabal repl@).
 -}
 schemaToFormatAndUnwrap :: Value -> (Format, Text -> Text)
 schemaToFormatAndUnwrap schema = schemaToFormatAndUnwrap' (inlineSchema schema)

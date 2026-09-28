@@ -39,7 +39,7 @@ import Claude.V1.Messages
 
 -- shroom
 import Control.Monad.Prompt (ContextItem (..), LLMBackend (..), PromptConfig (..))
-import Control.Monad.Prompt.Schema (ToolDef (..), fixSchemaForAnthropic, inlineSchema)
+import Control.Monad.Prompt.Schema (ToolDef (..), normalizeSchemaForStructuredOutput)
 import Control.Monad.Prompt.Tool (ToolLoopOps (..), genericToolLoop)
 
 -- | Configuration for the Anthropic Claude API.
@@ -91,10 +91,17 @@ contextItemsToAnthropic items typeDesc =
     isSystem (SystemMessage _) = True
     isSystem _ = False
 
--- | Convert a 'ToolDef' to an Anthropic 'ToolDefinition'.
+{- | Convert a 'ToolDef' to an Anthropic 'ToolDefinition'.
+
+'strictFunctionTool' takes a raw JSON 'Value' for the input schema, and
+Anthropic's strict-tool JSON-Schema subset supports internal @$ref@\/@$defs@
+(the same subset structured outputs use), so the schema is passed through
+unchanged rather than run through
+'Control.Monad.Prompt.Schema.inlineSchema' first.
+-}
 toAnthropicTool :: ToolDef -> ToolDefinition
 toAnthropicTool td =
-  inlineTool $ strictFunctionTool td.toolDefName (Just td.toolDefDescription) (inlineSchema td.toolDefSchema)
+  inlineTool $ strictFunctionTool td.toolDefName (Just td.toolDefDescription) td.toolDefSchema
 
 -- | Build 'ToolLoopOps' for the Anthropic backend.
 anthropicToolLoopOps ::
@@ -124,7 +131,7 @@ anthropicToolLoopOps methods cfg mSystem schema mTools promptCfg =
                     -- or Anthropic rejects the combination when tool_use stop_reason is expected.
                     -- We set output_config on every call; if the model stops for tool_use
                     -- the schema is ignored; if it stops for end_turn we get JSON.
-                    output_config = Just (jsonSchemaConfig (fixSchemaForAnthropic schema))
+                    output_config = Just (jsonSchemaConfig (normalizeSchemaForStructuredOutput schema))
                   }
         pure $ case result of
           Left ex -> Left ("HTTP error: " <> pack (show ex))
@@ -140,7 +147,7 @@ anthropicToolLoopOps methods cfg mSystem schema mTools promptCfg =
                   , system = mSystem
                   , max_tokens = cfg.maxTokens
                   , tools = Nothing
-                  , output_config = Just (jsonSchemaConfig (fixSchemaForAnthropic schema))
+                  , output_config = Just (jsonSchemaConfig (normalizeSchemaForStructuredOutput schema))
                   }
         pure $ case result of
           Left ex -> Left ("HTTP error: " <> pack (show ex))

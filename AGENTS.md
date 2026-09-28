@@ -34,13 +34,13 @@ Please always speak like a 1970s British working class person!
 - Request: `defaultChatOps { modelName, messages :: NonEmpty Message, format = Just fmt, stream = Nothing }`
 - Messages: single flat list; `systemMessage`/`userMessage`/`assistantMessage` constructors; type desc always appended as final user turn
 - Structured output: `Format` supports objects only; scalars/arrays wrapped in `{"result": <val>}` and unwrapped after
-- CRITICAL: Ollama does NOT resolve `$ref` in `format` — always run `inlineSchema` first to flatten all refs
+- Ollama's *server* (tested at 0.30.6) resolves `$ref` fine on the wire, on both the `format` field and a tool's parameters — but `ollama-haskell`'s own typed `Schema`/`FunctionParameters` have no field for `$ref`/`$defs` at all, and `schemaWithDefs` always `$ref`s its own root, so `inlineSchema` must still run first at both call sites in `Ollama.hs` — not a wire-protocol workaround, a client-library one
 - Tool support: not implemented (stub)
 
 ## openapi3 (`^>=3.2`) — schema generation
 - `declareSchemaRef` is in `Data.OpenApi`; `runDeclare` is in `Data.OpenApi.Declare`
 - `toJSON (toSchema prx)` alone is NOT enough — omits sub-schemas; use `schemaWithDefs` instead
-- `fixSchemaForAnthropic`: adds `additionalProperties: false`, removes `minimum`/`maximum`/`format`, rewrites `$ref` paths
+- `normalizeSchemaForStructuredOutput` (renamed from `fixSchemaForAnthropic` — it's no longer provider-specific): adds `additionalProperties: false`, rewrites `$ref` paths, folds `minimum`/`maximum` into the field's `description` (removed from the wire, not silently dropped). Leaves string `format` alone — Anthropic accepts it, and it's an annotation, not an enforced constraint
 
 ## sop-core (`^>=0.5`) — heterogeneous tool lists
 - Tools registered as `NP ToolHandler '[Tool1, Tool2, ...]`; `hcmap`/`hcollapse`/`K` for traversal
