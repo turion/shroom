@@ -63,17 +63,43 @@ data OllamaBackendConfig = OllamaBackendConfig
   }
 
 {- | Default Ollama config pointing at @http://127.0.0.1:11434@ with the
-@\"llama3.2:3b\"@ model.
+@\"llama3.2:3b\"@ model, and a request timeout generous enough for a cold
+model load.
 
 Pass @Just url@ to override the host URL, e.g.
-@defaultOllamaBackendConfig (Just \"http://myserver:11434\")@.
+@defaultOllamaBackendConfig (Just \"http://myserver:11434\")@. A bare
+@host:port@ with no scheme is also accepted and gets @http://@ prepended —
+that is Ollama's own convention for the @OLLAMA_HOST@ environment variable,
+and 'Data.Ollama.Common.Config.hostUrl' would otherwise be fed straight into
+@parseRequest@, which rejects a schemeless value outright.
 -}
 defaultOllamaBackendConfig :: Maybe Text -> OllamaBackendConfig
 defaultOllamaBackendConfig mHost =
   OllamaBackendConfig
-    { ollamaConfig = maybe defaultOllamaConfig (\h -> defaultOllamaConfig {hostUrl = h}) mHost
+    { ollamaConfig =
+        (maybe defaultOllamaConfig (\h -> defaultOllamaConfig {hostUrl = normaliseOllamaHost h}) mHost)
+          { -- ollama-haskell's own default is 90s, which is plenty once a model
+            -- is resident, but the first request after the server (or the
+            -- model itself) restarts has to read the weights off disk before
+            -- it can answer at all. Kept resident afterwards by the server's
+            -- own OLLAMA_KEEP_ALIVE, but that first call still has to survive.
+            timeout = 300
+          }
     , ollamaModel = "llama3.2:3b"
     }
+
+{- | Give a host value a scheme if it does not already have one, so it
+survives @parseRequest@. Ollama's own convention (and what @OLLAMA_HOST@ is
+documented to hold) is a bare @host:port@, so a value with no @\"scheme:\/\/\"@
+in it gets @http:\/\/@ prepended; a value that already names a scheme
+(@http:\/\/@, @https:\/\/@, ...) passes through untouched, so someone pointing
+at a remote Ollama over TLS does not get @http:\/\/@ prepended to their
+@https:\/\/@ URL. Does not touch a trailing slash or a path.
+-}
+normaliseOllamaHost :: Text -> Text
+normaliseOllamaHost h
+  | "://" `T.isInfixOf` h = h
+  | otherwise = "http://" <> h
 
 {- | Convert a list of 'ContextItem' values to Ollama messages, appending
 the type description as a final user turn.
