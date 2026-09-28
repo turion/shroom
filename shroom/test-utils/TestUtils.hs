@@ -1,3 +1,5 @@
+{-# LANGUAGE LambdaCase #-}
+
 module TestUtils (
   MockConfig (..),
   SeqMockConfig (..),
@@ -47,7 +49,7 @@ data SeqMockConfig = SeqMockConfig (IORef [Text]) (IORef [Text])
 instance LLMBackend SeqMockConfig where
   runChatWithTools (SeqMockConfig responses seenCtxs) _promptCfg ctx _typeDesc _schema _toolDefs _dispatch _maxToolSteps = liftIO $ do
     atomicModifyIORef' seenCtxs (\xs -> (xs <> [renderContextItems ctx], ()))
-    atomicModifyIORef' responses $ \rs -> case rs of
+    atomicModifyIORef' responses $ \case
       [] -> ([], Left ("SeqMockConfig: no more responses" :: Text))
       [x] -> ([x], Right x)
       (x : rest) -> (rest, Right x)
