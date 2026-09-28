@@ -22,6 +22,30 @@ tested-with:
   ghc ==9.10
   ghc ==9.12
 
+flag anthropic
+  description:
+    Build shroom-test-integration-claude, which calls the real Anthropic
+    API and needs ANTHROPIC_API_KEY.
+
+  default: True
+  manual: True
+
+flag ollama
+  description:
+    Build shroom-test-integration-ollama, which needs a reachable Ollama
+    server.
+
+  default: True
+  manual: True
+
+flag web
+  description:
+    Build shroom-test-web-tools, which makes real calls to DuckDuckGo and
+    Wikipedia.
+
+  default: True
+  manual: True
+
 common opts
   ghc-options:
     -Wall
@@ -116,12 +140,18 @@ test-suite shroom-test-integration-claude
   other-modules:
     WebToolReport
 
+  if !flag(anthropic)
+    buildable: False
+
 test-suite shroom-test-integration-ollama
   import: opts, test-opts
   default-language: GHC2024
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: Integration/Ollama.hs
+
+  if !flag(ollama)
+    buildable: False
 
 test-suite shroom-test-conference
   import: opts, test-opts
@@ -145,6 +175,9 @@ test-suite shroom-test-web-tools
   main-is: WebToolsScenario.hs
   build-depends:
     text
+
+  if !flag(web)
+    buildable: False
 
 executable shroom-dev
   import: opts, test-opts

@@ -6,6 +6,7 @@ module Main (main) where
 import Data.IORef
 import GHC.Generics (Generic)
 import System.Environment (lookupEnv)
+import System.Exit (die)
 
 -- text
 import Data.Text (Text, pack)
@@ -67,7 +68,7 @@ main :: IO ()
 main = do
   mKey <- lookupEnv "ANTHROPIC_API_KEY"
   case mKey of
-    Nothing -> putStrLn "ANTHROPIC_API_KEY not set, skipping integration tests"
+    Nothing -> die "ANTHROPIC_API_KEY not set; the Claude integration suite needs it to run"
     Just key -> defaultMain $ integrationTests (pack key)
 
 integrationTests :: Text -> TestTree
