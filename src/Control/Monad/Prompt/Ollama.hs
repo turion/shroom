@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedRecordDot #-}
+
 module Control.Monad.Prompt.Ollama (module Control.Monad.Prompt.Ollama) where
 
 -- base
@@ -176,14 +178,18 @@ ollamaToolLoopOps cfg schema toolDefs promptCfg =
                 Just [] -> Nothing
                 Just calls ->
                   let extracted =
-                        ((\ tc
-                          -> (tc . outputFunction . outputFunctionName,
-                              tc . outputFunction . outputFunctionName,
-                              Object
-                                (KM.fromList
-                                   [(Key.fromText k, v) |
-                                      (k, v) <- Map.toList tc . outputFunction . arguments])))
-                         <$> calls)
+                        ( \tc ->
+                            ( tc.outputFunction.outputFunctionName
+                            , tc.outputFunction.outputFunctionName
+                            , Object
+                                ( KM.fromList
+                                    [ (Key.fromText k, v)
+                                    | (k, v) <- Map.toList tc.outputFunction.arguments
+                                    ]
+                                )
+                            )
+                        )
+                          <$> calls
                    in if null extracted then Nothing else Just extracted
         , appendExchange = \msgs resp tagged ->
             -- Ollama rejects messages with empty content; use a space when the

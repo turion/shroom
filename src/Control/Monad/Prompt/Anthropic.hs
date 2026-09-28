@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedRecordDot #-}
+
 {- | Anthropic Claude backend for 'PromptT'.
 
 Import this module alongside "Control.Monad.Prompt" to use the Claude API:
@@ -147,7 +149,7 @@ anthropicToolLoopOps methods cfg mSystem schema mTools promptCfg =
         case resp.stop_reason of
           Just Tool_Use ->
             let calls =
-                  [ (cb, cb.name, cb.input)
+                  [ (cb.id, cb.name, cb.input)
                   | cb <- toList resp.content
                   , ContentBlock_Tool_Use {} <- [cb]
                   ]
@@ -159,7 +161,7 @@ anthropicToolLoopOps methods cfg mSystem schema mTools promptCfg =
             toolResultContents =
               [ Content_Tool_Result
                   { tool_use_id = uid
-                  , content = Just (either ("Error: " <>) (id) res)
+                  , content = Just (either ("Error: " <>) Prelude.id res)
                   , is_error = either (const (Just True)) (const Nothing) res
                   }
               | (uid, _name, res) <- tagged

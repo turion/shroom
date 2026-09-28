@@ -73,7 +73,7 @@ newtype WebToolReport (tools :: [Type]) = WebToolReport
 Status is @"ok"@ for success or an error string for failure.
 -}
 toolResults :: WebToolReport tools -> [(Text, Text)]
-toolResults r = (\ tr -> (resultToolName tr, resultStatus tr)) <$> results r
+toolResults r = (\tr -> (resultToolName tr, resultStatus tr)) <$> results r
 
 -- | The only enforced property: every expected tool must appear in the results.
 data AllToolsTested = AllToolsTested
