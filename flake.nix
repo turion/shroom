@@ -14,6 +14,7 @@
       projectName = "shroom";
       localPackages = {
         shroom = ./shroom;
+        shroom-baikai = ./shroom-baikai;
       };
 
       # Always keep in sync with the tested-with section in the cabal file
@@ -31,9 +32,49 @@
           pkgs = nixpkgs.legacyPackages.${system};
 
           # Haskell package overrides for dependencies
+          #
+          # nixpkgs-unstable does not package the baikai family at all (checked via
+          # `nix eval`, 2026-09-29: only "claude" of the shroom-baikai dependency set is
+          # present in haskellPackages), and its own "claude" is pinned to 1.4.0, older
+          # than the 1.5.0 that baikai-claude needs. Pull all five straight from Hackage.
           dependenciesOverrides = with pkgs.haskell.lib;
             composeManyExtensions [
               (hfinal: hprev: {
+                claude = hfinal.callHackageDirect
+                  {
+                    pkg = "claude";
+                    ver = "1.5.0";
+                    sha256 = "sha256-Eakrz2Eoj+6DOfPnCTpLquIrXY0pXIkevF4QDWtMFUE=";
+                  }
+                  { };
+                baikai = hfinal.callHackageDirect
+                  {
+                    pkg = "baikai";
+                    ver = "0.7.1.0";
+                    sha256 = "sha256-MbR9bddpAUGBjFgqUBVQKZ2Sf8Deh6NHr814bofZzr8=";
+                  }
+                  { };
+                baikai-claude = hfinal.callHackageDirect
+                  {
+                    pkg = "baikai-claude";
+                    ver = "0.7.0.0";
+                    sha256 = "sha256-Q7SBoJF2i5ie1sOx7d34/HgTpCe2llZhq61OMyMOIfk=";
+                  }
+                  { };
+                baikai-effectful = hfinal.callHackageDirect
+                  {
+                    pkg = "baikai-effectful";
+                    ver = "0.4.0.2";
+                    sha256 = "sha256-wC43iXuTdZRqI6FfUALnpNysrcLjDyO9FN8PGHbCDAA=";
+                  }
+                  { };
+                baikai-openai = hfinal.callHackageDirect
+                  {
+                    pkg = "baikai-openai";
+                    ver = "0.7.0.0";
+                    sha256 = "sha256-L7UoAQYiY2m2yoKVAu1CM/5M3iwoBxFaNH8Z3KCSwuU=";
+                  }
+                  { };
               })
             ];
 
@@ -82,10 +123,10 @@
             (ghcVersion: haskellPackages: haskellPackages.shellFor {
               packages = hps: attrValues (localPackagesFor (haskellPackagesExtended.${ghcVersion}));
               nativeBuildInputs = [
-                  haskellPackages.haskell-language-server
-                  pkgs.nixpkgs-fmt
-                  pkgs.cabal-install
-                  ];
+                haskellPackages.haskell-language-server
+                pkgs.nixpkgs-fmt
+                pkgs.cabal-install
+              ];
             })
             haskellPackagesFor;
 

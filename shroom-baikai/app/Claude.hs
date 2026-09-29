@@ -21,7 +21,7 @@ import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime, defaultTimeLocale, formatTime)
 
 -- shroom
-import Control.Monad.Prompt.Anthropic (anthropicBackend, mkAnthropicConfig)
+import Control.Monad.Prompt.Baikai (claudeBackend)
 import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig, runPromptResultEff)
 import Control.Monad.Prompt.Tool (runTool, toolBinding)
 import Control.Monad.Prompt.Tool.Web (DuckDuckGoSearch, WikipediaSearch, duckDuckGoSearchHandler, wikipediaSearchHandler)
@@ -49,8 +49,8 @@ main = do
 
 run :: T.Text -> IO ()
 run apiKey = do
-  let backend = anthropicBackend (mkAnthropicConfig apiKey)
-      pcfg = defaultPromptConfig {debugLog = Just TIO.putStrLn, maxToolSteps = Just 2}
+  backend <- claudeBackend apiKey
+  let pcfg = defaultPromptConfig {debugLog = Just TIO.putStrLn, maxToolSteps = Just 2}
       bindings = [toolBinding @DuckDuckGoSearch, toolBinding @WikipediaSearch]
   result <-
     runPromptResultEff backend pcfg $
