@@ -32,58 +32,83 @@
           pkgs = nixpkgs.legacyPackages.${system};
 
           # Haskell package overrides for dependencies
-          #
-          # nixpkgs-unstable does not package the baikai family at all (checked via
-          # `nix eval`, 2026-09-29: only "claude" of the shroom-baikai dependency set is
-          # present in haskellPackages), and its own "claude" is pinned to 1.4.0, older
-          # than the 1.5.0 that baikai-claude needs. Pull all five straight from Hackage.
           dependenciesOverrides = with pkgs.haskell.lib;
             composeManyExtensions [
-              (hfinal: hprev: {
-                claude = hfinal.callHackageDirect
-                  {
-                    pkg = "claude";
-                    ver = "1.5.0";
-                    sha256 = "sha256-Jng3pCOl9d9XqXbHomBJNiXDMViKZYymj9AKTWwHhvY=";
-                  }
-                  { };
-                baikai = hfinal.callHackageDirect
-                  {
-                    pkg = "baikai";
-                    ver = "0.7.1.0";
-                    sha256 = "sha256-h2BWpYua+/RT/cDBqVNeAK9XFFrD5j8FXJQh9PHMa4Y=";
-                  }
-                  { };
-                baikai-claude = hfinal.callHackageDirect
-                  {
-                    pkg = "baikai-claude";
-                    ver = "0.7.0.0";
-                    sha256 = "sha256-GSOzULFgbJae4Wf6vwdr2xR+83CwhrCuWMxuZJG6NZA=";
-                  }
-                  { };
-                baikai-effectful = hfinal.callHackageDirect
-                  {
-                    pkg = "baikai-effectful";
-                    ver = "0.4.0.2";
-                    sha256 = "sha256-SgcvuYmfJt8bF4WU5MCKQzTCBkAPdsy5G5X3nwPVPd0=";
-                  }
-                  { };
-                baikai-openai = hfinal.callHackageDirect
-                  {
-                    pkg = "baikai-openai";
-                    ver = "0.7.0.0";
-                    sha256 = "sha256-FVYkPkL8hzzaNY0YprnmRFVswJKHyqEk15hcPauyYkI=";
-                  }
-                  { };
-                # baikai declares `build-depends: openai ^>=2.5` — a different Hackage
-                # package (Servant bindings to the OpenAI API, unrelated to
-                # baikai-openai). nixpkgs pins openai-2.5.3 and marks it broken; unbreak it
-                # rather than pull a sixth Hackage tarball.
-                openai = markUnbroken hprev.openai;
-                # baikai-claude transitively pulls in cradle, also marked broken in
-                # nixpkgs with no stated reason beyond the flag itself; same treatment.
-                cradle = markUnbroken hprev.cradle;
-              })
+              (hfinal: hprev:
+                let
+                  # Upstream test suites are not ours to run, and none of these can pass
+                  # in the sandbox: the baikai sdists ship neither test/fixtures nor
+                  # data/models, and claude's and openai's tasty suites call getEnv on an
+                  # API key and talk to the live service. Take the libraries only.
+                  fromHackage = pkg: ver: sha256:
+                    dontCheck (hfinal.callHackageDirect { inherit pkg ver sha256; } { });
+                in
+                {
+                  # nixpkgs-unstable does not package the baikai family at all (checked via
+                  # `nix eval`, 2026-09-29: only "claude" of the shroom-baikai dependency
+                  # set is present in haskellPackages), and its own "claude" is pinned to
+                  # 1.4.0, older than the 1.5.0 that baikai-claude needs. Pull all five
+                  # straight from Hackage. callHackageDirect fetches with fetchzip, so
+                  # every sha256 here is the *unpacked* source hash, as produced by
+                  # `nix store prefetch-file --unpack`.
+                  claude = fromHackage "claude" "1.5.0"
+                    "sha256-Jng3pCOl9d9XqXbHomBJNiXDMViKZYymj9AKTWwHhvY=";
+                  baikai-claude = fromHackage "baikai-claude" "0.7.0.0"
+                    "sha256-GSOzULFgbJae4Wf6vwdr2xR+83CwhrCuWMxuZJG6NZA=";
+                  baikai-effectful = fromHackage "baikai-effectful" "0.4.0.2"
+                    "sha256-SgcvuYmfJt8bF4WU5MCKQzTCBkAPdsy5G5X3nwPVPd0=";
+                  baikai-openai = fromHackage "baikai-openai" "0.7.0.0"
+                    "sha256-FVYkPkL8hzzaNY0YprnmRFVswJKHyqEk15hcPauyYkI=";
+
+                  # baikai-effectful 0.4.0.2 and shroom-baikai itself both want
+                  # effectful ^>=2.7; nixpkgs is on 2.6.1.0.
+                  effectful = fromHackage "effectful" "2.7.1.0"
+                    "sha256-1jr7uWldG/qzNljv41c8ustRFNLnD9DuOFBmL3BYT6g=";
+                  effectful-core = fromHackage "effectful-core" "2.7.1.2"
+                    "sha256-OZhGk0UY3BMWF+oUAQnCvF3hnzscBCm0Cz+nz8p2XM8=";
+                  # effectful-core 2.7 needs strict-mutable-base >=2; nixpkgs has 1.1.0.0.
+                  strict-mutable-base = fromHackage "strict-mutable-base" "2.0.0.0"
+                    "sha256-3o2PMN8l56X7ULqyNNJrJQZ8xgqqOsxhjm0jfULQt+k=";
+
+                  # baikai 0.7.1.0 wants streamly >=0.11, streamly-core >=0.3 and
+                  # generic-lens >=2.3; nixpkgs is still on 0.10.1 / 0.2.3 / 2.2.2.0, and
+                  # so is current nixos-unstable, so bumping the pin would not have helped.
+                  streamly = fromHackage "streamly" "0.11.1"
+                    "sha256-4h1MwaN7eXMvzXKyjggIjjR3BlsGzl4vfCO7VBGGvrc=";
+                  streamly-core = fromHackage "streamly-core" "0.3.1"
+                    "sha256-k9h+I74GNsluf55hJFDZiLwEO2x9moFvtCarCeCpaa4=";
+                  generic-lens = fromHackage "generic-lens" "2.3.0.0"
+                    "sha256-V8M8gkbrrLAsJ42IKa26HnU28sfljwUZuBiCJBV8ABs=";
+                  generic-lens-core = fromHackage "generic-lens-core" "2.3.0.0"
+                    "sha256-Abntgf3UMhQed5gOc6sDoVilMc0FRRCh8VJCeoQfNRY=";
+
+                  # baikai's remaining unmet bound is `tls >=2.2 && <2.5`, and that one is
+                  # not worth satisfying: tls 2.2 needs the crypton-x509 1.8 family and tls
+                  # 2.4 needs crypton >=1.1 (via mlkem, itself marked broken), so either
+                  # rebuilds the whole TLS/HTTP stack. nixpkgs' tls 2.1.8 is API-compatible
+                  # with what baikai actually uses -- it compiles clean against it -- so
+                  # relax the bound instead.
+                  baikai = doJailbreak (fromHackage "baikai" "0.7.1.0"
+                    "sha256-h2BWpYua+/RT/cDBqVNeAK9XFFrD5j8FXJQh9PHMa4Y=");
+
+                  # baikai declares `build-depends: openai ^>=2.5` -- a different Hackage
+                  # package (Servant bindings to the OpenAI API, unrelated to
+                  # baikai-openai). nixpkgs pins openai-2.5.3 and marks it broken; it is
+                  # broken only because its tasty suite calls getEnv "OPENAI_KEY" and hits
+                  # the live API, so the flag comes off together with the tests.
+                  openai = dontCheck (markUnbroken hprev.openai);
+
+                  # baikai-claude transitively pulls in cradle, also marked broken. Same
+                  # story: its spec shells out to a Python toolchain and reads
+                  # PYTHON_BIN_PATH, so 45 of its 51 examples fail in the sandbox while the
+                  # library itself compiles fine.
+                  cradle = dontCheck (markUnbroken hprev.cradle);
+
+                  # unicode-data 0.6.0 (via streamly) asserts against Unicode 15.1.0 while
+                  # GHC 9.12's base ships 16.0.0. The data tables are fine; only the
+                  # assertions are stale.
+                  unicode-data = dontCheck hprev.unicode-data;
+                })
             ];
 
           haskellPackagesFor = mapAttrs
