@@ -44,37 +44,45 @@
                   {
                     pkg = "claude";
                     ver = "1.5.0";
-                    sha256 = "sha256-Eakrz2Eoj+6DOfPnCTpLquIrXY0pXIkevF4QDWtMFUE=";
+                    sha256 = "sha256-Jng3pCOl9d9XqXbHomBJNiXDMViKZYymj9AKTWwHhvY=";
                   }
                   { };
                 baikai = hfinal.callHackageDirect
                   {
                     pkg = "baikai";
                     ver = "0.7.1.0";
-                    sha256 = "sha256-MbR9bddpAUGBjFgqUBVQKZ2Sf8Deh6NHr814bofZzr8=";
+                    sha256 = "sha256-h2BWpYua+/RT/cDBqVNeAK9XFFrD5j8FXJQh9PHMa4Y=";
                   }
                   { };
                 baikai-claude = hfinal.callHackageDirect
                   {
                     pkg = "baikai-claude";
                     ver = "0.7.0.0";
-                    sha256 = "sha256-Q7SBoJF2i5ie1sOx7d34/HgTpCe2llZhq61OMyMOIfk=";
+                    sha256 = "sha256-GSOzULFgbJae4Wf6vwdr2xR+83CwhrCuWMxuZJG6NZA=";
                   }
                   { };
                 baikai-effectful = hfinal.callHackageDirect
                   {
                     pkg = "baikai-effectful";
                     ver = "0.4.0.2";
-                    sha256 = "sha256-wC43iXuTdZRqI6FfUALnpNysrcLjDyO9FN8PGHbCDAA=";
+                    sha256 = "sha256-SgcvuYmfJt8bF4WU5MCKQzTCBkAPdsy5G5X3nwPVPd0=";
                   }
                   { };
                 baikai-openai = hfinal.callHackageDirect
                   {
                     pkg = "baikai-openai";
                     ver = "0.7.0.0";
-                    sha256 = "sha256-L7UoAQYiY2m2yoKVAu1CM/5M3iwoBxFaNH8Z3KCSwuU=";
+                    sha256 = "sha256-FVYkPkL8hzzaNY0YprnmRFVswJKHyqEk15hcPauyYkI=";
                   }
                   { };
+                # baikai declares `build-depends: openai ^>=2.5` — a different Hackage
+                # package (Servant bindings to the OpenAI API, unrelated to
+                # baikai-openai). nixpkgs pins openai-2.5.3 and marks it broken; unbreak it
+                # rather than pull a sixth Hackage tarball.
+                openai = markUnbroken hprev.openai;
+                # baikai-claude transitively pulls in cradle, also marked broken in
+                # nixpkgs with no stated reason beyond the flag itself; same treatment.
+                cradle = markUnbroken hprev.cradle;
               })
             ];
 
