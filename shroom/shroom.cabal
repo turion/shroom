@@ -112,6 +112,7 @@ library
 
 library test-utils
   import: opts
+  visibility: public
   hs-source-dirs: test-utils
   default-language: GHC2024
   build-depends:
@@ -122,6 +123,7 @@ library test-utils
     ConferenceTypes
     TestUtils
     Types
+    WebToolReport
 
 common test-opts
   build-depends:
@@ -143,8 +145,6 @@ test-suite shroom-test-integration-claude
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: Integration/Claude.hs
-  other-modules:
-    WebToolReport
 
   if !flag(anthropic)
     buildable: False
@@ -197,8 +197,5 @@ executable shroom-dev
 executable shroom-conference-claude
   import: opts, test-opts
   default-language: GHC2024
-  hs-source-dirs:
-    app
-    test
-
+  hs-source-dirs: app
   main-is: Claude.hs

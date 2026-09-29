@@ -17,8 +17,16 @@ result type it mentions is one of shroom's own
 ('ContextItem', 'ToolCall', 'ToolDef', 'Text', 'Value', 'BackendReply',
 'BackendError') or from a package any adapter depends on anyway ('aeson',
 'text'), and nothing here forces a second dependency on any particular
-transport package. Native provider tool-calling survives through this seam
-too: a call carries the provider's own call id in 'ToolCall'\'s
+transport package. 'schemaWithDefs' is re-exported here too, for the same
+reason: an adapter needs it to turn a 'Data.OpenApi.ToSchema' instance into
+the JSON schema 'Value' a provider's structured-output call expects.
+"Control.Monad.Prompt.Schema" itself stays internal — its other contents
+(@normalizeSchemaForStructuredOutput@, @inlineSchema@) are quirk-workarounds
+for particular backends' schema formats, not something an adapter has
+business calling directly.
+
+Native provider tool-calling survives through this seam too: a call carries
+the provider's own call id in 'ToolCall'\'s
 @toolCallId@, so an adapter that gets that id back from its provider
 (Anthropic's @tool_use_id@) can still link a result to the call that
 produced it once the exchange has round-tripped through 'ContextItem'\'s
@@ -50,6 +58,7 @@ module Control.Monad.Prompt.Backend (
   ToolCall (..),
   ToolResult (..),
   renderContextItems,
+  schemaWithDefs,
 ) where
 
 -- text
@@ -60,7 +69,7 @@ import Data.Text qualified as T
 import Data.Aeson (Value)
 
 -- shroom
-import Control.Monad.Prompt.Schema (ToolDef (..))
+import Control.Monad.Prompt.Schema (ToolDef (..), schemaWithDefs)
 
 -- * Tool calls and results
 
