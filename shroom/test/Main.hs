@@ -11,7 +11,7 @@ import Data.Proxy (Proxy (..))
 import System.Timeout (timeout)
 
 -- aeson
-import Data.Aeson (Value (..))
+import Data.Aeson (Value (..), toJSON)
 import Data.Aeson.KeyMap qualified as KM
 
 -- text
@@ -21,10 +21,17 @@ import Data.Text (Text)
 import Test.Tasty (defaultMain, testGroup)
 import Test.Tasty.HUnit (assertFailure, testCase, (@?=))
 
+-- effectful
+import Effectful (Eff, IOE, (:>))
+import Effectful.Concurrent.Async (Concurrent)
+import Effectful.Error.Static (Error)
+import Effectful.State.Static.Local (State)
+
 -- shroom
 import Control.Monad.Prompt
 import Control.Monad.Prompt.Effect qualified as Eff
 import Control.Monad.Prompt.Ollama (schemaToFormatAndUnwrap, unwrapResult)
+import Control.Monad.Prompt.Tool (Tool, ToolHandler (..), ToolLoopOps (..), genericToolLoop, runTool, toolBinding, toolName)
 import Control.Monad.Prompt.Tool.Web
 import Data.Shroom.Class (Describable (..), Surveyable (..), description)
 
@@ -55,6 +62,73 @@ instance LLMBackend BarrierMockConfig where
           if n >= expected then pure () else threadDelay 1000 >> waitForAll
     waitForAll
     pure (Right "0")
+
+{- | A mock 'LLMBackend' that calls the given dispatcher once, with the
+given tool name and input, then returns @"0"@ (a valid 'Counter'). Proves a
+tool result actually reaches its registered handler through the
+effect-based dispatch bridge in "Control.Monad.Prompt.Effect", without
+needing a real backend's wire-level tool_use protocol.
+-}
+data ToolCallMockConfig = ToolCallMockConfig Text Value
+
+instance LLMBackend ToolCallMockConfig where
+  runChatWithTools (ToolCallMockConfig name inputVal) _ _ _ _ _toolDefs dispatch _ = do
+    _ <- dispatch name inputVal
+    pure (Right "0")
+
+{- | A tool-loop response: either "the model wants to call the offered tool
+again" or "the model is done, here is its final answer".
+-}
+data BudgetResp = WantsTool | FinalAnswer Text
+
+{- | A mock 'LLMBackend' that wants to call the given tool for the first @n@
+rounds (via the /unchanged/ 'genericToolLoop' \/ 'ToolLoopOps', exactly as
+a real backend would), then answers directly. A test built on this
+exercises 'genericToolLoop'\'s budget rules — unchanged by this todo —
+through the new effect-based dispatch bridge, rather than re-testing
+'genericToolLoop' in isolation.
+-}
+data RoundBasedToolMockConfig = RoundBasedToolMockConfig Text Int (IORef Int)
+
+instance LLMBackend RoundBasedToolMockConfig where
+  runChatWithTools (RoundBasedToolMockConfig name wantRounds roundRef) _ _ _ _ _toolDefs dispatch =
+    genericToolLoop ops dispatch ()
+    where
+      ops =
+        ToolLoopOps
+          { callModel = \_ -> liftIO $ do
+              n <- readIORef roundRef
+              modifyIORef' roundRef (+ 1)
+              pure (Right (if n < wantRounds then WantsTool else FinalAnswer "0"))
+          , callModelNoTools = \_ -> pure (Right (FinalAnswer "0"))
+          , detectTools = \case
+              WantsTool -> Just [("call-id", name, toJSON (DuckDuckGoSearch "budget-test"))]
+              FinalAnswer _ -> Nothing
+          , appendExchange = \ctx _ _ -> ctx
+          , extractText = \case
+              WantsTool -> "unexpected"
+              FinalAnswer t -> t
+          , logEvent = \_ -> pure ()
+          }
+
+{- | The effect stack every mock test below runs its program through, once
+its own tools have been peeled off the front by 'runTool' — exactly what
+'Eff.runPromptResultEff' expects.
+-}
+type BaseEs = '[Eff.Prompt, State [ContextItem], Error Text, Concurrent, IOE]
+
+{- | Demonstrates "a sub-program can be run with a strict subset of its
+caller's tools": this needs only 'DuckDuckGoSearch', not 'WikipediaSearch'.
+-}
+subProgram :: (Tool DuckDuckGoSearch :> es, Eff.Prompt :> es) => Eff es Counter
+subProgram = Eff.promptTools [toolBinding @DuckDuckGoSearch]
+
+{- | A caller with a wider tool surface than 'subProgram' needs. Delegating
+to it type-checks for free, because its @es@ is a strict superset of
+'subProgram'\'s.
+-}
+callerProgram :: Eff (Tool DuckDuckGoSearch : Tool WikipediaSearch : BaseEs) Counter
+callerProgram = subProgram
 
 -- * Tests
 
@@ -525,5 +599,86 @@ main =
                     Just (Left err) -> assertFailure (show err)
                     Just (Right xs) -> length xs @?= 3
               ]
+          ]
+      , testGroup
+          "Tools as effects"
+          [ testCase "toolBinding + promptTools + runTool: dispatch reaches the registered handler" $ do
+              seenInput <- newIORef Nothing
+              let handler = ToolHandler $ \q -> do
+                    writeIORef seenInput (Just q)
+                    pure (Right "fetched page text")
+                  program :: Eff (Tool WebFetch : BaseEs) Counter
+                  program = Eff.promptTools [toolBinding @WebFetch]
+              result <-
+                Eff.runPromptResultEff
+                  (ToolCallMockConfig (toolName (Proxy @WebFetch)) (toJSON (WebFetch "https://example.com")))
+                  defaultPromptConfig
+                  (runTool handler program)
+              case result of
+                Right (Counter 0) -> pure ()
+                Right (Counter n) -> assertFailure ("Expected Counter 0, got Counter " <> show n)
+                Left err -> assertFailure (show err)
+              seen <- readIORef seenInput
+              seen @?= Just (WebFetch "https://example.com")
+          , testCase "sub-program runs with a strict subset of the caller's tools" $ do
+              let ddgHandler = ToolHandler $ \_ -> pure (Right "ddg result")
+                  wikiHandler = ToolHandler $ \_ -> pure (Right "wiki result")
+              result <-
+                Eff.runPromptResultEff
+                  (ToolCallMockConfig (toolName (Proxy @DuckDuckGoSearch)) (toJSON (DuckDuckGoSearch "x")))
+                  defaultPromptConfig
+                  (runTool wikiHandler (runTool ddgHandler callerProgram))
+              case result of
+                Right (Counter 0) -> pure ()
+                Right (Counter n) -> assertFailure ("Expected Counter 0, got Counter " <> show n)
+                Left err -> assertFailure (show err)
+          , testCase "tool budget: successful calls cost exactly the budget, then one final tool-free call" $ do
+              callCount <- newIORef (0 :: Int)
+              roundRef <- newIORef (0 :: Int)
+              let handler = ToolHandler $ \_ -> do
+                    modifyIORef' callCount (+ 1)
+                    pure (Right "ok")
+                  program :: Eff (Tool DuckDuckGoSearch : BaseEs) Counter
+                  program = Eff.promptTools [toolBinding @DuckDuckGoSearch]
+              result <-
+                Eff.runPromptResultEff
+                  (RoundBasedToolMockConfig (toolName (Proxy @DuckDuckGoSearch)) 5 roundRef)
+                  (defaultPromptConfig {maxToolSteps = Just 2})
+                  (runTool handler program)
+              case result of
+                Right (Counter 0) -> pure ()
+                Right (Counter n) -> assertFailure ("Expected Counter 0, got Counter " <> show n)
+                Left err -> assertFailure (show err)
+              n <- readIORef callCount
+              n @?= 2
+          , testCase "tool budget: failed calls are free and do not consume it" $ do
+              roundRef <- newIORef (0 :: Int)
+              let handler = ToolHandler $ \_ -> pure (Left "nope")
+                  program :: Eff (Tool DuckDuckGoSearch : BaseEs) Counter
+                  program = Eff.promptTools [toolBinding @DuckDuckGoSearch]
+              result <-
+                Eff.runPromptResultEff
+                  (RoundBasedToolMockConfig (toolName (Proxy @DuckDuckGoSearch)) 3 roundRef)
+                  (defaultPromptConfig {maxToolSteps = Just 1})
+                  (runTool handler program)
+              case result of
+                Right (Counter 0) -> pure ()
+                Right (Counter n) -> assertFailure ("Expected Counter 0, got Counter " <> show n)
+                Left err ->
+                  assertFailure
+                    ( "Expected the natural finish after 3 failed calls on a budget of 1, but got: "
+                        <> show err
+                    )
+              {- 'callModel' runs once per round regardless of outcome, so its
+              call count is the tell: with the budget never actually spent,
+              all 3 attempted (and failed) rounds plus the final answer round
+              reach 'callModel', for 4 in total. Were failed calls to consume
+              budget instead, a budget of 1 would trip the exhaustion branch
+              after round 2, and 'callModel' would never be reached again —
+              this assertion is what would catch that, since both paths
+              otherwise settle on the same 'Counter 0'.
+              -}
+              n <- readIORef roundRef
+              n @?= 4
           ]
       ]

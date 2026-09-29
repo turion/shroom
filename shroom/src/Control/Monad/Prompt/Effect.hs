@@ -20,6 +20,14 @@ landing spot that deletion repoints onto.
 * 'Control.Monad.Prompt.Core.Ap' — "Effectful.Concurrent.Async"
   ('promptPar' \/ 'promptsParallel')
 
+Tool use (todo 10 of the shroom arc) is 'promptTools' plus
+"Control.Monad.Prompt.Tool"\'s 'Control.Monad.Prompt.Tool.Tool' effect and
+'Control.Monad.Prompt.Tool.toolBinding': a program names the tools it may
+call in its own @es@, and 'promptTools' assembles the ones it is given into
+what 'runChatWithTools' already expects — a @['Control.Monad.Prompt.Schema.ToolDef']@
+plus a dispatcher — so the propose\/dispatch\/observe cycle itself still
+runs where it always has, inside each backend's own 'genericToolLoop' call.
+
 'runPrompt' interprets 'Prompt' over the existing 'LLMBackend' class, so
 "Control.Monad.Prompt.Anthropic" and "Control.Monad.Prompt.Ollama" need no
 changes at this revision. 'LLMBackend' reports a backend error as a bare
@@ -35,6 +43,7 @@ module Control.Monad.Prompt.Effect (
   Prompt,
   prompt,
   promptWith,
+  promptTools,
   promptPar,
   promptsParallel,
   runPrompt,
@@ -71,13 +80,14 @@ import Data.Universe.Class (universe)
 -- effectful
 import Effectful (Dispatch (Dynamic), DispatchOf, Eff, Effect, IOE, runEff, (:>))
 import Effectful.Concurrent.Async (Concurrent, concurrently, mapConcurrently, runConcurrent)
-import Effectful.Dispatch.Dynamic (interpret, send)
+import Effectful.Dispatch.Dynamic (interpret, localSeqUnlift, send)
 import Effectful.Error.Static (Error, catchError, runErrorNoCallStack, throwError)
 import Effectful.State.Static.Local (State, evalState, get, modify, put)
 
 -- shroom
 import Control.Monad.Prompt (ContextItem (..), LLMBackend (..), PromptConfig (..))
-import Control.Monad.Prompt.Schema (schemaWithDefs)
+import Control.Monad.Prompt.Schema (ToolDef, ToolDispatcher, schemaWithDefs)
+import Control.Monad.Prompt.Tool (ToolBinding (..), dispatchBindings)
 import Data.Shroom.Class (Surveyable, describeProperties, description, propertyHolds)
 
 -- * The Prompt effect
@@ -88,6 +98,10 @@ a typed value from the model, using whatever context is currently held in
 -}
 data Prompt :: Effect where
   RequestPrompt :: (Surveyable a, ToSchema a, FromJSON a) => Prompt m a
+  RequestPromptTools ::
+    (Surveyable a, ToSchema a, FromJSON a) =>
+    [ToolBinding m] ->
+    Prompt m a
 
 type instance DispatchOf Prompt = Dynamic
 
@@ -101,6 +115,19 @@ promptWith ::
   Text ->
   Eff es a
 promptWith txt = withContext txt prompt
+
+{- | Like 'prompt', but the model may call any of the given tools. Build each
+'ToolBinding' with 'Control.Monad.Prompt.Tool.toolBinding' — that is only
+possible when the tool's 'Control.Monad.Prompt.Tool.Tool' effect is in
+@es@, which is the compile-time denial: a program cannot offer a tool it
+was not itself given.
+-}
+promptTools ::
+  forall a es.
+  (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) =>
+  [ToolBinding (Eff es)] ->
+  Eff es a
+promptTools bindings = send (RequestPromptTools bindings)
 
 {- | Run two programs concurrently via "Effectful.Concurrent.Async", returning
 both results. Unlike 'Control.Monad.Prompt.Core.PromptT'\'s @('<*>')@, which
@@ -187,9 +214,14 @@ what went wrong — the same behaviour as
 before\/after-call lines with the same OK \/ PARSE FAIL \/ VALIDATION FAIL \/
 ERROR outcomes.
 
-Interprets over 'LLMBackend' directly, without tool support — tool use
-is not part of this todo's scope; todo 12 is where this interpreter is
-repointed onto todo 11's narrower interface.
+'RequestPrompt' passes no tools, exactly as before todo 10. 'RequestPromptTools'
+turns its @['ToolBinding']@ into the @['ToolDef']@ \/ dispatcher pair
+'runChatWithTools' already expects — via 'localSeqUnlift', since a binding's
+call runs in the caller's local effect stack — so budget semantics (a round
+costs a step only on a successful call, failed calls are free, remaining
+budget is annotated, exhaustion sends one final tool-free call) are
+inherited unchanged from whichever backend's own 'genericToolLoop' handles
+the call; this interpreter does not re-implement that cycle.
 -}
 runPrompt ::
   forall cfg es a.
@@ -198,21 +230,40 @@ runPrompt ::
   PromptConfig ->
   Eff (Prompt : es) a ->
   Eff es a
-runPrompt cfg promptCfg = interpret $ \_ (RequestPrompt :: Prompt (Eff localEs) b) -> do
-  ctx <- get
-  let prx = Proxy @b
-      typeDesc = description prx
-      schema = schemaWithDefs prx
-      checkProps v =
-        [ desc
-        | p <- universe
-        , not (propertyHolds v p)
-        , Just desc <- [describeProperties prx p]
-        ]
-  (a, rawTxt) <- attemptLoop ctx typeDesc schema checkProps (maxRetries promptCfg) (maxRetries promptCfg)
-  put (ctx <> [AssistantMessage rawTxt])
-  pure a
+runPrompt cfg promptCfg = interpret $ \env (request :: Prompt (Eff localEs) b) -> case request of
+  -- No tools for 'RequestPrompt' (unchanged from before todo 10).
+  RequestPrompt -> runRequest [] (\_ _ -> pure (Left "no tools")) (Just 0)
+  -- 'RequestPromptTools': build the dispatcher out of the bindings by
+  -- unlifting each binding's call — which runs in the request's own local
+  -- effect stack ('localEs') — into this interpreter's 'es'.
+  RequestPromptTools bindings ->
+    runRequest
+      (fmap toolBindingDef bindings)
+      (\name v -> localSeqUnlift env (\unlift -> unlift (dispatchBindings bindings name v)))
+      (maxToolSteps promptCfg)
   where
+    runRequest ::
+      forall b.
+      (Surveyable b, ToSchema b, FromJSON b) =>
+      [ToolDef] ->
+      ToolDispatcher (Eff es) ->
+      Maybe Int ->
+      Eff es b
+    runRequest toolDefs dispatch maxSteps = do
+      ctx <- get
+      let prx = Proxy @b
+          typeDesc = description prx
+          schema = schemaWithDefs prx
+          checkProps v =
+            [ desc
+            | p <- universe
+            , not (propertyHolds v p)
+            , Just desc <- [describeProperties prx p]
+            ]
+      (a, rawTxt) <- attemptLoop toolDefs dispatch maxSteps ctx typeDesc schema checkProps (maxRetries promptCfg) (maxRetries promptCfg)
+      put (ctx <> [AssistantMessage rawTxt])
+      pure a
+
     logDebug :: Text -> Eff es ()
     logDebug msg = case promptCfg.debugLog of
       Nothing -> pure ()
@@ -224,6 +275,9 @@ runPrompt cfg promptCfg = interpret $ \_ (RequestPrompt :: Prompt (Eff localEs) 
     attemptLoop ::
       forall c.
       (FromJSON c) =>
+      [ToolDef] ->
+      ToolDispatcher (Eff es) ->
+      Maybe Int ->
       [ContextItem] ->
       Text ->
       Value ->
@@ -231,7 +285,7 @@ runPrompt cfg promptCfg = interpret $ \_ (RequestPrompt :: Prompt (Eff localEs) 
       Int ->
       Int ->
       Eff es (c, Text)
-    attemptLoop ctx typeDesc schema checkProps totalRetries retriesLeft = do
+    attemptLoop toolDefs dispatch maxSteps ctx typeDesc schema checkProps totalRetries retriesLeft = do
       let attemptNum = totalRetries - retriesLeft + 1
           separator = T.replicate 60 "─"
           renderItem (SystemMessage t) = "[system]    " <> t
@@ -249,8 +303,9 @@ runPrompt cfg promptCfg = interpret $ \_ (RequestPrompt :: Prompt (Eff localEs) 
           ]
             <> fmap renderItem ctx
             <> [separator]
-      result <- runChatWithTools cfg promptCfg ctx typeDesc schema [] (\_ _ -> pure (Left "no tools")) (Just 0)
+      result <- runChatWithTools cfg promptCfg ctx typeDesc schema toolDefs dispatch maxSteps
       let attemptsStr = "(" <> pack (show attemptNum) <> " attempt(s))"
+          retry = attemptLoop toolDefs dispatch maxSteps
       case result of
         Left err -> do
           logDebug $ "✗ ERROR: " <> err
@@ -262,7 +317,7 @@ runPrompt cfg promptCfg = interpret $ \_ (RequestPrompt :: Prompt (Eff localEs) 
             BackendTransportError ->
               if retriesLeft <= 0
                 then throwError $ err <> "\n" <> attemptsStr
-                else attemptLoop ctx typeDesc schema checkProps totalRetries (retriesLeft - 1)
+                else retry ctx typeDesc schema checkProps totalRetries (retriesLeft - 1)
         Right rawTxt ->
           case eitherDecodeStrictText' rawTxt of
             Left parseErr -> do
@@ -279,7 +334,7 @@ runPrompt cfg promptCfg = interpret $ \_ (RequestPrompt :: Prompt (Eff localEs) 
                                    <> parseErr
                                    <> "\n\nGenerate a new, corrected JSON response that matches the required schema exactly."
                              ]
-                  attemptLoop retryCtx typeDesc schema checkProps totalRetries (retriesLeft - 1)
+                  retry retryCtx typeDesc schema checkProps totalRetries (retriesLeft - 1)
             Right a ->
               let failDescs = checkProps a
                in if null failDescs
@@ -305,7 +360,7 @@ runPrompt cfg promptCfg = interpret $ \_ (RequestPrompt :: Prompt (Eff localEs) 
                                            <> T.unlines (fmap ("- " <>) failDescs)
                                            <> "\nGenerate a new, corrected JSON response that satisfies ALL properties listed above."
                                      ]
-                          attemptLoop retryCtx typeDesc schema checkProps totalRetries (retriesLeft - 1)
+                          retry retryCtx typeDesc schema checkProps totalRetries (retriesLeft - 1)
 
     eitherDecodeStrictText' :: forall c. (FromJSON c) => Text -> Either Text c
     eitherDecodeStrictText' t = case eitherDecodeStrictText t of

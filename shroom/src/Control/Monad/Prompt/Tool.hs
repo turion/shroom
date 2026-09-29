@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+
 {- | Tool use support for 'PromptT'.
 
 Define tools as Haskell types, provide handlers, and pass them to
@@ -22,6 +24,14 @@ mySearchHandler = ToolHandler $ \\(MySearch q) -> callSearchAPI q
 result <- runPromptResultTWith cfg $
   runPromptT defaultPromptConfig (mySearchHandler :* Nil) myProgram
 @
+
+The same 'MySearch' also works through the effect surface (see /Tools as
+effects/, below): give the program's type @'Tool' MySearch ':>' es@, offer
+@'toolBinding' \@MySearch@ to 'Control.Monad.Prompt.Effect.promptTools',
+and interpret with @'runTool' mySearchHandler@. Defining a tool is the
+same either way — a Haskell type with a Haddock comment plus a handler,
+and nothing further; the two are just different ways of handing that
+handler to a program.
 -}
 module Control.Monad.Prompt.Tool (module Control.Monad.Prompt.Tool) where
 
@@ -49,6 +59,10 @@ import Data.SOP (All, K (..), NP (..), SListI, hcmap, hcollapse)
 import Data.SOP.NP ()
 
 -- SListI instances
+
+-- effectful
+import Effectful (Dispatch (Dynamic), DispatchOf, Eff, Effect, IOE, (:>))
+import Effectful.Dispatch.Dynamic (interpret, send)
 
 -- shroom
 
@@ -253,3 +267,105 @@ genericToolLoop ops dispatch ctx stepsLeft = do
                   taggedAnnotated = fmap annotate tagged
                   ctx' = ops.appendExchange ctx resp taggedAnnotated
               genericToolLoop ops dispatch ctx' newStepsLeft
+
+-- * Tools as effects
+
+{- | A dynamic effect for calling tool @t@.  @'Tool' t ':>' es@ in a
+program's constraints is what "a program's type names the tools it may
+call" means: a program that tries to call a tool without that constraint
+does not compile.  For example, given
+
+@
+badProgram :: (Prompt ':>' es) => Eff es (Either Text Text)
+badProgram = callTool (WebFetch "https://example.com")
+@
+
+GHC (9.12.3, via @cabal repl@ against this module, 2026-09-29) reports:
+
+@
+    - Could not deduce \'Tool WebFetch :> es\'
+        arising from a use of \'callTool\'
+      from the context: Prompt :> es
+        bound by the type signature for:
+                   badProgram :: forall (es :: [Effect]).
+                                 (Prompt :> es) =>
+                                 Eff es (Either Text Text)
+    - In the expression: callTool (WebFetch "https://example.com")
+      In an equation for \'badProgram\':
+          badProgram = callTool (WebFetch "https://example.com")
+@
+
+A handler is supplied as an interpreter — 'runTool' — rather than passed
+as a runtime argument the way 'NP' 'ToolHandler' is: that is what "a
+handler is supplied as an interpreter" means.  Because @es@ is an ordinary
+type-level list, a sub-program needing only some of the caller's tools
+(@(Tool A ':>' es) => Eff es b@) runs unchanged inside a caller whose @es@
+also has @Tool B@ — a strict superset satisfies the subset's constraint
+for free.
+-}
+data Tool t :: Effect where
+  CallTool :: t -> Tool t m (Either Text Text)
+
+type instance DispatchOf (Tool t) = Dynamic
+
+-- | Call tool @t@. Requires @'Tool' t ':>' es@ — see the module Haddock.
+callTool :: forall t es. (Tool t :> es) => t -> Eff es (Either Text Text)
+callTool = send . CallTool
+
+{- | Interpret @'Tool' t@ against a 'ToolHandler': this is the interpreter
+that "supplies" the handler named in the module Haddock.
+-}
+runTool :: forall t es a. (IOE :> es) => ToolHandler t -> Eff (Tool t : es) a -> Eff es a
+runTool (ToolHandler run) = interpret $ \_ (CallTool t) -> liftIO (run t)
+
+{- | A tool offered to one particular prompt call: its 'ToolDef' metadata
+paired with a way to invoke it inside the current effect stack.  Build one
+with 'toolBinding'.
+-}
+data ToolBinding m = ToolBinding
+  { toolBindingDef :: ToolDef
+  , toolBindingCall :: Value -> m (Either Text Text)
+  }
+
+{- | Offer tool @t@ to a prompt call. Only compiles when @'Tool' t ':>' es@
+is in scope — a program cannot offer a tool it was not itself given. Name
+and description come from 'toolName' and 'describeType' \/ 'toolDescription',
+exactly as for the 'NP' 'ToolHandler' path.
+-}
+toolBinding :: forall t es. (Toolable t, Tool t :> es) => ToolBinding (Eff es)
+toolBinding =
+  ToolBinding
+    { toolBindingDef =
+        ToolDef
+          { toolDefName = toolName p
+          , toolDefDescription = describeType p <> maybe "" (" " <>) (toolDescription p)
+          , toolDefSchema = schemaWithDefs p
+          }
+    , toolBindingCall = \v -> case fromJSON v of
+        Error e -> pure (Left ("Tool input parse error for " <> toolName p <> ": " <> T.pack e))
+        Success (t :: t) -> callTool t
+    }
+  where
+    p = Proxy @t
+
+{- | Resolve a runtime @(tool_name, input_value)@ pair against a list of
+'ToolBinding's — the dispatch half of the effect surface.  Each binding's
+'toolBindingCall' has already closed over its own tool type, so this scans
+a plain list keyed by name; that is the tool's arc bail-out firing for
+/dispatch/ only: 'Tool' \/ 'toolBinding'\'s compile-time membership is
+unaffected, and only the run-time lookup by name — unavoidable once the
+model has emitted a bare tool name string — is a runtime registry.  See
+@decisions.md@ for why full type-level dispatch was not attempted.
+-}
+dispatchBindings :: (Applicative m) => [ToolBinding m] -> Text -> Value -> m (Either Text Text)
+dispatchBindings bindings name v =
+  case [call | ToolBinding {toolBindingDef, toolBindingCall = call} <- bindings, toolDefName toolBindingDef == name] of
+    (call : _) -> call v
+    [] ->
+      pure $
+        Left
+          ( "Unknown tool: "
+              <> name
+              <> ". Available tools: "
+              <> T.intercalate ", " (fmap (toolDefName . toolBindingDef) bindings)
+          )
