@@ -34,11 +34,26 @@ result text or an error.
 -}
 type ToolDispatcher m = Text -> Value -> m (Either Text Text)
 
-{- | Build a JSON schema 'Value' for type @a@ that includes all referenced
-sub-schemas in a @$defs@ section, using openapi3's 'declareSchemaRef'.
-This rewrites the @#\/components\/schemas\/X@ reference form openapi3 emits
-by default into the @#\/$defs\/X@ form a structured-output schema uses, via
-'normalizeSchemaForStructuredOutput'.
+{- | Build a JSON schema 'Value' for type @a@, fully self-contained with no
+@$ref@\/@$defs@ left in it, using openapi3's 'declareSchemaRef'.
+
+Internally this first rewrites the @#\/components\/schemas\/X@ reference form
+openapi3 emits by default into the @#\/$defs\/X@ form a structured-output
+schema uses, via 'normalizeSchemaForStructuredOutput', then flattens every
+@$ref@ against its @$defs@ via 'inlineSchema'.
+
+The flattening step is load-bearing, not cosmetic: a live Ollama
+(@0.30.6@, @llama3.2:1b@) resolves a single @$ref@ hop correctly —
+confirmed directly, including on a deliberately unguessable field name —
+but silently stops enforcing the schema (falling back to an unconstrained
+node, observed as an empty array or invented field names rather than an
+error) as soon as the wire schema asks it to follow a /second/ hop: a
+@$ref@ found while resolving another @$ref@, which is exactly what any
+nested-record type produces once it references another named schema (an
+array of records, or a record containing a record). A flat record's own
+schema is only ever one hop from the root, which is why that case worked
+before this fix and a nested one did not. See this package's arc plan,
+todo 20, for the direct wire evidence.
 -}
 schemaWithDefs :: forall a. (ToSchema a) => Proxy a -> Value
 schemaWithDefs prx =
@@ -47,12 +62,13 @@ schemaWithDefs prx =
         Inline s -> toJSON s
         Ref r -> Object (KM.singleton "$ref" (String ("#/$defs/" <> getReference r)))
       defsJson = toJSON defs
-   in case defsJson of
+      normalized = case defsJson of
         Object defsKm | not (KM.null defsKm) ->
           case rootSchema of
             Object rootKm -> normalizeSchemaForStructuredOutput (Object (KM.insert "$defs" (Object defsKm) rootKm))
             _ -> normalizeSchemaForStructuredOutput rootSchema
         _ -> normalizeSchemaForStructuredOutput rootSchema
+   in inlineSchema normalized
 
 {- | Normalise a JSON schema 'Value' for use as a structured-output (or
 strict tool) schema:
@@ -123,24 +139,23 @@ renderNum v = T.pack (show v)
 {- | Inline all @$ref@ pointers in a schema against its @$defs@ section,
 producing a flat schema with no @$ref@ or @$defs@.
 
-This is no longer needed to work around unresolved @$ref@ on the wire:
-Anthropic's structured outputs support @$ref@\/@$defs@ (external URL refs
-excepted), and Ollama's server resolves @$ref@ too — confirmed directly
-against a live Ollama 0.30.6, on both the response @format@ field and a
-tool's parameter schema, using a deliberately unnatural sub-schema so a
-small model could not have guessed the field name any other way.
+@$ref@\/@$defs@ is not simply unsupported on the wire — a single hop
+resolves correctly even against a small local Ollama model, on both the
+response @format@ field and a tool's parameter schema, confirmed directly
+with a deliberately unguessable field name. What fails is a /second/ hop:
+a @$ref@ found while resolving another @$ref@, which is exactly what any
+nested-record type produces (an array of records, or a record containing
+a record) once 'schemaWithDefs' leaves @$ref@\/@$defs@ in place. A live
+Ollama (@0.30.6@) does not error on this; it silently stops enforcing the
+schema at that point, observed as an empty array or invented field names.
+This is why 'schemaWithDefs' now calls this function on its own result
+before returning — see its Haddock and this package's arc plan, todo 20,
+for the wire evidence.
 
-It survives at both of "Control.Monad.Prompt.Ollama"'s call sites for a
-different reason: @ollama-haskell@'s own typed schema representations
-('Data.Ollama.Common.SchemaBuilder.Schema', used for the response @format@
-field, and 'Data.Ollama.Common.Types.FunctionParameters', used for a tool's
-parameters) have no field for @$ref@ or @$defs@ at all. 'schemaWithDefs'
-always @$ref@s its own root, so handing either conversion an un-inlined
-schema collapses it to an unconstrained @json@ format or an empty parameter
-object, for /every/ record type, not just ones with nested records —
-confirmed directly in @cabal repl@ against this module's own functions. The
-Anthropic call site, by contrast, hands a raw JSON 'Value' straight to the
-wire and no longer calls this function.
+Recursion is capped at 20 levels (see 'go') rather than unrolled fully: a
+genuinely self-referential type has no finite fully-inlined form, so past
+the cap whatever is left simply stops being descended into, rather than
+looping forever.
 -}
 inlineSchema :: Value -> Value
 inlineSchema root = go 20 startVal

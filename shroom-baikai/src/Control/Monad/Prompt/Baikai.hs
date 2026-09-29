@@ -120,7 +120,7 @@ toBaikaiMessages (AssistantMessage t) = [assistant t]
 toBaikaiMessages (ToolCallMessage calls) =
   [ BMessage.AssistantMessage
       AssistantPayload
-        { content = V.fromList [AssistantToolCall (toBaikaiToolCall tc) | tc <- calls]
+        { content = V.fromList ((\tc -> AssistantToolCall (toBaikaiToolCall tc)) <$> calls)
         , usage = zeroUsage
         , stopReason = ToolUse
         , errorMessage = Nothing
@@ -147,11 +147,16 @@ toBaikaiToolResultMessage tr =
 
 {- | Convert a 'ToolDef' to a baikai 'Tool'. The schema is passed straight
 through as the opaque 'Data.Aeson.Value' 'Tool'\'s own @parameters@ field
-is typed as — unlike @ollama-haskell@\'s typed 'FunctionParameters',
-baikai has no schema representation of its own to lose @$ref@\/@$defs@ to,
-so 'Control.Monad.Prompt.Schema.inlineSchema' is not needed here (checked
-live against a nested-record tool argument through 'localOllamaBackend',
-see this package's integration suite).
+is typed as — unlike @ollama-haskell@\'s typed 'FunctionParameters', baikai
+has no schema representation of its own to lose @$ref@\/@$defs@ to on this
+side. That is not the same claim as "a @$ref@ would survive the wire if
+one reached here": a live Ollama (@0.30.6@) resolves only one @$ref@ hop
+and silently stops enforcing the schema on a second, which any nested
+tool argument would produce. This function never sees that case only
+because every schema reaching a 'ToolDef' is already flattened upstream,
+by 'Control.Monad.Prompt.Schema.schemaWithDefs' — see that function's
+Haddock for the wire evidence. 'toBaikaiTool' itself does nothing to
+guarantee a flat schema; it just happens to always be handed one today.
 -}
 toBaikaiTool :: ToolDef -> Tool
 toBaikaiTool td = mkTool td.toolDefName td.toolDefDescription td.toolDefSchema

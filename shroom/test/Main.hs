@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass #-}
+
 module Main (main) where
 
 -- base
@@ -10,10 +12,21 @@ import Data.Proxy (Proxy (..))
 import System.Timeout (timeout)
 
 -- aeson
-import Data.Aeson (Value (..), toJSON)
+import Data.Aeson (FromJSON, ToJSON, Value (..), toJSON)
+import Data.Aeson.Text (encodeToLazyText)
 
 -- text
 import Data.Text (Text)
+import Data.Text.Lazy qualified as TL
+
+-- GHC.Generics
+import GHC.Generics (Generic)
+
+-- openapi3
+import Data.OpenApi (ToSchema)
+
+-- sop-core
+import Data.SOP (NP (..))
 
 -- tasty
 import Test.Tasty (defaultMain, testGroup)
@@ -26,10 +39,11 @@ import Effectful.Error.Static (Error)
 import Effectful.State.Static.Local (State)
 
 -- shroom
-import Control.Monad.Prompt.Backend (Backend (..), BackendReply (..), ContextItem (..), ToolCall (..))
+import Control.Monad.Prompt.Backend (Backend (..), BackendReply (..), ContextItem (..), ToolCall (..), ToolDef (..))
 import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Effect qualified as Eff
-import Control.Monad.Prompt.Tool (Tool, ToolHandler (..), runTool, toolBinding, toolName)
+import Control.Monad.Prompt.Promptable (Promptable)
+import Control.Monad.Prompt.Tool (Tool, ToolHandler (..), Toolable, runTool, toolBinding, toolDefsRaw, toolName)
 import Control.Monad.Prompt.Tool.Web
 import Data.Shroom.Class (Describable (..), Surveyable (..), description)
 
@@ -125,6 +139,54 @@ to it type-checks for free, because its @es@ is a strict superset of
 callerProgram :: Eff (Tool DuckDuckGoSearch : Tool WikipediaSearch : BaseEs) Counter
 callerProgram = subProgram
 
+-- * A nested array-of-records type, for 'schemaWithDefs' regression coverage
+
+{- | A record two named-schema hops away from a would-be top level — the
+shape 'Quexnorbs' below needs, and the shape the existing suite never had:
+a nested array of records referencing another record. Field names are
+deliberately made up (matching todo 20's own diagnostic vocabulary) so a
+passing test can only mean the schema carried them, never that a model
+guessed something plausible.
+-}
+data Zblorf = Zblorf
+  { zblorfSnorkfirst :: Text
+  , zblorfSnorklast :: Text
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema)
+
+-- | A record containing 'Zblorf' — one named-schema hop further in.
+data Quexnorb = Quexnorb
+  { quexnorbVintquark :: Zblorf
+  , quexnorbLabel :: Text
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema)
+
+{- | The actual type under test: an array of 'Quexnorb', itself referencing
+'Zblorf'. This is what 'ConferenceTypes.Speakers' looks like structurally
+(a list of records, each holding another record) without depending on
+that module, so this test stays a fast, hermetic unit test rather than a
+live-model integration one.
+-}
+newtype Quexnorbs = Quexnorbs {quexnorbs :: [Quexnorb]}
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema)
+
+instance Describable Zblorf where describeType _ = "A record with two unguessable-name fields."
+instance Surveyable Zblorf
+instance Promptable Zblorf
+
+instance Describable Quexnorb where describeType _ = "A record containing another record."
+instance Surveyable Quexnorb
+instance Promptable Quexnorb
+
+instance Describable Quexnorbs where describeType _ = "A list of records, each containing another record."
+instance Surveyable Quexnorbs
+instance Promptable Quexnorbs
+
+instance Toolable Quexnorbs
+
 -- * Tests
 
 main :: IO ()
@@ -169,6 +231,24 @@ main =
               let d = description (Proxy @User)
               assertContains "The following properties MUST hold in your response:" d
               assertContains "The email address is not empty." d
+          ]
+      , testGroup
+          "structured-output schema (Control.Monad.Prompt.Schema.schemaWithDefs, via toolDefsRaw)"
+          [ testCase "a nested array-of-records type carries no unresolved $ref/$defs, and keeps its field names" $ do
+              let dummyHandler = ToolHandler $ \_ -> pure (Right "")
+              -- The bug this guards against (todo 20): a live Ollama resolves one
+              -- '$ref' hop correctly but silently stops enforcing the schema at a
+              -- second one — exactly what a nested array-of-records type produces
+              -- unless the schema handed to the wire is fully self-contained.
+              case toolDefsRaw (dummyHandler :* Nil :: NP ToolHandler '[Quexnorbs]) of
+                [toolDef] -> do
+                  let schemaText = TL.toStrict (encodeToLazyText (toolDefSchema toolDef))
+                  assertNotContains "$ref" schemaText
+                  assertNotContains "$defs" schemaText
+                  assertContains "quexnorbVintquark" schemaText
+                  assertContains "zblorfSnorkfirst" schemaText
+                  assertContains "zblorfSnorklast" schemaText
+                defs -> assertFailure ("expected exactly one ToolDef, got " <> show (length defs))
           ]
       , testGroup
           "multi-prompt context preservation"
