@@ -46,11 +46,12 @@ import Data.Ollama.Common.Types (
   InputTool (..),
   Message (..),
   OutputFunction (..),
-  ToolCall (..),
  )
+import Data.Ollama.Common.Types qualified as Ollama (ToolCall (..))
 
 -- shroom
-import Control.Monad.Prompt (ContextItem (..), LLMBackend (..), PromptConfig (..))
+import Control.Monad.Prompt (ContextItem (..), LLMBackend (..), PromptConfig (..), ToolCall (..), ToolResult (..), defaultPromptConfig)
+import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..))
 import Control.Monad.Prompt.Schema (ToolDef (..), inlineSchema)
 import Control.Monad.Prompt.Tool (ToolLoopOps (..), genericToolLoop)
 
@@ -103,16 +104,49 @@ normaliseOllamaHost h
 
 {- | Convert a list of 'ContextItem' values to Ollama messages, appending
 the type description as a final user turn.
+
+'ToolCallMessage' becomes one assistant 'Message' carrying 'tool_calls';
+'ToolResultMessage' becomes one 'Message' with the 'Tool' role per result,
+since Ollama's own 'Message' has no way to bundle more than one tool result
+into a single turn. Ollama's tool calls have no id of their own (see
+'toolCallToOllama'), so — unlike the Anthropic backend — a 'ToolResult'\'s
+id is not carried over; only its text is.
 -}
 contextItemsToOllama :: [ContextItem] -> Text -> NonEmpty Message
 contextItemsToOllama items typeDesc =
-  let toMsg (SystemMessage t) = systemMessage t
-      toMsg (UserMessage t) = userMessage t
-      toMsg (AssistantMessage t) = assistantMessage t
-      allMsgs = fmap toMsg items <> [userMessage typeDesc]
+  let toMsgs (SystemMessage t) = [systemMessage t]
+      toMsgs (UserMessage t) = [userMessage t]
+      toMsgs (AssistantMessage t) = [assistantMessage t]
+      toMsgs (ToolCallMessage calls) =
+        -- Ollama rejects messages with empty content; use a space, matching
+        -- the equivalent turn genericToolLoop's appendExchange builds.
+        [(assistantMessage " ") {tool_calls = Just (fmap toolCallToOllama calls)}]
+      toMsgs (ToolResultMessage results) =
+        [toolMessage (either ("Error: " <>) Prelude.id tr.toolResultOutcome) | tr <- results]
+      allMsgs = concatMap toMsgs items <> [userMessage typeDesc]
    in case allMsgs of
         [] -> userMessage typeDesc :| []
         (x : xs) -> x :| xs
+
+{- | Convert a shroom 'ToolCall' to an Ollama 'Ollama.ToolCall'. Ollama's own
+'Ollama.ToolCall' \/ 'OutputFunction' has no id field at all — 'detectTools'
+below already stands in the tool's name for its id on the way in, for lack
+of anything else to use, so this is the same substitution in reverse.
+-}
+toolCallToOllama :: ToolCall -> Ollama.ToolCall
+toolCallToOllama tc =
+  Ollama.ToolCall
+    { Ollama.outputFunction =
+        OutputFunction
+          { outputFunctionName = tc.toolCallName
+          , arguments = valueToArgumentsMap tc.toolCallArguments
+          }
+    }
+
+-- | The inverse of 'detectTools'\'s @Object . KM.fromList . Map.toList@.
+valueToArgumentsMap :: Value -> Map.Map Text Value
+valueToArgumentsMap (Object km) = Map.fromList [(Key.toText k, v) | (k, v) <- KM.toList km]
+valueToArgumentsMap _ = Map.empty
 
 {- | Convert a 'ToolDef' to an Ollama 'InputTool'.
 Extracts properties and required fields from the JSON schema.
@@ -262,6 +296,29 @@ instance LLMBackend OllamaBackendConfig where
         let msgs = contextItemsToOllama ctx typeDesc
             ops = ollamaToolLoopOps cfg schema toolDefs promptCfg
         genericToolLoop ops dispatch msgs maxToolSteps
+
+{- | 'Backend' for a local Ollama model. Makes the same raw call as the old
+tool loop and reuses 'ollamaToolLoopOps'\'s 'ToolLoopOps.detectTools' \/
+'ToolLoopOps.extractText' to read the response, but only for a single call —
+looping (dispatching a call and feeding the result back in) is now the
+caller's job. A model requesting tools becomes 'BackendToolCalls'; anything
+else becomes 'BackendAnswer'. Every error Ollama can currently report is a
+bare 'Text' (an IO error or an Ollama-reported API error), so it always
+lands as 'BackendTransportError'; Ollama gives no separate signal for a
+refusal, so 'BackendRefusal' is never produced here.
+-}
+ollamaBackend :: (MonadIO m) => OllamaBackendConfig -> Backend m
+ollamaBackend cfg =
+  Backend $ \ctx typeDesc schema toolDefs -> do
+    let msgs = contextItemsToOllama ctx typeDesc
+        ops = ollamaToolLoopOps cfg schema toolDefs defaultPromptConfig
+    result <- ops.callModel msgs
+    pure $ case result of
+      Left err -> Left (BackendTransportError err)
+      Right resp -> case ops.detectTools resp of
+        Just calls ->
+          Right (BackendToolCalls [ToolCall {toolCallId = uid, toolCallName = name, toolCallArguments = input} | (uid, name, input) <- calls])
+        Nothing -> Right (BackendAnswer (ops.extractText resp))
 
 {- | Build an Ollama 'Format' from an OpenAPI schema 'Value'.
 Returns @(format, unwrapFn)@ where @unwrapFn@ strips the @{\"result\":...}@

@@ -4,6 +4,9 @@ module TestUtils (
   MockConfig (..),
   SeqMockConfig (..),
   InjectFailConfig (..),
+  mockBackend,
+  seqMockBackend,
+  injectFailBackend,
   assertContains,
   assertNotContains,
   textIsInfixOf,
@@ -11,7 +14,7 @@ module TestUtils (
 
 -- base
 
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.IORef
 
 -- aeson
@@ -25,6 +28,7 @@ import Data.Text.Lazy.Encoding (decodeUtf8)
 
 -- shroom
 import Control.Monad.Prompt
+import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..))
 
 -- * Mock backends
 
@@ -40,6 +44,14 @@ instance LLMBackend MockConfig where
     -- Return a valid Counter JSON (the newtype wraps an Int)
     pure $ Right (toStrict (decodeUtf8 (encode (0 :: Int))))
 
+{- | 'Backend' for 'MockConfig', built directly on 'runChat'. No tool
+concept: the offered tools are ignored and every reply is a 'BackendAnswer'.
+-}
+mockBackend :: (MonadIO m) => MockConfig -> Backend m
+mockBackend cfg =
+  Backend $ \ctx typeDesc schema _toolDefs ->
+    either (Left . BackendTransportError) (Right . BackendAnswer) <$> runChat cfg ctx typeDesc schema
+
 {- | A mock 'LLMBackend' that returns responses from a list in order,
 repeating the last one when the list is exhausted.
 Records contexts as flat text via 'renderContextItems'.
@@ -53,6 +65,14 @@ instance LLMBackend SeqMockConfig where
       [] -> ([], Left ("SeqMockConfig: no more responses" :: Text))
       [x] -> ([x], Right x)
       (x : rest) -> (rest, Right x)
+
+{- | 'Backend' for 'SeqMockConfig', built directly on 'runChat'. No tool
+concept: the offered tools are ignored and every reply is a 'BackendAnswer'.
+-}
+seqMockBackend :: (MonadIO m) => SeqMockConfig -> Backend m
+seqMockBackend cfg =
+  Backend $ \ctx typeDesc schema _toolDefs ->
+    either (Left . BackendTransportError) (Right . BackendAnswer) <$> runChat cfg ctx typeDesc schema
 
 -- * Helpers
 
@@ -75,3 +95,7 @@ data InjectFailConfig = InjectFailConfig
 
 instance LLMBackend InjectFailConfig where
   runChatWithTools _ _ _ _ _ _ _ _ = pure (Left "injected failure")
+
+-- | 'Backend' for 'InjectFailConfig': always fails, unconditionally.
+injectFailBackend :: (Applicative m) => InjectFailConfig -> Backend m
+injectFailBackend _ = Backend $ \_ _ _ _ -> pure (Left (BackendTransportError "injected failure"))

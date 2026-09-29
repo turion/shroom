@@ -24,7 +24,7 @@ working directory — so @cabal run shroom-dev@ finds them regardless of where
 it is invoked from. Create @response-001.json@, @response-002.json@, etc. with
 the JSON that a real LLM would return for each step.
 -}
-module Control.Monad.Prompt.FileMock (FileMockConfig (..), defaultFileMockConfig) where
+module Control.Monad.Prompt.FileMock (FileMockConfig (..), defaultFileMockConfig, fileMockBackend) where
 
 -- base
 import Control.Monad.IO.Class (MonadIO (..))
@@ -39,7 +39,8 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 
 -- shroom
-import Control.Monad.Prompt (LLMBackend (..), renderContextItems)
+import Control.Monad.Prompt (LLMBackend (..), renderContextItems, runChat)
+import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..))
 import Paths_shroom (getDataDir)
 
 -- | Configuration for the file-based mock backend.
@@ -88,3 +89,13 @@ instance LLMBackend FileMockConfig where
       else do
         contents <- TIO.readFile path
         pure $ Right (T.strip contents)
+
+{- | 'Backend' for the file-based mock, built directly on 'runChat'. The mock
+has no tool concept, so the offered tools are ignored and every reply is a
+'BackendAnswer'. The mock never distinguishes error kinds either, so a
+missing response file always lands as 'BackendTransportError'.
+-}
+fileMockBackend :: (MonadIO m) => FileMockConfig -> Backend m
+fileMockBackend cfg =
+  Backend $ \ctx typeDesc schema _toolDefs ->
+    either (Left . BackendTransportError) (Right . BackendAnswer) <$> runChat cfg ctx typeDesc schema

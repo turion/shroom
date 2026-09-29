@@ -85,7 +85,7 @@ import Effectful.Error.Static (Error, catchError, runErrorNoCallStack, throwErro
 import Effectful.State.Static.Local (State, evalState, get, modify, put)
 
 -- shroom
-import Control.Monad.Prompt (ContextItem (..), LLMBackend (..), PromptConfig (..))
+import Control.Monad.Prompt (ContextItem (..), LLMBackend (..), PromptConfig (..), toolCallName, toolResultName)
 import Control.Monad.Prompt.Schema (ToolDef, ToolDispatcher, schemaWithDefs)
 import Control.Monad.Prompt.Tool (ToolBinding (..), dispatchBindings)
 import Data.Shroom.Class (Surveyable, describeProperties, description, propertyHolds)
@@ -291,6 +291,8 @@ runPrompt cfg promptCfg = interpret $ \env (request :: Prompt (Eff localEs) b) -
           renderItem (SystemMessage t) = "[system]    " <> t
           renderItem (UserMessage t) = "[user]      " <> t
           renderItem (AssistantMessage t) = "[assistant] " <> t
+          renderItem (ToolCallMessage calls) = "[tool call] " <> T.intercalate ", " (fmap toolCallName calls)
+          renderItem (ToolResultMessage results) = "[tool result] " <> T.intercalate ", " (fmap toolResultName results)
       logDebug $
         T.unlines $
           [ separator

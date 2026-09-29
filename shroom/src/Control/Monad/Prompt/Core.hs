@@ -16,13 +16,46 @@ import Data.Text (Text)
 import Data.Text qualified as T
 
 -- aeson
-import Data.Aeson (FromJSON)
+import Data.Aeson (FromJSON, Value)
 
 -- openapi3
 import Data.OpenApi (ToSchema)
 
 -- shroom
 import Data.Shroom.Class (Surveyable)
+
+-- * Tool calls and results
+
+{- | One tool call a model requested, carried either inside a 'Backend'\'s
+reply (see 'Control.Monad.Prompt.Backend.BackendReply') or, once dispatched,
+replayed into the conversation as part of a 'ToolCallMessage'.
+-}
+data ToolCall = ToolCall
+  { toolCallId :: Text
+  {- ^ The provider's own id for this call. A provider that links a tool
+  result back to the call that produced it (e.g. Anthropic's
+  @tool_use_id@) needs this echoed back unchanged in the matching
+  'ToolResult' — that linking is exactly what widening 'Backend' with a
+  tool channel, instead of flattening tool calls to text, was for.
+  -}
+  , toolCallName :: Text
+  , toolCallArguments :: Value
+  }
+  deriving (Eq, Show)
+
+{- | The outcome of dispatching one 'ToolCall', linked back to it by
+'toolResultId'.
+-}
+data ToolResult = ToolResult
+  { toolResultId :: Text
+  -- ^ Echoes the originating 'ToolCall'\'s 'toolCallId'.
+  , toolResultName :: Text
+  , toolResultOutcome :: Either Text Text
+  {- ^ 'Left' — the tool failed, with a message for the model. 'Right' —
+  the tool's own result text.
+  -}
+  }
+  deriving (Eq, Show)
 
 -- * Context items
 
@@ -39,6 +72,17 @@ data ContextItem
       'prompt' call so subsequent prompts can reference prior outputs naturally.
     -}
     AssistantMessage Text
+  | {- | Tool calls a model requested in a single turn (parallel calls travel
+      together as one item, not one apiece, so they replay as one assistant
+      turn). Appended after a 'Control.Monad.Prompt.Backend.Backend' reply
+      carries 'Control.Monad.Prompt.Backend.BackendToolCalls', alongside the
+      matching 'ToolResultMessage' once the calls have been dispatched.
+    -}
+    ToolCallMessage [ToolCall]
+  | {- | The results of dispatching the calls in a 'ToolCallMessage', one
+      per call, each still linked back to its call by 'toolResultId'.
+    -}
+    ToolResultMessage [ToolResult]
   deriving (Eq, Show)
 
 -- * Prompt DSL

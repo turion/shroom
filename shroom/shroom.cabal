@@ -93,6 +93,7 @@ library
   exposed-modules:
     Control.Monad.Prompt
     Control.Monad.Prompt.Anthropic
+    Control.Monad.Prompt.Backend
     Control.Monad.Prompt.Effect
     Control.Monad.Prompt.FileMock
     Control.Monad.Prompt.Ollama

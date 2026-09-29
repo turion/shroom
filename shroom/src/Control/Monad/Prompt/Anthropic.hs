@@ -38,7 +38,8 @@ import Claude.V1
 import Claude.V1.Messages
 
 -- shroom
-import Control.Monad.Prompt (ContextItem (..), LLMBackend (..), PromptConfig (..))
+import Control.Monad.Prompt (ContextItem (..), LLMBackend (..), PromptConfig (..), ToolCall (..), ToolResult (..), defaultPromptConfig)
+import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..))
 import Control.Monad.Prompt.Schema (ToolDef (..), normalizeSchemaForStructuredOutput)
 import Control.Monad.Prompt.Tool (ToolLoopOps (..), genericToolLoop)
 
@@ -71,6 +72,11 @@ mkAnthropicConfig apiKey =
 {- | Convert a list of 'ContextItem' values to Anthropic API messages.
 'SystemMessage' items are collected into the @system@ field;
 'UserMessage' and 'AssistantMessage' items become @messages@.
+'ToolCallMessage' replays as an assistant turn of @tool_use@ content blocks
+and 'ToolResultMessage' as a user turn of @tool_result@ blocks, each 'ToolCall'
+\/ 'ToolResult'\'s id carried straight through as Anthropic's own
+@tool_use_id@ — this is what keeps a tool result linked to the call that
+produced it once the exchange has round-tripped through 'ContextItem'.
 A final user message containing @typeDesc@ is always appended.
 -}
 contextItemsToAnthropic :: [ContextItem] -> Text -> (Maybe SystemPrompt, [Message])
@@ -82,6 +88,32 @@ contextItemsToAnthropic items typeDesc =
       chatItems = [item | item <- items, not (isSystem item)]
       toMsg (UserMessage t) = Just Message {role = User, content = [Content_Text {text = t, cache_control = Nothing}], cache_control = Nothing}
       toMsg (AssistantMessage t) = Just Message {role = Assistant, content = [Content_Text {text = t, cache_control = Nothing}], cache_control = Nothing}
+      toMsg (ToolCallMessage calls) =
+        Just
+          Message
+            { role = Assistant
+            , content =
+                V.fromList
+                  [ Content_Tool_Use {id = tc.toolCallId, name = tc.toolCallName, input = tc.toolCallArguments, caller = Nothing}
+                  | tc <- calls
+                  ]
+            , cache_control = Nothing
+            }
+      toMsg (ToolResultMessage results) =
+        Just
+          Message
+            { role = User
+            , content =
+                V.fromList
+                  [ Content_Tool_Result
+                      { tool_use_id = tr.toolResultId
+                      , content = Just (either ("Error: " <>) Prelude.id tr.toolResultOutcome)
+                      , is_error = either (const (Just True)) (const Nothing) tr.toolResultOutcome
+                      }
+                  | tr <- results
+                  ]
+            , cache_control = Nothing
+            }
       toMsg (SystemMessage _) = Nothing
       chatMsgs = mapMaybe toMsg chatItems
       -- Append the type description as the final user turn
@@ -207,3 +239,32 @@ instance LLMBackend AnthropicConfig where
           ts -> Just (V.fromList (fmap toAnthropicTool ts))
         ops = anthropicToolLoopOps methods cfg mSystem schema mTools promptCfg
     genericToolLoop ops dispatch msgs maxToolSteps
+
+{- | 'Backend' for the Anthropic Claude API. Makes the same raw call as the
+old tool loop and reuses 'anthropicToolLoopOps'\'s 'ToolLoopOps.detectTools'
+\/ 'ToolLoopOps.extractText' to read the response, rather than re-deriving
+how to tell a tool call apart from a final answer — but only for a single
+call, since looping (dispatching a call and feeding the result back in) is
+now the caller's job, not this 'Backend'\'s. A @tool_use@ 'ContentBlock'
+becomes 'BackendToolCalls', carrying Anthropic's own @tool_use_id@ straight
+through as 'ToolCall'\'s 'toolCallId' so a later 'ToolResultMessage' can
+still be linked back to it; anything else is 'BackendAnswer'. An HTTP
+failure becomes 'BackendTransportError'.
+-}
+anthropicBackend :: (MonadIO m) => AnthropicConfig -> Backend m
+anthropicBackend cfg =
+  Backend $ \ctx typeDesc schema toolDefs -> do
+    clientEnv <- liftIO $ getClientEnv "https://api.anthropic.com"
+    let methods = makeMethods clientEnv cfg.apiKey (Just "2023-06-01")
+        (mSystem, msgs) = contextItemsToAnthropic ctx typeDesc
+        mTools = case toolDefs of
+          [] -> Nothing
+          ts -> Just (V.fromList (fmap toAnthropicTool ts))
+        ops = anthropicToolLoopOps methods cfg mSystem schema mTools defaultPromptConfig
+    result <- ops.callModel msgs
+    pure $ case result of
+      Left err -> Left (BackendTransportError err)
+      Right resp -> case ops.detectTools resp of
+        Just calls ->
+          Right (BackendToolCalls [ToolCall {toolCallId = uid, toolCallName = name, toolCallArguments = input} | (uid, name, input) <- calls])
+        Nothing -> Right (BackendAnswer (ops.extractText resp))

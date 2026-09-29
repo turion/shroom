@@ -65,7 +65,7 @@ import Data.Aeson (FromJSON, Value (..), eitherDecodeStrictText)
 import Data.SOP (All, NP (..), SListI)
 
 -- shroom (internal)
-import Control.Monad.Prompt.Core (ContextItem (..), PromptT (..))
+import Control.Monad.Prompt.Core (ContextItem (..), PromptT (..), ToolCall (..), ToolResult (..))
 import Control.Monad.Prompt.Promptable (Promptable (..))
 import Control.Monad.Prompt.Schema (ToolDef, ToolDispatcher, schemaWithDefs)
 import Control.Monad.Prompt.Tool (ToolHandler, Toolable, makeDispatcher, toolDefsRaw)
@@ -128,6 +128,8 @@ renderContextItems = T.intercalate "\n" . fmap render
     render (SystemMessage t) = "[system] " <> t
     render (UserMessage t) = t
     render (AssistantMessage t) = "[assistant] " <> t
+    render (ToolCallMessage calls) = "[tool call] " <> T.intercalate ", " (fmap toolCallName calls)
+    render (ToolResultMessage results) = "[tool result] " <> T.intercalate ", " (fmap toolResultName results)
 
 -- * Backend abstraction
 
@@ -307,6 +309,8 @@ runPromptT promptCfg handlers p = do
           renderItem (SystemMessage t) = "[system]    " <> t
           renderItem (UserMessage t) = "[user]      " <> t
           renderItem (AssistantMessage t) = "[assistant] " <> t
+          renderItem (ToolCallMessage calls) = "[tool call] " <> T.intercalate ", " (fmap toolCallName calls)
+          renderItem (ToolResultMessage results) = "[tool result] " <> T.intercalate ", " (fmap toolResultName results)
       logDebug $
         T.unlines $
           [ separator
