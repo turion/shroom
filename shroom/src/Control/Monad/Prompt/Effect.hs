@@ -445,7 +445,7 @@ empty history, catch failure into an 'Either', and provide
 run concurrently.
 
 The 'Backend' is a value, not a typeclass instance — build one with e.g.
-'Control.Monad.Prompt.Anthropic.anthropicBackend' or
+@shroom-baikai@\'s @Control.Monad.Prompt.Baikai.claudeBackend@ or
 'Control.Monad.Prompt.FileMock.fileMockBackend', applied to your config.
 Those builders are themselves polymorphic in @m@ (given @'MonadIO' m@), so
 passing one straight to this function instantiates it at the effect stack

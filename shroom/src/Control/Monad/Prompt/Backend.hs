@@ -32,13 +32,12 @@ the provider's own call id in 'ToolCall'\'s
 produced it once the exchange has round-tripped through 'ContextItem'\'s
 'ToolCallMessage' \/ 'ToolResultMessage', and a reply may carry more than
 one call so parallel tool calls stay expressible.
-'Control.Monad.Prompt.Anthropic', 'Control.Monad.Prompt.Ollama' and
-'Control.Monad.Prompt.FileMock' each build a 'Backend' value, as do the mock
+'Control.Monad.Prompt.FileMock' builds a 'Backend' value, as do the mock
 backends in @test-utils@'s @TestUtils@. A package that depends only on
-@shroom@ can build one too; the shroom arc's todo 14 does exactly that,
-interpreting @baikai-effectful@\'s @Baikai@ effect into a 'Backend' — that is
-the worked example for anyone weighing whether writing a replacement adapter
-is a weekend or a rescue.
+@shroom@ can build one too; @shroom-baikai@ does exactly that, interpreting
+@baikai-effectful@\'s @Baikai@ effect into a 'Backend' — that is the worked
+example for anyone weighing whether writing a replacement adapter is a
+weekend or a rescue.
 
 'ContextItem', 'ToolCall' and 'ToolResult' live in this module — rather than
 under "Data.Shroom." — because they name 'Backend', 'BackendReply' and

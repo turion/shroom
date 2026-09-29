@@ -42,14 +42,12 @@ common opts
     aeson ^>=2.2,
     base >=4.20 && <4.22,
     bytestring ^>=0.12,
-    claude >=1.4.0 && <1.6,
     containers >=0.6 && <0.8,
     directory ^>=1.3,
     effectful ^>=2.7,
     filepath ^>=1.5,
     http-client ^>=0.7,
     modern-uri ^>=0.3,
-    ollama-haskell ^>=0.2,
     openapi3 ^>=3.2,
     req ^>=3.13,
     sop-core ^>=0.5,
@@ -73,11 +71,9 @@ library
   import: opts
   exposed-modules:
     Control.Monad.Prompt
-    Control.Monad.Prompt.Anthropic
     Control.Monad.Prompt.Backend
     Control.Monad.Prompt.Effect
     Control.Monad.Prompt.FileMock
-    Control.Monad.Prompt.Ollama
     Control.Monad.Prompt.Promptable
     Control.Monad.Prompt.TH
     Control.Monad.Prompt.Tool

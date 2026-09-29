@@ -11,7 +11,6 @@ import System.Timeout (timeout)
 
 -- aeson
 import Data.Aeson (Value (..), toJSON)
-import Data.Aeson.KeyMap qualified as KM
 
 -- text
 import Data.Text (Text)
@@ -30,7 +29,6 @@ import Effectful.State.Static.Local (State)
 import Control.Monad.Prompt.Backend (Backend (..), BackendReply (..), ContextItem (..), ToolCall (..))
 import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Effect qualified as Eff
-import Control.Monad.Prompt.Ollama (schemaToFormatAndUnwrap, unwrapResult)
 import Control.Monad.Prompt.Tool (Tool, ToolHandler (..), runTool, toolBinding, toolName)
 import Control.Monad.Prompt.Tool.Web
 import Data.Shroom.Class (Describable (..), Surveyable (..), description)
@@ -171,39 +169,6 @@ main =
               let d = description (Proxy @User)
               assertContains "The following properties MUST hold in your response:" d
               assertContains "The email address is not empty." d
-          ]
-      , testGroup
-          "schemaToFormatAndUnwrap"
-          [ testCase "object schema produces identity unwrap" $ do
-              let objSchema =
-                    Object $
-                      KM.fromList
-                        [ ("type", String "object")
-                        , ("properties", Object KM.empty)
-                        , ("required", Array [])
-                        ]
-                  (_, unwrap) = schemaToFormatAndUnwrap objSchema
-                  payload = "{\"name\":\"Alice\"}"
-              unwrap payload @?= payload
-          , testCase "integer schema wraps in result and unwraps correctly" $ do
-              let intSchema = Object $ KM.fromList [("type", String "integer")]
-                  (_, unwrap) = schemaToFormatAndUnwrap intSchema
-                  wrapped = "{\"result\":42}"
-              unwrap wrapped @?= "42"
-          , testCase "string schema wraps in result and unwraps correctly" $ do
-              let strSchema = Object $ KM.fromList [("type", String "string")]
-                  (_, unwrap) = schemaToFormatAndUnwrap strSchema
-                  wrapped = "{\"result\":\"hello\"}"
-              unwrap wrapped @?= "\"hello\""
-          ]
-      , testGroup
-          "unwrapResult"
-          [ testCase "extracts result field" $
-              unwrapResult "{\"result\":42}" @?= "42"
-          , testCase "passes through non-object input" $
-              unwrapResult "42" @?= "42"
-          , testCase "passes through object without result field" $
-              unwrapResult "{\"x\":1}" @?= "{\"x\":1}"
           ]
       , testGroup
           "multi-prompt context preservation"

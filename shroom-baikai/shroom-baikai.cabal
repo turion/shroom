@@ -83,6 +83,8 @@ test-suite shroom-test-integration-claude
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: Integration/Claude.hs
+  other-modules:
+    Integration.Cases
 
   if !flag(anthropic)
     buildable: False
@@ -93,6 +95,9 @@ test-suite shroom-test-integration-ollama
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: Integration/Ollama.hs
+  other-modules:
+    Integration.Cases
+    ScalarTypes
 
   if !flag(ollama)
     buildable: False
