@@ -94,18 +94,13 @@ Next step: LLM should read their wikipedia article and summarize one trivia fact
 
 # Adding structured data to the prompt
 
-# ScopedProgramT refactor
+# ScopedProgramT refactor — moved out
 
-
--- The only difference: spm parameter here
-data Instr spm a where ...
-
-data ScopedProgramT instr m a where
-  Lift, Bind -- as usual
-  
-  -- Shallow effect handler
-  Instr :: instr (ScopedProgramT m) a -> ProgramT instr m a
-
+Archived as its own repository, `~/haskell/scoped-operational` (2026-09-29): a scoped,
+higher-order-effect variant of `operational`'s `ProgramT`, extracted from this repo's dangling
+`lyotqyrmwvst` head. It existed to give `PromptT` the scoped effects that `effectful` now provides
+natively, so once this arc moved shroom onto `effectful` the experiment had no consumer left. See
+that repository's README for the full story; it is preserved thinking, not maintained to build.
 
 # Louter backend
 
