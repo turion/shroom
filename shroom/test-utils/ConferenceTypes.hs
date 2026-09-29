@@ -32,7 +32,6 @@ module ConferenceTypes (
 ) where
 
 -- base
-import Control.Applicative (Alternative (..))
 import Data.List (nub)
 import GHC.Generics (Generic)
 
@@ -52,10 +51,18 @@ import Data.OpenApi (ToSchema)
 -- universe-base
 import Data.Universe.Class (Universe)
 
+-- effectful
+import Effectful (Eff, (:>))
+import Effectful.Error.Static (Error)
+import Effectful.State.Static.Local (State)
+
 -- shroom
 import Control.Monad.Prompt
+import Control.Monad.Prompt.Backend (ContextItem)
+import Control.Monad.Prompt.Effect (Prompt, context, orElse, promptWith, withContext)
+import Control.Monad.Prompt.Effect qualified as Effect
 import Control.Monad.Prompt.TH (deriveDescribable)
-import Control.Monad.Prompt.Tool (ToolHandler (..), Toolable (..))
+import Control.Monad.Prompt.Tool (ToolBinding, ToolHandler (..), Toolable (..))
 import Data.Shroom.Class
 
 -- * Types
@@ -250,7 +257,9 @@ Steps:
 2. One 'Talk' per speaker (each speaker gives exactly one talk)
 3. 'ConferenceSchedule' — the full day's schedule
 -}
-conferenceChain :: (Monad m) => PromptT m (Speakers, [Talk], ConferenceSchedule)
+conferenceChain ::
+  (Prompt :> es, State [ContextItem] :> es, Error Text :> es) =>
+  Eff es (Speakers, [Talk], ConferenceSchedule)
 conferenceChain = do
   context "You are helping to schedule ZuriHac 2027, a Haskell community conference at OST Rapperswil-Jona, Switzerland, right next to a beautiful lake."
   context "The conference focuses on Haskell, functional programming, and type theory -- or as we call it, 'a weekend of explaining monads to lake ducks'."
@@ -307,7 +316,7 @@ conferenceChain = do
   schedule <-
     promptWith @ConferenceSchedule
       "Create a schedule for Friday 11 June 2027 with one slot per talk. Include every talk."
-      <|> promptWith @ConferenceSchedule
+      `orElse` promptWith @ConferenceSchedule
         ( "Create a schedule for Friday 11 June 2027 as an ordered list of timetable slots, one per talk. "
             <> "Each slot must have a start time and end time in ISO 8601 UTC format (e.g. \"2027-06-11T07:00:00Z\", \"2027-06-11T07:45:00Z\"), and slots must be contiguous. "
             <> "The first slot must start at 07:00:00 UTC (09:00 Zurich local time). "
@@ -343,9 +352,17 @@ fakeSpeakerLookupHandler = ToolHandler $ \(SpeakerLookup name) ->
     1 -> name <> " is a compiler engineer specializing in GHC optimizations and LLVM backends."
     _ -> name <> " researches distributed systems and formal verification of consensus protocols."
 
--- | Conference chain that instructs the LLM to search the web for speaker info.
-conferenceChainWithTools :: (Monad m) => PromptT m (Speakers, [Talk], ConferenceSchedule)
-conferenceChainWithTools = do
+{- | Conference chain that instructs the LLM to search the web for speaker
+info. Unlike 'conferenceChain', this takes the tool @bindings@ to offer —
+only the per-speaker 'Talk' step gets them, matching the instruction text
+below; build each binding with 'Control.Monad.Prompt.Tool.toolBinding' and
+interpret with 'Control.Monad.Prompt.Tool.runTool'.
+-}
+conferenceChainWithTools ::
+  (Prompt :> es, State [ContextItem] :> es, Error Text :> es) =>
+  [ToolBinding (Eff es)] ->
+  Eff es (Speakers, [Talk], ConferenceSchedule)
+conferenceChainWithTools bindings = do
   context "You are helping to schedule ZuriHac 2027, a Haskell community conference at OST Rapperswil-Jona, Switzerland, right next to a beautiful lake."
   context "The conference focuses on Haskell, functional programming, and type theory."
   allSpeakers <- prompt @Speakers
@@ -364,12 +381,14 @@ conferenceChainWithTools = do
   talks <-
     mapM
       ( \speaker ->
-          promptWith @Talk $
-            "The talk must be presented by "
-              <> firstName (speakerName speaker)
-              <> " "
-              <> lastName (speakerName speaker)
-              <> ". You may search the web once to look up their background. Then write the abstract — do not search again."
+          withContext
+            ( "The talk must be presented by "
+                <> firstName (speakerName speaker)
+                <> " "
+                <> lastName (speakerName speaker)
+                <> ". You may search the web once to look up their background. Then write the abstract — do not search again."
+            )
+            (Effect.promptTools @Talk bindings)
       )
       (speakers allSpeakers)
   context $
@@ -378,6 +397,6 @@ conferenceChainWithTools = do
   schedule <-
     promptWith @ConferenceSchedule
       "Create a schedule for Friday 11 June 2027 with one slot per talk. Include every talk."
-      <|> promptWith @ConferenceSchedule
+      `orElse` promptWith @ConferenceSchedule
         "Create a schedule for Friday 11 June 2027. First slot starts at 07:00:00 UTC. Slots must be contiguous."
   pure (allSpeakers, talks, schedule)

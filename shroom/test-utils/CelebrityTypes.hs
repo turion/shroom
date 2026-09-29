@@ -35,10 +35,17 @@ import Data.OpenApi (ToSchema)
 -- universe-base
 import Data.Universe.Class (Universe)
 
+-- effectful
+import Effectful (Eff, (:>))
+import Effectful.State.Static.Local (State)
+
 -- shroom
 import Control.Monad.Prompt
-
+import Control.Monad.Prompt.Backend (ContextItem)
+import Control.Monad.Prompt.Effect (Prompt, context)
+import Control.Monad.Prompt.Effect qualified as Effect
 import Control.Monad.Prompt.TH (deriveDescribable)
+import Control.Monad.Prompt.Tool (ToolBinding)
 import Data.Shroom.Class
 
 -- * Types
@@ -99,15 +106,24 @@ instance Promptable CelebrityFact
 2. Pick one (deterministically), look up their Wikipedia page using
    @web_search@ and @web_fetch@, and return one surprising trivia fact.
 
-Requires 'duckDuckGoSearchHandler', 'wikipediaSearchHandler', and 'webFetchHandler' as tools.
+The tools ('duckDuckGoSearchHandler', 'wikipediaSearchHandler',
+'webFetchHandler') are offered only at the second step, via the
+@bindings@ this takes — build each with
+'Control.Monad.Prompt.Tool.toolBinding' and interpret with
+'Control.Monad.Prompt.Tool.runTool'.
 -}
-celebrityChain :: (Monad m) => PromptT m CelebrityFact
-celebrityChain = do
+celebrityChain ::
+  (Prompt :> es, State [ContextItem] :> es) =>
+  [ToolBinding (Eff es)] ->
+  Eff es CelebrityFact
+celebrityChain bindings = do
   context "You are a trivia assistant. You MUST use your tools to look up information — do not answer from memory."
   CelebrityList names <- prompt @CelebrityList
   let chosen = names !! (length names `mod` 3)
-  promptWith @CelebrityFact $
-    "You MUST use your tools to look up "
-      <> chosen
-      <> ". First search the web to find their Wikipedia page URL, then fetch that URL."
-      <> " Do not answer from memory. Return one surprising trivia fact found in the fetched page."
+  Effect.withContext
+    ( "You MUST use your tools to look up "
+        <> chosen
+        <> ". First search the web to find their Wikipedia page URL, then fetch that URL."
+        <> " Do not answer from memory. Return one surprising trivia fact found in the fetched page."
+    )
+    (Effect.promptTools @CelebrityFact bindings)

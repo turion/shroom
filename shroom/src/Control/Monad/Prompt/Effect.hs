@@ -1,42 +1,36 @@
-{- | shroom's program vocabulary expressed as 'effectful' effects, living
-alongside "Control.Monad.Prompt" ('Control.Monad.Prompt.Core.PromptT') rather
-than in place of it — the tree still builds with both. Todo 12 of the
-shroom arc deletes 'Control.Monad.Prompt.Core.PromptT'; this module is the
-landing spot that deletion repoints onto.
+{- | shroom's program vocabulary expressed as 'effectful' effects: context,
+scoping, failure, fallback, parallelism and typed prompting, each an
+ordinary effect rather than a constructor in a bespoke DSL.
 
-== Mapping from 'Control.Monad.Prompt.Core.PromptT'
+== Context, scoping, failure, fallback, parallelism
 
-* 'Control.Monad.Prompt.Core.AddContext' — context held in
-  "Effectful.State.Static.Local"
-* 'Control.Monad.Prompt.Core.WithContext' — @local@-style scoping over that
-  state ('withContextItem' \/ 'withContext')
-* 'Control.Monad.Prompt.Core.PromptSingle' — the 'Prompt' dynamic effect
-* 'Control.Monad.Prompt.Core.Pure', 'Control.Monad.Prompt.Core.Bind',
-  'Control.Monad.Prompt.Core.Lift' — 'Eff' is already a monad
-* 'Control.Monad.Prompt.Core.Fail' — "Effectful.Error.Static" with 'Text'
-  ('failWith')
-* 'Control.Monad.Prompt.Core.Alt' — 'catchError' plus context restoration
-  ('orElse')
-* 'Control.Monad.Prompt.Core.Ap' — "Effectful.Concurrent.Async"
-  ('promptPar' \/ 'promptsParallel')
+* Context — held in "Effectful.State.Static.Local" ('addContextItem' \/
+  'context')
+* Scoping — @local@-style, over that same state ('withContextItem' \/
+  'withContext')
+* The typed request itself — the 'Prompt' dynamic effect ('prompt' \/
+  'promptWith' \/ 'promptTools')
+* Failure — "Effectful.Error.Static" with 'Text' ('failWith')
+* Fallback — 'catchError' plus context restoration ('orElse')
+* Parallelism — "Effectful.Concurrent.Async", explicit rather than hiding in
+  an @Applicative@ instance ('promptPar' \/ 'promptsParallel')
 
 Tool use (todo 10 of the shroom arc) is 'promptTools' plus
 "Control.Monad.Prompt.Tool"\'s 'Control.Monad.Prompt.Tool.Tool' effect and
 'Control.Monad.Prompt.Tool.toolBinding': a program names the tools it may
 call in its own @es@, and 'promptTools' assembles the ones it is given into
-what 'runChatWithTools' already expects — a @['Control.Monad.Prompt.Schema.ToolDef']@
-plus a dispatcher — so the propose\/dispatch\/observe cycle itself still
-runs where it always has, inside each backend's own 'genericToolLoop' call.
+a @['Control.Monad.Prompt.Schema.ToolDef']@ plus a dispatcher, which
+'runPrompt'\'s own tool loop (below) drives one 'Control.Monad.Prompt.Backend.runBackendChat'
+call at a time.
 
-'runPrompt' interprets 'Prompt' over the existing 'LLMBackend' class, so
-"Control.Monad.Prompt.Anthropic" and "Control.Monad.Prompt.Ollama" need no
-changes at this revision. 'LLMBackend' reports a backend error as a bare
-'Text', which cannot yet distinguish a refusal (terminal — no re-prompt
-fixes a model declining outright) from a transport failure (a 429, a 500 or
-a timeout — exactly what a retry is for). See 'classifyBackendError' for
-where that distinction will land once todo 11 introduces a shroom-owned
-error type that can tell the two apart; todo 12 repoints this interpreter
-onto it.
+'runPrompt' interprets 'Prompt' against a 'Backend' — todo 11's narrow
+adapter seam — which can tell a refusal ('BackendRefusal', terminal — no
+re-prompt fixes a model declining outright) apart from a transport failure
+('BackendTransportError', exactly what a retry is for). Because a 'Backend'
+makes one raw call and nothing more, the propose\/dispatch\/observe tool
+cycle runs here, one call at a time, rather than inside each backend; see
+'toolLoop', whose budget bookkeeping mirrors
+'Control.Monad.Prompt.Tool.genericToolLoop'\'s.
 -}
 module Control.Monad.Prompt.Effect (
   -- * The 'Prompt' effect
@@ -48,6 +42,10 @@ module Control.Monad.Prompt.Effect (
   promptsParallel,
   runPrompt,
   runPromptResultEff,
+
+  -- * Runner configuration
+  PromptConfig (..),
+  defaultPromptConfig,
 
   -- * Context ("Effectful.State.Static.Local")
   addContextItem,
@@ -62,6 +60,7 @@ module Control.Monad.Prompt.Effect (
 
 -- base
 import Control.Monad.IO.Class (liftIO)
+import Data.Functor ((<&>))
 import Data.Proxy (Proxy (..))
 
 -- text
@@ -70,6 +69,8 @@ import Data.Text qualified as T
 
 -- aeson
 import Data.Aeson (FromJSON, Value, eitherDecodeStrictText)
+import Data.Aeson.Text (encodeToLazyText)
+import Data.Text.Lazy (toStrict)
 
 -- openapi3
 import Data.OpenApi (ToSchema)
@@ -85,16 +86,22 @@ import Effectful.Error.Static (Error, catchError, runErrorNoCallStack, throwErro
 import Effectful.State.Static.Local (State, evalState, get, modify, put)
 
 -- shroom
-import Control.Monad.Prompt (ContextItem (..), LLMBackend (..), PromptConfig (..), toolCallName, toolResultName)
+import Control.Monad.Prompt.Backend (
+  Backend (..),
+  BackendError (..),
+  BackendReply (..),
+  ContextItem (..),
+  ToolCall (..),
+  ToolResult (..),
+ )
 import Control.Monad.Prompt.Schema (ToolDef, ToolDispatcher, schemaWithDefs)
 import Control.Monad.Prompt.Tool (ToolBinding (..), dispatchBindings)
 import Data.Shroom.Class (Surveyable, describeProperties, description, propertyHolds)
 
 -- * The Prompt effect
 
-{- | Dynamic effect mirroring 'Control.Monad.Prompt.Core.PromptSingle': request
-a typed value from the model, using whatever context is currently held in
-"Effectful.State.Static.Local".
+{- | Dynamic effect: request a typed value from the model, using whatever
+context is currently held in "Effectful.State.Static.Local".
 -}
 data Prompt :: Effect where
   RequestPrompt :: (Surveyable a, ToSchema a, FromJSON a) => Prompt m a
@@ -111,10 +118,11 @@ prompt = send RequestPrompt
 
 -- | Like 'prompt', with an extra piece of context scoped to this request only.
 promptWith ::
+  forall a es.
   (Prompt :> es, State [ContextItem] :> es, Surveyable a, ToSchema a, FromJSON a) =>
   Text ->
   Eff es a
-promptWith txt = withContext txt prompt
+promptWith txt = withContext txt (prompt @a)
 
 {- | Like 'prompt', but the model may call any of the given tools. Build each
 'ToolBinding' with 'Control.Monad.Prompt.Tool.toolBinding' — that is only
@@ -130,8 +138,8 @@ promptTools ::
 promptTools bindings = send (RequestPromptTools bindings)
 
 {- | Run two programs concurrently via "Effectful.Concurrent.Async", returning
-both results. Unlike 'Control.Monad.Prompt.Core.PromptT'\'s @('<*>')@, which
-forked silently, this is an explicit call.
+both results. Parallelism is an explicit call here, rather than hiding
+inside an @Applicative@\'s @('<*>')@.
 -}
 promptPar :: (Concurrent :> es) => Eff es a -> Eff es b -> Eff es (a, b)
 promptPar = concurrently
@@ -139,6 +147,30 @@ promptPar = concurrently
 -- | Run a list of programs concurrently, returning all results.
 promptsParallel :: (Concurrent :> es) => [Eff es a] -> Eff es [a]
 promptsParallel = mapConcurrently id
+
+-- * Runner configuration
+
+-- | Model-independent configuration for 'runPrompt' \/ 'runPromptResultEff'.
+data PromptConfig = PromptConfig
+  { maxRetries :: Int
+  {- ^ Maximum number of re-prompts when a parsed value fails property
+  validation, or on a 'Control.Monad.Prompt.Backend.BackendTransportError'.
+  Default: 3.
+  -}
+  , maxToolSteps :: Maybe Int
+  {- ^ Maximum number of tool-call iterations per 'promptTools' call before
+  giving up. 'Nothing' means no limit. Default: 10.
+  -}
+  , debugLog :: Maybe (Text -> IO ())
+  {- ^ Optional logger called before each LLM call and after each response.
+  Receives a human-readable 'Text' summary.  Pass @Just TIO.putStrLn@ for
+  stdout, or @tasty-hunit@\'s @step@ callback in tests.  Default: 'Nothing'.
+  -}
+  }
+
+-- | Default 'PromptConfig': up to 3 retries, up to 10 tool steps, no debug logging.
+defaultPromptConfig :: PromptConfig
+defaultPromptConfig = PromptConfig {maxRetries = 3, maxToolSteps = Just 10, debugLog = Nothing}
 
 -- * Context
 
@@ -151,8 +183,7 @@ context :: (State [ContextItem] :> es) => Text -> Eff es ()
 context = addContextItem . UserMessage
 
 {- | Scope a 'ContextItem' to a sub-computation: visible only within @act@, and
-not carried past it — including anything @act@ itself added, mirroring
-'Control.Monad.Prompt.Core.WithContext'.
+not carried past it — including anything @act@ itself added.
 -}
 withContextItem :: (State [ContextItem] :> es) => ContextItem -> Eff es a -> Eff es a
 withContextItem item act = do
@@ -174,63 +205,38 @@ failWith = throwError
 
 {- | Try the left computation; on failure, restore the context to how it stood
 before the attempt, discarding anything the failing branch added, and run
-the right computation from there. Mirrors 'Control.Monad.Prompt.Core.Alt'.
+the right computation from there.
 -}
 orElse :: (Error Text :> es, State [ContextItem] :> es) => Eff es a -> Eff es a -> Eff es a
 orElse l r = do
   (saved :: [ContextItem]) <- get
   l `catchError` \_ (_ :: Text) -> put saved >> r
 
--- * Backend error classification
-
-{- | Whether a backend error should consume retry budget.
-
-A refusal is terminal — the model declining outright is not something a
-re-prompt fixes, so retrying just spends 'maxRetries' real API calls before
-reporting the same refusal anyway. A transport failure (a 429, a 500, a
-timeout) is exactly what a retry is for.
-
-'LLMBackend' surfaces both as an indistinguishable bare 'Text', so this
-always answers 'BackendTransportError' at this revision: the
-'BackendRefusal' branch in 'runPrompt' is unreachable until todo 11
-introduces a shroom-owned error type that separates the two, and todo 12
-repoints this interpreter onto it. Do not fake the distinction by matching
-on the error text in the meantime.
--}
-data BackendErrorKind = BackendRefusal | BackendTransportError
-
-classifyBackendError :: Text -> BackendErrorKind
-classifyBackendError _ = BackendTransportError
-
 -- * Interpreter
 
-{- | Interpret 'Prompt' against any 'LLMBackend', threading context through
+{- | Interpret 'Prompt' against a 'Backend', threading context through
 "Effectful.State.Static.Local" and surfacing failure via
-"Effectful.Error.Static". On a parse failure or a property violation the
-request is retried up to 'maxRetries' times, each time appending the
-offending response (as an 'AssistantMessage') and a 'UserMessage' naming
-what went wrong — the same behaviour as
-'Control.Monad.Prompt.runPromptT'\'s retry loop. 'debugLog' emits the same
-before\/after-call lines with the same OK \/ PARSE FAIL \/ VALIDATION FAIL \/
-ERROR outcomes.
+"Effectful.Error.Static". On a parse failure, a property violation or a
+'BackendTransportError' the request is retried up to 'maxRetries' times,
+each time appending the offending response (as an 'AssistantMessage') and a
+'UserMessage' naming what went wrong. A 'BackendRefusal' is terminal and
+consumes no retry budget — the model declining outright is not something a
+re-prompt fixes. 'debugLog' emits the same before\/after-call lines with the
+same OK \/ PARSE FAIL \/ VALIDATION FAIL \/ ERROR outcomes as before.
 
-'RequestPrompt' passes no tools, exactly as before todo 10. 'RequestPromptTools'
-turns its @['ToolBinding']@ into the @['ToolDef']@ \/ dispatcher pair
-'runChatWithTools' already expects — via 'localSeqUnlift', since a binding's
-call runs in the caller's local effect stack — so budget semantics (a round
-costs a step only on a successful call, failed calls are free, remaining
-budget is annotated, exhaustion sends one final tool-free call) are
-inherited unchanged from whichever backend's own 'genericToolLoop' handles
-the call; this interpreter does not re-implement that cycle.
+'RequestPrompt' passes no tools. 'RequestPromptTools' turns its
+@['ToolBinding']@ into the @['ToolDef']@ \/ dispatcher pair 'toolLoop'
+drives — via 'localSeqUnlift', since a binding's call runs in the caller's
+local effect stack.
 -}
 runPrompt ::
-  forall cfg es a.
-  (LLMBackend cfg, IOE :> es, Error Text :> es, State [ContextItem] :> es) =>
-  cfg ->
+  forall es a.
+  (IOE :> es, Error Text :> es, State [ContextItem] :> es) =>
+  Backend (Eff es) ->
   PromptConfig ->
   Eff (Prompt : es) a ->
   Eff es a
-runPrompt cfg promptCfg = interpret $ \env (request :: Prompt (Eff localEs) b) -> case request of
+runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) b) -> case request of
   -- No tools for 'RequestPrompt' (unchanged from before todo 10).
   RequestPrompt -> runRequest [] (\_ _ -> pure (Left "no tools")) (Just 0)
   -- 'RequestPromptTools': build the dispatcher out of the bindings by
@@ -305,21 +311,19 @@ runPrompt cfg promptCfg = interpret $ \env (request :: Prompt (Eff localEs) b) -
           ]
             <> fmap renderItem ctx
             <> [separator]
-      result <- runChatWithTools cfg promptCfg ctx typeDesc schema toolDefs dispatch maxSteps
+      result <- toolLoop toolDefs dispatch maxSteps ctx typeDesc schema
       let attemptsStr = "(" <> pack (show attemptNum) <> " attempt(s))"
           retry = attemptLoop toolDefs dispatch maxSteps
       case result of
-        Left err -> do
+        Left (BackendRefusal {refusalMessage}) -> do
+          -- Terminal: a refusal is not something a re-prompt can fix.
+          logDebug $ "✗ REFUSAL: " <> refusalMessage
+          throwError $ refusalMessage <> "\n" <> attemptsStr
+        Left (BackendTransportError err) -> do
           logDebug $ "✗ ERROR: " <> err
-          case classifyBackendError err of
-            BackendRefusal ->
-              -- Terminal: a refusal is not something a re-prompt can fix.
-              -- Unreachable at this revision — see 'classifyBackendError'.
-              throwError $ err <> "\n" <> attemptsStr
-            BackendTransportError ->
-              if retriesLeft <= 0
-                then throwError $ err <> "\n" <> attemptsStr
-                else retry ctx typeDesc schema checkProps totalRetries (retriesLeft - 1)
+          if retriesLeft <= 0
+            then throwError $ err <> "\n" <> attemptsStr
+            else retry ctx typeDesc schema checkProps totalRetries (retriesLeft - 1)
         Right rawTxt ->
           case eitherDecodeStrictText' rawTxt of
             Left parseErr -> do
@@ -369,22 +373,92 @@ runPrompt cfg promptCfg = interpret $ \env (request :: Prompt (Eff localEs) b) -
       Left err -> Left (mconcat ["JSON decode error: ", t, "\n", pack err])
       Right v -> Right v
 
-{- | Run a 'Prompt' program end to end against a backend: interpret 'Prompt',
-thread context via "Effectful.State.Static.Local" starting from an empty
-history, catch failure into an 'Either', and provide
+    -- \| Drive one prompt request's worth of tool calling against 'backend',
+    --    one 'runBackendChat' call at a time, until it answers or the step
+    --    budget is spent. The model to copy is
+    --    'Control.Monad.Prompt.Tool.genericToolLoop'\'s budget bookkeeping,
+    --    though not directly reusable there: it is typed over a backend-native
+    --    @ctx@\/@resp@ rather than @['ContextItem']@\/'BackendReply'.
+    --
+    --    Budget rules (unchanged from 'Control.Monad.Prompt.Tool.genericToolLoop'):
+    --    a round costs one step only when at least one call succeeds, failed
+    --    calls are free, each successful result is annotated with the remaining
+    --    count, and exhaustion sends one final tool-free call so the model can
+    --    still answer.
+    --
+    toolLoop ::
+      [ToolDef] ->
+      ToolDispatcher (Eff es) ->
+      -- \| Steps remaining (@Nothing@ = unlimited)
+      Maybe Int ->
+      [ContextItem] ->
+      Text ->
+      Value ->
+      Eff es (Either BackendError Text)
+    toolLoop toolDefs dispatch stepsLeft ctx typeDesc schema = do
+      result <- runBackendChat backend ctx typeDesc schema toolDefs
+      case result of
+        Left err -> pure (Left err)
+        Right (BackendAnswer txt) -> pure (Right txt)
+        Right (BackendToolCalls calls) ->
+          case stepsLeft of
+            -- Budget exhausted: inform the model, then call without tools.
+            Just 0 -> do
+              logDebug "[tool budget exhausted]"
+              let exhausted = "Tool budget exhausted. No further tool calls will be processed. Please give your final answer using the information already available."
+                  fakeResults = [ToolResult {toolResultId = tc.toolCallId, toolResultName = tc.toolCallName, toolResultOutcome = Right exhausted} | tc <- calls]
+                  ctx' = ctx <> [ToolCallMessage calls, ToolResultMessage fakeResults]
+              final <- runBackendChat backend ctx' typeDesc schema []
+              pure $ case final of
+                Left err -> Left err
+                Right (BackendAnswer txt) -> Right txt
+                Right (BackendToolCalls _) -> Left (BackendTransportError "backend requested tools on the tool-free exhaustion call")
+            _ -> do
+              tagged <-
+                traverse
+                  ( \tc -> do
+                      logDebug $ ">>> TOOL CALL: " <> tc.toolCallName <> " " <> toStrict (encodeToLazyText tc.toolCallArguments)
+                      r <- dispatch tc.toolCallName tc.toolCallArguments
+                      logDebug $ "<<< TOOL RESULT: " <> tc.toolCallName <> " " <> either ("ERROR: " <>) ("OK: " <>) r
+                      pure (tc, r)
+                  )
+                  calls
+              -- Count successes; only successful calls cost budget.
+              let successCount = length [() | (_, Right _) <- tagged]
+                  newStepsLeft = stepsLeft <&> \n -> n - (if successCount > 0 then 1 else 0)
+                  -- Annotate each successful result with remaining budget.
+                  annotate (tc, Right txt) =
+                    let note = case newStepsLeft of
+                          Nothing -> ""
+                          Just n -> "\n[" <> T.pack (show n) <> " tool step(s) remaining]"
+                     in ToolResult {toolResultId = tc.toolCallId, toolResultName = tc.toolCallName, toolResultOutcome = Right (txt <> note)}
+                  annotate (tc, Left err) =
+                    ToolResult {toolResultId = tc.toolCallId, toolResultName = tc.toolCallName, toolResultOutcome = Left err}
+                  results = fmap annotate tagged
+                  ctx' = ctx <> [ToolCallMessage calls, ToolResultMessage results]
+              toolLoop toolDefs dispatch newStepsLeft ctx' typeDesc schema
+
+{- | Run a 'Prompt' program end to end against a 'Backend': interpret
+'Prompt', thread context via "Effectful.State.Static.Local" starting from an
+empty history, catch failure into an 'Either', and provide
 "Effectful.Concurrent.Async" so 'promptPar' \/ 'promptsParallel' branches
-run concurrently. Mirrors 'Control.Monad.Prompt.runPromptTNoTools' composed
-with 'Control.Monad.Prompt.runPromptResultTWith'.
+run concurrently.
+
+The 'Backend' is a value, not a typeclass instance — build one with e.g.
+'Control.Monad.Prompt.Anthropic.anthropicBackend' or
+'Control.Monad.Prompt.FileMock.fileMockBackend', applied to your config.
+Those builders are themselves polymorphic in @m@ (given @'MonadIO' m@), so
+passing one straight to this function instantiates it at the effect stack
+below without any extra annotation.
 -}
 runPromptResultEff ::
-  (LLMBackend cfg) =>
-  cfg ->
+  Backend (Eff '[State [ContextItem], Error Text, Concurrent, IOE]) ->
   PromptConfig ->
   Eff '[Prompt, State [ContextItem], Error Text, Concurrent, IOE] a ->
   IO (Either Text a)
-runPromptResultEff cfg promptCfg program =
+runPromptResultEff backend promptCfg program =
   runEff
     . runConcurrent
     . runErrorNoCallStack
     . evalState ([] :: [ContextItem])
-    $ runPrompt cfg promptCfg program
+    $ runPrompt backend promptCfg program

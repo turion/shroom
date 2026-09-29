@@ -22,13 +22,12 @@ import Data.OpenApi (ToSchema)
 import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 
--- sop-core
-import Data.SOP (NP (..))
-
 -- shroom
-import Control.Monad.Prompt
-import Control.Monad.Prompt.Anthropic
-import Control.Monad.Prompt.Tool (ToolHandler (..), Toolable (..))
+import Control.Monad.Prompt (Promptable)
+import Control.Monad.Prompt.Anthropic (anthropicBackend, mkAnthropicConfig)
+import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
+import Control.Monad.Prompt.Effect qualified as Effect
+import Control.Monad.Prompt.Tool (ToolHandler (..), Toolable (..), runTool, runToolHandler, toolBinding)
 import Control.Monad.Prompt.Tool.Web (
   DuckDuckGoSearch,
   WebFetch,
@@ -73,25 +72,25 @@ main = do
 
 integrationTests :: Text -> TestTree
 integrationTests apiKey =
-  let cfg = mkAnthropicConfig apiKey
+  let backend = anthropicBackend (mkAnthropicConfig apiKey)
    in testGroup
         "Claude API integration"
         [ testCase "prompt returns a User" $ do
-            result <- runPromptResultTWith cfg $ runPromptTNoTools defaultPromptConfig $ do
-              context "Return a JSON object for a user named Alice with email alice@example.com"
-              prompt @User
+            result <- Effect.runPromptResultEff backend defaultPromptConfig $ do
+              Effect.context "Return a JSON object for a user named Alice with email alice@example.com"
+              Effect.prompt @User
             case result of
               Left err -> assertFailure (show err)
               Right user -> userName user @?= "Alice"
         , testCase "prompt returns a Counter" $ do
-            result <- runPromptResultTWith cfg $ runPromptTNoTools defaultPromptConfig $ do
-              context "Return a JSON counter object with value 42."
-              prompt @Counter
+            result <- Effect.runPromptResultEff backend defaultPromptConfig $ do
+              Effect.context "Return a JSON counter object with value 42."
+              Effect.prompt @Counter
             case result of
               Left err -> assertFailure (show err)
               Right (Counter n) -> n @?= 42
         , testCase "conference chain produces a valid schedule" $ do
-            result <- runPromptResultTWith cfg $ runPromptTNoTools defaultPromptConfig conferenceChain
+            result <- Effect.runPromptResultEff backend defaultPromptConfig conferenceChain
             case result of
               Left err -> assertFailure (show err)
               Right (allSpeakers, talks, schedule) -> do
@@ -99,11 +98,13 @@ integrationTests apiKey =
                 length talks @?= length (speakers allSpeakers)
                 assertBool "at least one slot" (not (null (scheduleSlots schedule)))
         , testCase "web tools smoke test: all three tools work" $ do
-            let handlers = duckDuckGoSearchHandler :* wikipediaSearchHandler :* webFetchHandler :* Nil
-                pcfg = defaultPromptConfig {maxRetries = 3, maxToolSteps = Just 15, debugLog = Just (putStrLn . T.unpack)}
+            let pcfg = defaultPromptConfig {maxRetries = 3, maxToolSteps = Just 15, debugLog = Just (putStrLn . T.unpack)}
             result <-
-              runPromptResultTWith cfg $
-                runPromptT pcfg handlers (webToolReportChain @'[DuckDuckGoSearch, WikipediaSearch, WebFetch])
+              Effect.runPromptResultEff backend pcfg $
+                runTool duckDuckGoSearchHandler $
+                  runTool wikipediaSearchHandler $
+                    runTool webFetchHandler $
+                      webToolReportChain @'[DuckDuckGoSearch, WikipediaSearch, WebFetch]
             case result of
               Left err -> assertFailure (T.unpack err)
               Right report ->
@@ -116,11 +117,10 @@ integrationTests apiKey =
                   )
                   (toolResults report)
         , testCase "web tools: broken tool failure is reported" $ do
-            let handlers = fakeBrokenSearchHandler :* Nil
-                pcfg = defaultPromptConfig {maxRetries = 3, maxToolSteps = Just 5, debugLog = Just (putStrLn . T.unpack)}
+            let pcfg = defaultPromptConfig {maxRetries = 3, maxToolSteps = Just 5, debugLog = Just (putStrLn . T.unpack)}
             result <-
-              runPromptResultTWith cfg $
-                runPromptT pcfg handlers (webToolReportChain @'[FakeBrokenSearch])
+              Effect.runPromptResultEff backend pcfg $
+                runTool fakeBrokenSearchHandler (webToolReportChain @'[FakeBrokenSearch])
             case result of
               Left err -> assertFailure (T.unpack err)
               Right report ->
@@ -134,12 +134,11 @@ integrationTests apiKey =
             let countingHandler = ToolHandler $ \q -> do
                   atomicModifyIORef' callCount (\n -> (n + 1, ()))
                   runToolHandler duckDuckGoSearchHandler q
-                handlers = countingHandler :* Nil
                 -- Give the model generous retries and tool steps
                 pcfg = defaultPromptConfig {maxRetries = 5, maxToolSteps = Just 10}
             result <-
-              runPromptResultTWith cfg $
-                runPromptT pcfg handlers conferenceChainWithTools
+              Effect.runPromptResultEff backend pcfg $
+                runTool countingHandler (conferenceChainWithTools [toolBinding @DuckDuckGoSearch])
             case result of
               Left err -> assertFailure (show err)
               Right (allSpeakers, talks, _schedule) -> do

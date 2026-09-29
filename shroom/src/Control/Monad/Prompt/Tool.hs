@@ -1,10 +1,11 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-{- | Tool use support for 'PromptT'.
+{- | Tool use support.
 
-Define tools as Haskell types, provide handlers, and pass them to
-'runPromptT'.  The LLM backend will call tools automatically during
-'prompt' \/ 'promptWith' if the model requests them.
+Define a tool as a Haskell type with a Haddock comment plus a handler, give
+the program's type @'Tool' MySearch ':>' es@, offer
+@'toolBinding' \@MySearch@ to 'Control.Monad.Prompt.Effect.promptTools', and
+interpret with @'runTool' mySearchHandler@:
 
 @
 -- | A web search query.
@@ -13,7 +14,6 @@ data MySearch = MySearch { query :: Text }
 
 \$(deriveDescribable ''MySearch)
 instance Surveyable MySearch
-instance Promptable MySearch
 
 instance Toolable MySearch where
   toolDescription _ = Just "Returns results from the search API."
@@ -21,17 +21,11 @@ instance Toolable MySearch where
 mySearchHandler :: ToolHandler MySearch
 mySearchHandler = ToolHandler $ \\(MySearch q) -> callSearchAPI q
 
-result <- runPromptResultTWith cfg $
-  runPromptT defaultPromptConfig (mySearchHandler :* Nil) myProgram
-@
+myProgram :: (Tool MySearch ':>' es, Prompt ':>' es) => Eff es Result
+myProgram = promptTools [toolBinding \@MySearch]
 
-The same 'MySearch' also works through the effect surface (see /Tools as
-effects/, below): give the program's type @'Tool' MySearch ':>' es@, offer
-@'toolBinding' \@MySearch@ to 'Control.Monad.Prompt.Effect.promptTools',
-and interpret with @'runTool' mySearchHandler@. Defining a tool is the
-same either way — a Haskell type with a Haddock comment plus a handler,
-and nothing further; the two are just different ways of handing that
-handler to a program.
+result <- runPromptResultEff backend defaultPromptConfig (runTool mySearchHandler myProgram)
+@
 -}
 module Control.Monad.Prompt.Tool (module Control.Monad.Prompt.Tool) where
 
@@ -54,6 +48,9 @@ import Data.Aeson.Text (encodeToLazyText)
 -- text
 import Data.Text.Lazy (toStrict)
 
+-- openapi3
+import Data.OpenApi (ToSchema)
+
 -- sop-core
 import Data.SOP (All, K (..), NP (..), SListI, hcmap, hcollapse)
 import Data.SOP.NP ()
@@ -66,9 +63,8 @@ import Effectful.Dispatch.Dynamic (interpret, send)
 
 -- shroom
 
-import Control.Monad.Prompt.Promptable (Promptable)
 import Control.Monad.Prompt.Schema (ToolDef (..), schemaWithDefs)
-import Data.Shroom.Class (describeType)
+import Data.Shroom.Class (Surveyable, describeType)
 
 -- * Tool typeclass
 
@@ -81,8 +77,15 @@ parses the input as @t@, calls the 'ToolHandler', and feeds the 'Text'
 result back before continuing.
 
 Minimal complete definition: none — all methods have defaults.
+
+Superclasses: 'Surveyable', 'ToSchema', 'FromJSON', 'Typeable' — deliberately
+not 'Control.Monad.Prompt.Promptable.Promptable': a tool's input type is
+described and schema'd the same way a 'Promptable' one is, but it is never
+itself the target of a 'prompt' call, so requiring 'Promptable' would only
+add an unused method and, worse, a dependency this module does not otherwise
+need on "Control.Monad.Prompt.Effect".
 -}
-class (Promptable t, FromJSON t, Typeable t) => Toolable t where
+class (Surveyable t, ToSchema t, FromJSON t, Typeable t) => Toolable t where
   {- | Additional description appended to 'describeType' when sending tool
   metadata to the LLM.  Use this for operational details not obvious from
   the type (e.g. rate limits, return format).  'Nothing' means no extra text.

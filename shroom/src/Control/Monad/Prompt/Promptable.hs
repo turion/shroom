@@ -3,19 +3,20 @@ a type from an LLM backend.
 
 @
 class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
-  prompt :: forall m. PromptT m a
-  prompt = PromptSingle
+  prompt :: forall es. (Prompt :> es) => Eff es a
+  prompt = Effect.prompt
 @
 
-The default 'prompt' sends a 'PromptSingle' request, which uses 'description'
-to build the prompt text from the type's 'Surveyable' metadata.
+The default 'prompt' sends a 'Control.Monad.Prompt.Effect.RequestPrompt'
+effect, which uses 'description' to build the prompt text from the type's
+'Surveyable' metadata.
 
 Override 'prompt' to add type-specific context, fallback logic, or any other
-custom 'PromptT' program:
+custom program:
 
 @
 instance Promptable MyType where
-  prompt = WithContext (UserMessage "Always prefer metric units.") PromptSingle
+  prompt = withContext "Always prefer metric units." Effect.prompt
 @
 
 Typical usage (no override needed):
@@ -25,16 +26,16 @@ Typical usage (no override needed):
 
 instance Surveyable MyType where ...
 
-deriving via DescriptionPrompt MyType instance Promptable MyType
+instance Promptable MyType
 @
 
 == Pure\/effectful boundary
 
 This module is the effectful side of the line drawn against "Data.Shroom.Class":
-'Promptable'\'s method is a 'PromptT' program, so anything that names 'Promptable'
-or 'DescriptionPrompt' depends on the program layer and must live under
-"Control.Monad.Prompt", never under @Data.Shroom.@. Nothing under @Data.Shroom.@
-may import this module.
+'Promptable'\'s method is an 'Eff' program requiring the 'Prompt' effect, so
+anything that names 'Promptable' or 'DescriptionPrompt' depends on the
+program layer and must live under "Control.Monad.Prompt", never under
+@Data.Shroom.@. Nothing under @Data.Shroom.@ may import this module.
 -}
 module Control.Monad.Prompt.Promptable (module Control.Monad.Prompt.Promptable) where
 
@@ -47,30 +48,35 @@ import Data.Aeson (FromJSON, ToJSON)
 -- openapi3
 import Data.OpenApi (ToSchema)
 
+-- effectful
+import Effectful (Eff, (:>))
+
 -- shroom
 
-import Control.Monad.Prompt.Core (PromptT (..))
+import Control.Monad.Prompt.Effect (Prompt)
+import Control.Monad.Prompt.Effect qualified as Effect
 import Data.Shroom.Class
 
 -- * Promptable
 
 {- | Attach a default prompting strategy to a type.
 
-The single method 'prompt' is a 'PromptT' program that requests a value of
-type @a@ from the LLM.  The default implementation uses 'PromptSingle', which
-builds the prompt from 'description' (the type description, properties, and
-examples from the 'Surveyable' instance).
+The single method 'prompt' is an 'Eff' program that requests a value of
+type @a@ from the LLM.  The default implementation sends
+'Control.Monad.Prompt.Effect.RequestPrompt', which builds the prompt from
+'description' (the type description, properties, and examples from the
+'Surveyable' instance).
 
 Superclasses: 'Surveyable', 'ToSchema', 'FromJSON'.
 -}
 class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
-  {- | A 'PromptT' program that requests a value of type @a@ from the LLM.
+  {- | An 'Eff' program that requests a value of type @a@ from the LLM.
 
   Override to add type-specific context, fallback logic, parallel sub-prompts,
   or any other custom behaviour.
   -}
-  prompt :: forall m. PromptT m a
-  prompt = PromptSingle
+  prompt :: forall es. (Prompt :> es) => Eff es a
+  prompt = Effect.prompt
 
 {- | Helper newtype for using the default description-based prompting strategy
 via @DerivingVia@.

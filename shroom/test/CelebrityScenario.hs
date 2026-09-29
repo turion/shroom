@@ -13,7 +13,8 @@ import Test.Tasty (defaultMain, testGroup)
 import Test.Tasty.HUnit (testCase, (@?=))
 
 -- shroom
-import Control.Monad.Prompt
+import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
+import Control.Monad.Prompt.Effect qualified as Effect
 
 -- test
 import CelebrityTypes
@@ -37,9 +38,7 @@ runCelebrity :: PromptConfig -> [Text] -> IO (Either Text CelebrityFact, [Text])
 runCelebrity cfg responseList = do
   responses <- newIORef responseList
   seenCtxs <- newIORef []
-  result <-
-    runPromptResultTWith (SeqMockConfig responses seenCtxs) $
-      runPromptTNoTools cfg celebrityChain
+  result <- Effect.runPromptResultEff (seqMockBackend (SeqMockConfig responses seenCtxs)) cfg (celebrityChain [])
   seen <- readIORef seenCtxs
   pure (result, seen)
 
@@ -77,8 +76,7 @@ main =
           seenCtxs <- newIORef ([] :: [Text])
           let cfg = SeqMockConfig responses seenCtxs
           result <-
-            runPromptResultTWith cfg $
-              runPromptTNoTools (defaultPromptConfig {maxRetries = 2}) celebrityChain
+            Effect.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 2}) (celebrityChain [])
           case result of
             Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
             Right fact -> not (T.null (triviaFact fact)) @?= True
@@ -92,8 +90,7 @@ main =
           seenCtxs <- newIORef ([] :: [Text])
           let cfg = SeqMockConfig responses seenCtxs
           result <-
-            runPromptResultTWith cfg $
-              runPromptTNoTools (defaultPromptConfig {maxRetries = 2}) celebrityChain
+            Effect.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 2}) (celebrityChain [])
           case result of
             Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
             Right _ -> pure ()

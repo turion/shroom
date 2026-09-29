@@ -50,10 +50,10 @@ import Data.Ollama.Common.Types (
 import Data.Ollama.Common.Types qualified as Ollama (ToolCall (..))
 
 -- shroom
-import Control.Monad.Prompt (ContextItem (..), LLMBackend (..), PromptConfig (..), ToolCall (..), ToolResult (..), defaultPromptConfig)
-import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..))
+import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..), ContextItem (..), ToolCall (..), ToolResult (..))
+import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Schema (ToolDef (..), inlineSchema)
-import Control.Monad.Prompt.Tool (ToolLoopOps (..), genericToolLoop)
+import Control.Monad.Prompt.Tool (ToolLoopOps (..))
 
 -- | Configuration for an Ollama-hosted local model.
 data OllamaBackendConfig = OllamaBackendConfig
@@ -213,7 +213,12 @@ ollamaToolLoopOps cfg schema toolDefs promptCfg =
                   defaultChatOps
                     { modelName = cfg.ollamaModel
                     , messages = msgs
-                    , tools = Just (fmap toOllamaTool toolDefs)
+                    , -- Empty means no tools are being offered — mirror the
+                      -- Anthropic backend's '[] -> Nothing' translation so a
+                      -- tool-free call (including the tool-budget-exhaustion
+                      -- final call) omits the field rather than sending
+                      -- @tools: []@.
+                      tools = if null toolDefs then Nothing else Just (fmap toOllamaTool toolDefs)
                     , format = Just fmt
                     , stream = Nothing
                     }
@@ -273,39 +278,16 @@ ollamaToolLoopOps cfg schema toolDefs promptCfg =
         , logEvent = \msg -> liftIO $ maybe (pure ()) ($ msg) promptCfg.debugLog
         }
 
-instance LLMBackend OllamaBackendConfig where
-  runChatWithTools cfg promptCfg ctx typeDesc schema toolDefs dispatch maxToolSteps
-    | null toolDefs = liftIO $ do
-        let (fmt, unwrap) = schemaToFormatAndUnwrap schema
-            msgs = contextItemsToOllama ctx typeDesc
-            ops =
-              defaultChatOps
-                { modelName = cfg.ollamaModel
-                , messages = msgs
-                , format = Just fmt
-                , stream = Nothing
-                }
-        result <- try @SomeException $ chat ops (Just cfg.ollamaConfig)
-        pure $ case result of
-          Left ex -> Left ("IO error: " <> pack (show ex))
-          Right (Left err) -> Left (renderOllamaError err)
-          Right (Right resp) -> case resp.message of
-            Nothing -> Left "Ollama returned a response with no message"
-            Just msg -> Right (unwrap msg.content)
-    | otherwise = do
-        let msgs = contextItemsToOllama ctx typeDesc
-            ops = ollamaToolLoopOps cfg schema toolDefs promptCfg
-        genericToolLoop ops dispatch msgs maxToolSteps
-
-{- | 'Backend' for a local Ollama model. Makes the same raw call as the old
-tool loop and reuses 'ollamaToolLoopOps'\'s 'ToolLoopOps.detectTools' \/
-'ToolLoopOps.extractText' to read the response, but only for a single call —
-looping (dispatching a call and feeding the result back in) is now the
-caller's job. A model requesting tools becomes 'BackendToolCalls'; anything
-else becomes 'BackendAnswer'. Every error Ollama can currently report is a
-bare 'Text' (an IO error or an Ollama-reported API error), so it always
-lands as 'BackendTransportError'; Ollama gives no separate signal for a
-refusal, so 'BackendRefusal' is never produced here.
+{- | 'Backend' for a local Ollama model. Reuses 'ollamaToolLoopOps'\'s
+'ToolLoopOps.detectTools' \/ 'ToolLoopOps.extractText' to read the response,
+but only for a single call — looping (dispatching a call and feeding the
+result back in) is now the caller's job
+("Control.Monad.Prompt.Effect"\'s tool loop). A model requesting tools
+becomes 'BackendToolCalls'; anything else becomes 'BackendAnswer'. Every
+error Ollama can currently report is a bare 'Text' (an IO error or an
+Ollama-reported API error), so it always lands as 'BackendTransportError';
+Ollama gives no separate signal for a refusal, so 'BackendRefusal' is never
+produced here.
 -}
 ollamaBackend :: (MonadIO m) => OllamaBackendConfig -> Backend m
 ollamaBackend cfg =

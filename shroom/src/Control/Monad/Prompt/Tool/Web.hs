@@ -3,13 +3,18 @@
 
 {- | Built-in web tools: 'WebFetch', 'DuckDuckGoSearch', and 'WikipediaSearch'.
 
-Use these as ready-made 'ToolHandler' values in your 'runPromptT' call:
+Use these as ready-made 'ToolHandler' values. A program names the ones it
+needs, e.g. @('Tool' WebFetch ':>' es, 'Tool' DuckDuckGoSearch ':>' es)@,
+offers @'toolBinding' \@WebFetch : 'toolBinding' \@DuckDuckGoSearch : ...@ to
+'Control.Monad.Prompt.Effect.promptTools', and each handler is supplied via
+@'runTool' webFetchHandler@ \/ @'runTool' duckDuckGoSearchHandler@:
 
 @
-result <- runPromptResultTWith cfg $
-  runPromptT defaultPromptConfig
-    (webFetchHandler :* duckDuckGoSearchHandler :* wikipediaSearchHandler :* Nil)
-    myProgram
+result <- runPromptResultEff backend defaultPromptConfig $
+  runTool webFetchHandler $
+    runTool duckDuckGoSearchHandler $
+      runTool wikipediaSearchHandler
+        myProgram
 @
 
 * 'duckDuckGoSearchHandler' — DuckDuckGo Instant Answer API. Best for named
@@ -19,13 +24,6 @@ result <- runPromptResultTWith cfg $
   article titles and URLs for any query. Use this when the DDG search
   returns no result and you need to find Wikipedia pages to fetch.
 * 'webFetchHandler' — HTTP GET, strips HTML, truncates to 2000 chars.
-
-The same three handlers also work through "Control.Monad.Prompt.Tool"\'s
-effect surface — a program names the ones it needs, e.g.
-@('Tool' WebFetch ':>' es, 'Tool' DuckDuckGoSearch ':>' es)@, offers
-@'toolBinding' \@WebFetch : 'toolBinding' \@DuckDuckGoSearch : ...@ to
-'Control.Monad.Prompt.Effect.promptTools', and each handler is supplied via
-@'runTool' webFetchHandler@ \/ @'runTool' duckDuckGoSearchHandler@.
 -}
 module Control.Monad.Prompt.Tool.Web (module Control.Monad.Prompt.Tool.Web) where
 

@@ -1,4 +1,4 @@
-{- | A file-based mock 'LLMBackend' for development and prompt inspection.
+{- | A file-based mock 'Backend' for development and prompt inspection.
 
 Instead of calling a real LLM, 'FileMockConfig' reads pre-written JSON
 responses from numbered files on disk (@response-001.json@, etc.) and
@@ -15,7 +15,7 @@ Usage:
 
 @
 cfg <- defaultFileMockConfig
-result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig myChain
+result <- runPromptResultEff (fileMockBackend cfg) defaultPromptConfig myChain
 @
 
 Response files are read from the package's @dev\/mock-responses\/@ directory by
@@ -39,8 +39,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 
 -- shroom
-import Control.Monad.Prompt (LLMBackend (..), renderContextItems, runChat)
-import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..))
+import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..), renderContextItems)
 import Paths_shroom (getDataDir)
 
 -- | Configuration for the file-based mock backend.
@@ -74,8 +73,14 @@ defaultFileMockConfig = do
       , stepCounter = counter
       }
 
-instance LLMBackend FileMockConfig where
-  runChatWithTools cfg _promptCfg ctx typeDesc _schema _toolDefs _dispatch _maxToolSteps = liftIO $ do
+{- | 'Backend' for the file-based mock. The mock has no tool concept, so the
+offered tools are ignored and every reply is a 'BackendAnswer'. The mock
+never distinguishes error kinds either, so a missing response file always
+lands as 'BackendTransportError'.
+-}
+fileMockBackend :: (MonadIO m) => FileMockConfig -> Backend m
+fileMockBackend cfg =
+  Backend $ \ctx typeDesc _schema _toolDefs -> liftIO $ do
     n <- atomicModifyIORef' cfg.stepCounter (\i -> (i + 1, i))
     let stepNum = n + 1 -- 1-indexed for humans
         filename = "response-" <> printf "%03d" stepNum <> ".json"
@@ -85,17 +90,7 @@ instance LLMBackend FileMockConfig where
     cfg.promptLogFn $ T.unlines [header, renderContextItems ctx <> "\n" <> typeDesc, footer]
     exists <- doesFileExist path
     if not exists
-      then pure $ Left $ "FileMock: missing response file: " <> T.pack path
+      then pure $ Left $ BackendTransportError $ "FileMock: missing response file: " <> T.pack path
       else do
         contents <- TIO.readFile path
-        pure $ Right (T.strip contents)
-
-{- | 'Backend' for the file-based mock, built directly on 'runChat'. The mock
-has no tool concept, so the offered tools are ignored and every reply is a
-'BackendAnswer'. The mock never distinguishes error kinds either, so a
-missing response file always lands as 'BackendTransportError'.
--}
-fileMockBackend :: (MonadIO m) => FileMockConfig -> Backend m
-fileMockBackend cfg =
-  Backend $ \ctx typeDesc schema _toolDefs ->
-    either (Left . BackendTransportError) (Right . BackendAnswer) <$> runChat cfg ctx typeDesc schema
+        pure $ Right (BackendAnswer (T.strip contents))

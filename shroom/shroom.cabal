@@ -65,7 +65,6 @@ common opts
     filepath ^>=1.5,
     http-client ^>=0.7,
     modern-uri ^>=0.3,
-    mtl ^>=2.3,
     ollama-haskell ^>=0.2,
     openapi3 ^>=3.2,
     req ^>=3.13,
@@ -74,9 +73,7 @@ common opts
     template-haskell >=2.22 && <2.25,
     text ^>=2.1.4,
     time ^>=1.14,
-    transformers ^>=0.6,
     universe-base ^>=1.1,
-    unliftio ^>=0.2,
     vector ^>=0.13,
     witherable ^>=0.5,
 
@@ -104,7 +101,6 @@ library
     Data.Shroom.Class
 
   other-modules:
-    Control.Monad.Prompt.Core
     Control.Monad.Prompt.Schema
     Paths_shroom
 

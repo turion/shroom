@@ -1,12 +1,7 @@
 {- | The adapter seam: what an LLM transport must provide for shroom to run a
 'Control.Monad.Prompt.Effect.Prompt' program against it.
 
-'Control.Monad.Prompt.LLMBackend'\'s sole method, @runChatWithTools@, bundles
-the chat call itself together with the tool list, the dispatch callback and
-the step budget — eight arguments in one signature that every backend has to
-satisfy whether or not it cares about tools at all, and the dispatch callback
-means the /backend/ owns the tool-call loop rather than the caller. A
-'Backend' only ever has to make one raw chat call: hand over the conversation
+A 'Backend' only ever has to make one raw chat call: hand over the conversation
 so far, a description of the expected result type, its JSON schema, and the
 tools currently on offer, and get back either the model's final answer, a
 set of tool calls it wants made, or a 'BackendError'. The loop itself —
@@ -19,43 +14,128 @@ A 'Backend' is a plain record of one function, not a typeclass — there is no
 instance to declare and so nothing an implementor has to name; constructing a
 value /is/ satisfying the interface. That is deliberate: every argument and
 result type it mentions is one of shroom's own
-('Control.Monad.Prompt.Core.ContextItem', 'Control.Monad.Prompt.Core.ToolCall',
-'ToolDef', 'Text', 'Value', 'BackendReply', 'BackendError') or from a package
-any adapter depends on anyway ('aeson', 'text'), and nothing here forces a
-second dependency on any particular transport package. Native provider
-tool-calling survives through this seam too: a call carries the provider's
-own call id in 'ToolCall'\'s @toolCallId@, so an adapter that gets that id
-back from its provider (Anthropic's @tool_use_id@) can still link a result
-to the call that produced it once the exchange has round-tripped through
-'Control.Monad.Prompt.Core.ContextItem'\'s 'Control.Monad.Prompt.Core.ToolCallMessage'
-\/ 'Control.Monad.Prompt.Core.ToolResultMessage', and a reply may carry more
-than one call so parallel tool calls stay expressible.
-'Control.Monad.Prompt.Anthropic', 'Control.Monad.Prompt.Ollama',
-'Control.Monad.Prompt.FileMock' and the three mock backends in @test-utils@'s
-@TestUtils@ each build a 'Backend' value alongside their existing
-'Control.Monad.Prompt.LLMBackend' instance — both live side by side until
-the shroom arc's todo 12 deletes the old one. A package that depends only on
+('ContextItem', 'ToolCall', 'ToolDef', 'Text', 'Value', 'BackendReply',
+'BackendError') or from a package any adapter depends on anyway ('aeson',
+'text'), and nothing here forces a second dependency on any particular
+transport package. Native provider tool-calling survives through this seam
+too: a call carries the provider's own call id in 'ToolCall'\'s
+@toolCallId@, so an adapter that gets that id back from its provider
+(Anthropic's @tool_use_id@) can still link a result to the call that
+produced it once the exchange has round-tripped through 'ContextItem'\'s
+'ToolCallMessage' \/ 'ToolResultMessage', and a reply may carry more than
+one call so parallel tool calls stay expressible.
+'Control.Monad.Prompt.Anthropic', 'Control.Monad.Prompt.Ollama' and
+'Control.Monad.Prompt.FileMock' each build a 'Backend' value, as do the mock
+backends in @test-utils@'s @TestUtils@. A package that depends only on
 @shroom@ can build one too; the shroom arc's todo 14 does exactly that,
 interpreting @baikai-effectful@\'s @Baikai@ effect into a 'Backend' — that is
 the worked example for anyone weighing whether writing a replacement adapter
 is a weekend or a rescue.
+
+'ContextItem', 'ToolCall' and 'ToolResult' live in this module — rather than
+under "Data.Shroom." — because they name 'Backend', 'BackendReply' and
+'BackendError' throughout their own Haddock, and the reverse is equally
+true: this module cannot be understood without them. None of the three
+depend on @effectful@ or on the program layer, so putting them here does not
+cross the pure\/effectful boundary "Data.Shroom.Class" documents; they simply
+sit on the adapter seam's side of it rather than in the schema/description
+half.
 -}
 module Control.Monad.Prompt.Backend (
   Backend (..),
   BackendReply (..),
   BackendError (..),
   ToolDef (..),
+  ContextItem (..),
+  ToolCall (..),
+  ToolResult (..),
+  renderContextItems,
 ) where
 
 -- text
 import Data.Text (Text)
+import Data.Text qualified as T
 
 -- aeson
 import Data.Aeson (Value)
 
 -- shroom
-import Control.Monad.Prompt.Core (ContextItem, ToolCall)
 import Control.Monad.Prompt.Schema (ToolDef (..))
+
+-- * Tool calls and results
+
+{- | One tool call a model requested, carried either inside a 'Backend'\'s
+reply ('BackendToolCalls') or, once dispatched, replayed into the
+conversation as part of a 'ToolCallMessage'.
+-}
+data ToolCall = ToolCall
+  { toolCallId :: Text
+  {- ^ The provider's own id for this call. A provider that links a tool
+  result back to the call that produced it (e.g. Anthropic's
+  @tool_use_id@) needs this echoed back unchanged in the matching
+  'ToolResult' — that linking is exactly what widening 'Backend' with a
+  tool channel, instead of flattening tool calls to text, was for.
+  -}
+  , toolCallName :: Text
+  , toolCallArguments :: Value
+  }
+  deriving (Eq, Show)
+
+{- | The outcome of dispatching one 'ToolCall', linked back to it by
+'toolResultId'.
+-}
+data ToolResult = ToolResult
+  { toolResultId :: Text
+  -- ^ Echoes the originating 'ToolCall'\'s 'toolCallId'.
+  , toolResultName :: Text
+  , toolResultOutcome :: Either Text Text
+  {- ^ 'Left' — the tool failed, with a message for the model. 'Right' —
+  the tool's own result text.
+  -}
+  }
+  deriving (Eq, Show)
+
+-- * Context items
+
+{- | A single item in the LLM conversation history.
+Backends map these to their native message types (Anthropic: @system@ field
+or @user@\/@assistant@ roles; Ollama: @system@\/@user@\/@assistant@ roles).
+-}
+data ContextItem
+  = -- | Instructions or persona, sent before any user turns.
+    SystemMessage Text
+  | -- | A user turn in the conversation.
+    UserMessage Text
+  | {- | A previous model response. Appended automatically after each successful
+      'Control.Monad.Prompt.Effect.prompt' call so subsequent prompts can
+      reference prior outputs naturally.
+    -}
+    AssistantMessage Text
+  | {- | Tool calls a model requested in a single turn (parallel calls travel
+      together as one item, not one apiece, so they replay as one assistant
+      turn). Appended after a 'Backend' reply carries 'BackendToolCalls',
+      alongside the matching 'ToolResultMessage' once the calls have been
+      dispatched.
+    -}
+    ToolCallMessage [ToolCall]
+  | {- | The results of dispatching the calls in a 'ToolCallMessage', one
+      per call, each still linked back to its call by 'toolResultId'.
+    -}
+    ToolResultMessage [ToolResult]
+  deriving (Eq, Show)
+
+{- | Render a list of 'ContextItem' values to a flat 'Text' for display or
+simple backends that do not support structured message histories.
+Each item is prefixed with its role and separated by newlines.
+-}
+renderContextItems :: [ContextItem] -> Text
+renderContextItems = T.intercalate "\n" . fmap render
+  where
+    render (SystemMessage t) = "[system] " <> t
+    render (UserMessage t) = t
+    render (AssistantMessage t) = "[assistant] " <> t
+    render (ToolCallMessage calls) = "[tool call] " <> T.intercalate ", " (fmap toolCallName calls)
+    render (ToolResultMessage results) = "[tool result] " <> T.intercalate ", " (fmap toolResultName results)
 
 {- | A chat backend, reduced to the one call every backend must make: given
 the conversation so far, the expected result type's description, its JSON

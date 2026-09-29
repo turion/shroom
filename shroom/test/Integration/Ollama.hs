@@ -12,14 +12,12 @@ import Data.Text qualified as T
 import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit (assertBool, assertFailure, testCaseSteps, (@?=))
 
--- sop-core
-import Data.SOP (NP (..))
-
 -- shroom
-import Control.Monad.Prompt
+import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
+import Control.Monad.Prompt.Effect qualified as Effect
 import Control.Monad.Prompt.Ollama
-import Control.Monad.Prompt.Tool (ToolHandler (..))
-import Control.Monad.Prompt.Tool.Web (duckDuckGoSearchHandler, webFetchHandler)
+import Control.Monad.Prompt.Tool (ToolHandler (..), runTool, runToolHandler, toolBinding)
+import Control.Monad.Prompt.Tool.Web (DuckDuckGoSearch, WebFetch, duckDuckGoSearchHandler, webFetchHandler)
 
 -- test
 import CelebrityTypes
@@ -37,7 +35,7 @@ main = do
 ollamaIntegrationTests :: Maybe Text -> Text -> TestTree
 ollamaIntegrationTests mHost model =
   testGroup
-    "PromptT Ollama integration"
+    "Ollama integration"
     [ testCaseSteps "prompt returns a User" $ \step -> do
         let cfg = (defaultOllamaBackendConfig mHost) {ollamaModel = model}
             ollamaPromptConfig =
@@ -45,9 +43,9 @@ ollamaIntegrationTests mHost model =
                 { maxRetries = 10
                 , debugLog = Just (step . T.unpack)
                 }
-        result <- runPromptResultTWith cfg $ runPromptTNoTools ollamaPromptConfig $ do
-          context "Return a JSON object for a user named Alice with email alice@example.com"
-          prompt @User
+        result <- Effect.runPromptResultEff (ollamaBackend cfg) ollamaPromptConfig $ do
+          Effect.context "Return a JSON object for a user named Alice with email alice@example.com"
+          Effect.prompt @User
         case result of
           Left err -> assertFailure (show err)
           Right user -> userName user @?= "Alice"
@@ -58,9 +56,9 @@ ollamaIntegrationTests mHost model =
                 { maxRetries = 10
                 , debugLog = Just (step . T.unpack)
                 }
-        result <- runPromptResultTWith cfg $ runPromptTNoTools ollamaPromptConfig $ do
-          context "Return a JSON counter object with value 42."
-          prompt @Counter
+        result <- Effect.runPromptResultEff (ollamaBackend cfg) ollamaPromptConfig $ do
+          Effect.context "Return a JSON counter object with value 42."
+          Effect.prompt @Counter
         case result of
           Left err -> assertFailure (show err)
           Right (Counter n) -> n @?= 42
@@ -71,7 +69,7 @@ ollamaIntegrationTests mHost model =
                 { maxRetries = 10
                 , debugLog = Just (step . T.unpack)
                 }
-        result <- runPromptResultTWith cfg $ runPromptTNoTools ollamaPromptConfig conferenceChain
+        result <- Effect.runPromptResultEff (ollamaBackend cfg) ollamaPromptConfig conferenceChain
         case result of
           Left err -> assertFailure (show err)
           Right (allSpeakers, talks, schedule) -> do
@@ -90,8 +88,11 @@ ollamaIntegrationTests mHost model =
                 , maxToolSteps = Just 10
                 , debugLog = Just (step . T.unpack)
                 }
-        let handlers = duckDuckGoSearchHandler :* webFetchHandler :* Nil
-        result <- runPromptResultTWith cfg $ runPromptT pcfg handlers celebrityChain
+        result <-
+          Effect.runPromptResultEff (ollamaBackend cfg) pcfg $
+            runTool duckDuckGoSearchHandler $
+              runTool webFetchHandler $
+                celebrityChain [toolBinding @DuckDuckGoSearch, toolBinding @WebFetch]
         case result of
           Left err -> assertFailure (show err)
           Right fact -> do
@@ -109,10 +110,9 @@ ollamaIntegrationTests mHost model =
         let countingHandler = ToolHandler $ \q -> do
               atomicModifyIORef' callCount (\n -> (n + 1, ()))
               runToolHandler duckDuckGoSearchHandler q
-            handlers = countingHandler :* Nil
         result <-
-          runPromptResultTWith cfg $
-            runPromptT pcfg handlers conferenceChainWithTools
+          Effect.runPromptResultEff (ollamaBackend cfg) pcfg $
+            runTool countingHandler (conferenceChainWithTools [toolBinding @DuckDuckGoSearch])
         case result of
           Left err -> assertFailure (show err)
           Right (allSpeakers, talks, _schedule) -> do

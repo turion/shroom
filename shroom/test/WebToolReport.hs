@@ -1,6 +1,8 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 {- | A tool-testing report type parametrised by the list of tools under test.
@@ -38,10 +40,16 @@ import Data.SOP (All, K (..), NP, SListI, hcollapse, hcpure)
 -- universe-base
 import Data.Universe.Class (Universe)
 
+-- effectful
+import Effectful (Eff, (:>))
+import Effectful.State.Static.Local (State)
+
 -- shroom
-import Control.Monad.Prompt (PromptT, context, prompt)
-import Control.Monad.Prompt.Promptable (Promptable)
-import Control.Monad.Prompt.Tool (Toolable, toolName)
+import Control.Monad.Prompt (Promptable)
+import Control.Monad.Prompt.Backend (ContextItem)
+import Control.Monad.Prompt.Effect (Prompt, context)
+import Control.Monad.Prompt.Effect qualified as Effect
+import Control.Monad.Prompt.Tool (Tool, ToolBinding, Toolable, toolBinding, toolName)
 import Data.Shroom.Class (Describable (..), Surveyable (..))
 
 -- * Types
@@ -118,18 +126,44 @@ expectedNames =
     nameK :: forall t. (Toolable t) => K Text t
     nameK = K (toolName (Proxy @t))
 
+{- | A tool type that is both 'Toolable' and offered in @es@ — the two
+constraints 'toolBindingsFor' needs to build a 'ToolBinding' for it. A
+separate, named class rather than a bare tuple constraint because
+'hcpure' needs one 'Proxy'-able class to instantiate at each element of
+@tools@.
+-}
+class (Toolable t, Tool t :> es) => ToolableIn es t
+
+instance (Toolable t, Tool t :> es) => ToolableIn es t
+
+{- | Build one 'ToolBinding' per tool in @tools@, generically — the
+type-level-list analogue of writing out @[toolBinding \@T1, toolBinding
+\@T2, ...]@ by hand.
+-}
+toolBindingsFor ::
+  forall tools es.
+  (SListI tools, All (ToolableIn es) tools) =>
+  [ToolBinding (Eff es)]
+toolBindingsFor =
+  hcollapse (hcpure (Proxy @(ToolableIn es)) bindingK :: NP (K (ToolBinding (Eff es))) tools)
+  where
+    bindingK :: forall t. (ToolableIn es t) => K (ToolBinding (Eff es)) t
+    bindingK = K (toolBinding @t)
+
 -- * Chain
 
 {- | A prompt chain that asks the model to test every available tool and
 return a 'WebToolReport'.  The type description already instructs the model
-to record success\/failure per tool, so no extra context is needed.
+to record success\/failure per tool, so no extra context is needed. Every
+tool named in @tools@ must also be in @es@ (via 'Tool'), which is what lets
+'toolBindingsFor' build a binding for each of them.
 -}
 webToolReportChain ::
-  forall tools m.
-  (Monad m, SListI tools, All Toolable tools, Typeable tools) =>
-  PromptT m (WebToolReport tools)
+  forall tools es.
+  (Prompt :> es, State [ContextItem] :> es, SListI tools, All Toolable tools, All (ToolableIn es) tools, Typeable tools) =>
+  Eff es (WebToolReport tools)
 webToolReportChain = do
   context "You are a tool-testing assistant. Your job is to call each available tool exactly once with a reasonable test input, observe the result, then return a JSON report."
   context $ "Step 1: call each of these tools once: " <> T.intercalate ", " (expectedNames @tools) <> "."
   context $ "Step 2: return a JSON object with a \"results\" array. Each entry must have \"resultToolName\" and \"resultStatus\". Set resultStatus to \"ok\" if the tool returned any content. Set resultStatus to the error message if the tool result started with 'Error:'. Tools: " <> T.intercalate ", " (expectedNames @tools) <> "."
-  prompt @(WebToolReport tools)
+  Effect.promptTools @(WebToolReport tools) (toolBindingsFor @tools @es)

@@ -20,13 +20,11 @@ import Data.Text.IO qualified as TIO
 -- time
 import Data.Time (UTCTime, defaultTimeLocale, formatTime)
 
--- sop-core
-import Data.SOP (NP (..))
-
 -- shroom
-import Control.Monad.Prompt (PromptConfig (..), defaultPromptConfig, runPromptResultTWith, runPromptT)
-import Control.Monad.Prompt.Anthropic (mkAnthropicConfig)
-import Control.Monad.Prompt.Tool.Web (duckDuckGoSearchHandler, wikipediaSearchHandler)
+import Control.Monad.Prompt.Anthropic (anthropicBackend, mkAnthropicConfig)
+import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig, runPromptResultEff)
+import Control.Monad.Prompt.Tool (runTool, toolBinding)
+import Control.Monad.Prompt.Tool.Web (DuckDuckGoSearch, WikipediaSearch, duckDuckGoSearchHandler, wikipediaSearchHandler)
 
 -- conference scenario
 import ConferenceTypes (
@@ -51,10 +49,14 @@ main = do
 
 run :: T.Text -> IO ()
 run apiKey = do
-  let cfg = mkAnthropicConfig apiKey
+  let backend = anthropicBackend (mkAnthropicConfig apiKey)
       pcfg = defaultPromptConfig {debugLog = Just TIO.putStrLn, maxToolSteps = Just 2}
-      handlers = duckDuckGoSearchHandler :* wikipediaSearchHandler :* Nil
-  result <- runPromptResultTWith cfg $ runPromptT pcfg handlers conferenceChainWithTools
+      bindings = [toolBinding @DuckDuckGoSearch, toolBinding @WikipediaSearch]
+  result <-
+    runPromptResultEff backend pcfg $
+      runTool duckDuckGoSearchHandler $
+        runTool wikipediaSearchHandler $
+          conferenceChainWithTools bindings
   putStrLn ""
   case result of
     Left err ->

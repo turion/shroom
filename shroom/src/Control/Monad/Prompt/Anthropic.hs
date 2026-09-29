@@ -1,15 +1,16 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
-{- | Anthropic Claude backend for 'PromptT'.
+{- | Anthropic Claude backend.
 
-Import this module alongside "Control.Monad.Prompt" to use the Claude API:
+Import this module alongside "Control.Monad.Prompt.Effect" to use the
+Claude API:
 
 @
-import Control.Monad.Prompt
+import Control.Monad.Prompt.Effect
 import Control.Monad.Prompt.Anthropic
 
 cfg <- pure $ mkAnthropicConfig "sk-ant-..."
-result <- runPromptResultTWith cfg $ runPromptT defaultPromptConfig $ do
+result <- runPromptResultEff (anthropicBackend cfg) defaultPromptConfig $ do
   context "The user's name is Alice."
   prompt \@User
 @
@@ -38,10 +39,10 @@ import Claude.V1
 import Claude.V1.Messages
 
 -- shroom
-import Control.Monad.Prompt (ContextItem (..), LLMBackend (..), PromptConfig (..), ToolCall (..), ToolResult (..), defaultPromptConfig)
-import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..))
+import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..), ContextItem (..), ToolCall (..), ToolResult (..))
+import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Schema (ToolDef (..), normalizeSchemaForStructuredOutput)
-import Control.Monad.Prompt.Tool (ToolLoopOps (..), genericToolLoop)
+import Control.Monad.Prompt.Tool (ToolLoopOps (..))
 
 -- | Configuration for the Anthropic Claude API.
 data AnthropicConfig = AnthropicConfig
@@ -229,27 +230,16 @@ anthropicToolLoopOps methods cfg mSystem schema mTools promptCfg =
     , logEvent = \msg -> liftIO $ maybe (pure ()) ($ msg) promptCfg.debugLog
     }
 
-instance LLMBackend AnthropicConfig where
-  runChatWithTools cfg promptCfg ctx typeDesc schema toolDefs dispatch maxToolSteps = do
-    clientEnv <- liftIO $ getClientEnv "https://api.anthropic.com"
-    let methods = makeMethods clientEnv cfg.apiKey (Just "2023-06-01")
-        (mSystem, msgs) = contextItemsToAnthropic ctx typeDesc
-        mTools = case toolDefs of
-          [] -> Nothing
-          ts -> Just (V.fromList (fmap toAnthropicTool ts))
-        ops = anthropicToolLoopOps methods cfg mSystem schema mTools promptCfg
-    genericToolLoop ops dispatch msgs maxToolSteps
-
-{- | 'Backend' for the Anthropic Claude API. Makes the same raw call as the
-old tool loop and reuses 'anthropicToolLoopOps'\'s 'ToolLoopOps.detectTools'
-\/ 'ToolLoopOps.extractText' to read the response, rather than re-deriving
-how to tell a tool call apart from a final answer — but only for a single
-call, since looping (dispatching a call and feeding the result back in) is
-now the caller's job, not this 'Backend'\'s. A @tool_use@ 'ContentBlock'
-becomes 'BackendToolCalls', carrying Anthropic's own @tool_use_id@ straight
-through as 'ToolCall'\'s 'toolCallId' so a later 'ToolResultMessage' can
-still be linked back to it; anything else is 'BackendAnswer'. An HTTP
-failure becomes 'BackendTransportError'.
+{- | 'Backend' for the Anthropic Claude API. Reuses 'anthropicToolLoopOps'\'s
+'ToolLoopOps.detectTools' \/ 'ToolLoopOps.extractText' to read the response,
+rather than re-deriving how to tell a tool call apart from a final answer —
+but only for a single call, since looping (dispatching a call and feeding
+the result back in) is now the caller's job
+("Control.Monad.Prompt.Effect"\'s tool loop), not this 'Backend'\'s. A
+@tool_use@ 'ContentBlock' becomes 'BackendToolCalls', carrying Anthropic's
+own @tool_use_id@ straight through as 'ToolCall'\'s 'toolCallId' so a later
+'ToolResultMessage' can still be linked back to it; anything else is
+'BackendAnswer'. An HTTP failure becomes 'BackendTransportError'.
 -}
 anthropicBackend :: (MonadIO m) => AnthropicConfig -> Backend m
 anthropicBackend cfg =

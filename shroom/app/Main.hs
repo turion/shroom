@@ -19,8 +19,8 @@ import Data.Text qualified as T
 import Data.Time (UTCTime, defaultTimeLocale, formatTime)
 
 -- shroom
-import Control.Monad.Prompt (defaultPromptConfig, runPromptResultTWith, runPromptTNoTools)
-import Control.Monad.Prompt.FileMock (defaultFileMockConfig)
+import Control.Monad.Prompt.Effect (defaultPromptConfig, runPromptResultEff)
+import Control.Monad.Prompt.FileMock (defaultFileMockConfig, fileMockBackend)
 
 -- conference scenario
 import ConferenceTypes (ConferenceSchedule (..), Slot (..), Speaker (..), SpeakerName (..), Speakers (..), Talk (..), conferenceChain)
@@ -31,7 +31,7 @@ fmtTime = formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ"
 main :: IO ()
 main = do
   cfg <- defaultFileMockConfig
-  result <- runPromptResultTWith cfg $ runPromptTNoTools defaultPromptConfig conferenceChain
+  result <- runPromptResultEff (fileMockBackend cfg) defaultPromptConfig conferenceChain
   putStrLn ""
   case result of
     Left err ->
