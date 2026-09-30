@@ -1,5 +1,58 @@
 { config, lib, ... }:
 
+# shroom's test Ollama — the three names this module goes by.
+#
+# The same module is reached three different ways, by design, and each name is opaque
+# to someone who only has one of them:
+#   - file:         nix/ollama-shroom.nix (this file, in the shroom repo)
+#   - flake output: `nixosModules.ollama-shroom`
+#   - option:       `services.ollama.shroom`
+#
+# ## Importing it, including from this arc's still-open, unmerged branch
+#
+#   inputs.shroom.url = "github:turion/shroom/turion/shroom-layer";  # branch, while unmerged
+#   imports = [ inputs.shroom.nixosModules.ollama-shroom ];
+#
+# Switch the `url` to drop the branch suffix once the arc lands on `main`.
+#
+# ## A pasteable server example (reached by CI through an SSH tunnel)
+#
+#   services.ollama.shroom = {
+#     enable = true;
+#     model = "llama3.2:1b";               # must match .github/workflows/ci.yml's OLLAMA_MODEL — see below
+#     keepAlive = "-1";                     # dedicated host: keep it resident, never reload between runs
+#     auth.mode = "ssh-tunnel";
+#     auth.sshTunnel.publicKey = "ssh-ed25519 AAAA... ci";  # public half only; the private half is a GitHub secret, see below
+#   };
+#
+# ## A pasteable laptop example
+#
+#   services.ollama.shroom = {
+#     enable = true;
+#     model = "qwen3:8b";                   # a laptop has headroom an 8B model can use
+#     # auth.mode defaults to "local"; keepAlive defaults to Ollama's own upstream
+#     # default rather than staying resident forever, so the model doesn't sit
+#     # pinned in RAM between sessions.
+#   };
+#
+# ## The one coupling that breaks CI if ignored
+#
+# `services.ollama.shroom.model` here and `OLLAMA_MODEL` in `.github/workflows/ci.yml` must
+# name the exact same tag. A mismatch doesn't fail loudly — CI's suite falls back to a
+# model the server never pulled and fails with `not_found_error`, which reads as a shroom
+# bug rather than a configuration one.
+#
+# ## What must exist on GitHub, by exact name and kind
+#
+#   - a **secret** named `OLLAMA_SSH_KEY` — the *private* half of the tunnel key above.
+#   - a **repository variable** (not a secret) named `OLLAMA_SERVER_HOST` — the workflow
+#     reads `vars.OLLAMA_SERVER_HOST`; setting this as a secret instead yields an empty
+#     host and a failing `ssh-keyscan`. This has already happened once.
+#
+# ## Sizing
+#
+# The model is held resident once loaded (see `keepAlive`), so pick one that fits the
+# host: a 2-core / 12 GB server wants a 1b-class model; `qwen3:8b` is the laptop default.
 let
   cfg = config.services.ollama.shroom;
 
@@ -16,19 +69,48 @@ let
 in
 {
   options.services.ollama.shroom = {
-    enable = lib.mkEnableOption "shroom's test Ollama: same model, kept resident, on the laptop or a server reachable from CI";
+    enable = lib.mkEnableOption "shroom's test Ollama: the same model, on the laptop or a server reachable from CI — see `keepAlive` for whether it stays resident between runs";
 
     model = lib.mkOption {
       type = lib.types.str;
-      default = "qwen3:8b";
+      default = "llama3.2:1b";
       description = ''
-        The model pulled on activation and kept resident. `llama3.2:3b` is not a
-        defensible default here — it is weak at both structured output and tool calls,
-        the two things shroom leans on hardest.
+        The model pulled on activation. `llama3.2:3b` is not a defensible default here
+        — it is weak at both structured output and tool calls, the two things shroom
+        leans on hardest. The default above is the CI-server size: the server CI
+        tunnels to is 2 cores / 12 GB with no GPU, where an 8B model runs at roughly
+        1-2 tokens/second. A laptop has room for more — set this to `"qwen3:8b"`
+        explicitly for that case.
 
         This option does not, by itself, make shroom's integration suite ask for this
-        model: `OLLAMA_MODEL` still has to be set to match, which is CI's job (a later
-        todo) rather than this module's.
+        model: `OLLAMA_MODEL` in `.github/workflows/ci.yml` still has to be set to the
+        same tag, or the suite fails against a model the server never pulled.
+      '';
+    };
+
+    keepAlive = lib.mkOption {
+      type = lib.types.str;
+      default = "5m";
+      example = "-1";
+      description = ''
+        Value for `OLLAMA_KEEP_ALIVE`. Defaults to Ollama's own upstream behaviour
+        (unload after 5 minutes idle) rather than staying resident forever: a
+        dedicated CI-tunnel server wants `"-1"` so it never reloads the model between
+        test runs, but the same setting on a laptop pins a multi-GB model in RAM
+        indefinitely — the maintainer has had to stop Ollama by hand over exactly
+        this. One module serves both machines and they want opposite things here, so
+        each machine's own configuration chooses: set `"-1"` explicitly on a
+        dedicated server, leave the default everywhere else.
+      '';
+    };
+
+    maxLoadedModels = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 1;
+      description = ''
+        Value for `OLLAMA_MAX_LOADED_MODELS`. Caps how many distinct models Ollama
+        keeps loaded at once, so a second model pulled later can never silently
+        double the resident footprint alongside the one this module manages.
       '';
     };
 
@@ -61,7 +143,10 @@ in
       enable = true;
       # Never a public interface, in either mode.
       host = "127.0.0.1";
-      environmentVariables.OLLAMA_KEEP_ALIVE = "-1";
+      environmentVariables = {
+        OLLAMA_KEEP_ALIVE = cfg.keepAlive;
+        OLLAMA_MAX_LOADED_MODELS = toString cfg.maxLoadedModels;
+      };
       # nixpkgs' own model loader: a systemd unit ordered after ollama.service that
       # pulls each listed model once it's up.
       loadModels = [ cfg.model ];

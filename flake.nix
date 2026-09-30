@@ -169,7 +169,8 @@
 
       # Import into a NixOS configuration as `services.ollama.shroom.enable = true;`
       # (laptop), or with `auth.mode = "ssh-tunnel";` added (server reachable from CI).
-      # See nix/ollama-shroom.nix and research/remote-ollama-ci.md in the plan directory.
-      nixosModules.ollama-testing = import ./nix/ollama-shroom.nix;
+      # See nix/ollama-shroom.nix itself for import, deployment and CI-coupling docs —
+      # it is written for an agent reading only this file, in a different repository.
+      nixosModules.ollama-shroom = import ./nix/ollama-shroom.nix;
     };
 }

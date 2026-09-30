@@ -180,13 +180,14 @@ jobs:
         # Bare host:port, no scheme and no /v1 — Ollama's own convention. -f-anthropic is
         # todo 2's "everything but Anthropic" invocation; the ollama flag stays at its
         # default (on). OLLAMA_MODEL must match services.ollama.shroom.model on the server
-        # (nix/ollama-shroom.nix, default "qwen3:8b") — the suite falls back to
-        # "llama3.2:3b" otherwise, which the server never pulled, and fails with
-        # not_found_error rather than testing anything about shroom.
+        # (nix/ollama-shroom.nix, default "llama3.2:1b" — the server is 2 cores / 12 GB,
+        # no GPU, and an 8B model there runs at roughly 1-2 tokens/second) — the suite
+        # falls back to "llama3.2:3b" otherwise, which the server never pulled, and fails
+        # with not_found_error rather than testing anything about shroom.
         run: cabal test shroom-test-integration-ollama --enable-tests -f-anthropic --test-show-details=Always
         env:
           OLLAMA_HOST: 127.0.0.1:11434
-          OLLAMA_MODEL: qwen3:8b
+          OLLAMA_MODEL: llama3.2:1b
 
   success:
     name: Successfully build and test on all systems
