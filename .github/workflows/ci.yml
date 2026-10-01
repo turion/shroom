@@ -171,7 +171,13 @@ jobs:
         # than tunnelling to somewhere else.
         run: |
           install -d -m 700 ~/.ssh
-          install -m 600 /dev/stdin ~/.ssh/id_ed25519 <<< "${{ secrets.OLLAMA_SSH_KEY }}"
+          # A herestring writes whatever it's handed — CRLF, a missing trailing newline, even
+          # an empty secret — and exits 0, so a mangled key only surfaces two lines later as an
+          # opaque libcrypto error out of ssh. printf+tr normalises the common web-UI paste
+          # corruption, and ssh-keygen -y validates the result right where it was written.
+          printf '%s\n' "${{ secrets.OLLAMA_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
           ssh-keyscan -H "${{ vars.OLLAMA_SERVER_HOST }}" >> ~/.ssh/known_hosts
           ssh -o BatchMode=yes -f -N -L 11434:127.0.0.1:11434 "ci-ollama@${{ vars.OLLAMA_SERVER_HOST }}"
       - name: Check the tunnel actually came up
