@@ -7,3 +7,8 @@ dist-newstyle/
 .direnv/
 .ghc.environment.*
 .env
+
+# Machine-local settings, not project settings: ignore the files precisely rather than the
+# directories, since .claude/settings.json and .vscode/extensions.json are shared and checked in.
+.claude/settings.local.json
+.vscode/settings.json
