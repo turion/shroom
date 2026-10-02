@@ -2,13 +2,12 @@
 against "Control.Monad.Prompt.Backend"'s interface, then run in
 "Integration.Claude" (against 'Control.Monad.Prompt.Baikai.claudeBackend')
 and twice more in "Integration.Ollama" — against
-'Control.Monad.Prompt.Baikai.localOllamaBackend', and against the same
-@baikai-openai@ transport built directly with an explicit base URL and an
-'Baikai.Auth.ApiKeyEnv' key source rather than that constructor's own
-placeholder, the fully generic path a caller reaching for
-'Control.Monad.Prompt.Baikai.openAICompatBackend' with a real key would
-exercise. The three call sites differ only in which 'Backend' they pass in,
-never in the cases themselves.
+'Control.Monad.Prompt.Baikai.localOllamaBackend', and against
+'Control.Monad.Prompt.Baikai.openAICompatBackend' itself, called with the
+same base URL and an explicit placeholder key rather than
+'localOllamaBackend'\'s own 'Nothing' — the front-door path a caller
+supplying a real key would exercise. The three call sites differ only in
+which 'Backend' they pass in, never in the cases themselves.
 
 Covers at least the union of what "Integration.Claude" and
 "Integration.Ollama" each covered before this module existed: a typed value

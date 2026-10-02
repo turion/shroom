@@ -1,8 +1,7 @@
 module Main (main) where
 
 -- base
-import Control.Monad.IO.Class (MonadIO)
-import System.Environment (lookupEnv, setEnv)
+import System.Environment (lookupEnv)
 
 -- text
 import Data.Text (Text, pack)
@@ -12,15 +11,8 @@ import Data.Text qualified as T
 import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit (assertBool, assertFailure, testCase, testCaseSteps, (@?=))
 
--- baikai
-import Baikai.Api (Api (OpenAIChatCompletions))
-import Baikai.Auth (ApiKeySource (ApiKeyEnv))
-import Baikai.Model (Model (..), mkModel)
-import Baikai.Options (Options (..), emptyOptions)
-
 -- shroom
-import Control.Monad.Prompt.Backend (Backend)
-import Control.Monad.Prompt.Baikai (baikaiBackend, localOllamaBackend, normaliseOllamaHost)
+import Control.Monad.Prompt.Baikai (localOllamaBackend, normaliseOllamaHost, openAICompatBackend)
 import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Effect qualified as Effect
 import Control.Monad.Prompt.Tool (runTool, toolBinding)
@@ -46,22 +38,20 @@ longer reads it directly the way it once did, back when it built the old
 @Control.Monad.Prompt.Ollama@ module's @defaultOllamaBackendConfig@ — both
 deleted along with that module.
 
-The second backend built here, 'genericOpenAICompatBackend', is not one of
-'Control.Monad.Prompt.Baikai'\'s three front-door constructors: it is the
-same @baikai-openai@ transport 'localOllamaBackend' itself uses, built
-directly via 'baikaiBackend' \/ 'Baikai.Model.mkModel' \/ 'Baikai.Options.Options'
-so that its 'Baikai.Options.apiKey' can be an 'ApiKeyEnv' rather than
-'localOllamaBackend'\'s own 'Baikai.Auth.ApiKeyLiteral' placeholder — the
-base-URL-plus-key-source resolution path a caller reaching for the fully
-generic OpenAI-compatible constructor (rather than the local-Ollama
-convenience one) would actually exercise. Ollama itself checks no
-credential, so the env var it names only has to be non-empty, never
-correct.
+The second backend built here calls 'Control.Monad.Prompt.Baikai.openAICompatBackend'
+itself, the front-door constructor, rather than going around it: the same
+@OLLAMA_HOST@-derived base URL 'localOllamaBackend' passes through
+underneath, but with an explicit placeholder key where 'localOllamaBackend'
+always passes 'Nothing' — exercising the constructor's @Just@ branch, which
+'localOllamaBackend' never reaches. Ollama itself checks no credential, so
+the placeholder only has to be non-empty, never correct.
 -}
 ollamaIntegrationTests :: Text -> IO TestTree
 ollamaIntegrationTests model = do
   localBackend <- localOllamaBackend model
-  genericBackend <- genericOpenAICompatBackend model
+  mHost <- lookupEnv "OLLAMA_HOST"
+  let baseUrl = maybe "http://127.0.0.1:11434" (normaliseOllamaHost . T.pack) mHost
+  genericBackend <- openAICompatBackend baseUrl model (Just "unused-ollama-checks-no-credential")
   pure $
     testGroup
       "Ollama integration"
@@ -108,24 +98,6 @@ ollamaIntegrationTests model = do
                 Right (ScalarIntList xs) -> xs @?= [1, 2, 3]
           ]
       , testGroup
-          "openAICompatBackend (explicit base URL, ApiKeyEnv)"
+          "openAICompatBackend (explicit base URL, explicit key)"
           [backendIntegrationTests genericBackend]
       ]
-
-genericOpenAICompatBackend :: (MonadIO m) => Text -> IO (Backend m)
-genericOpenAICompatBackend modelId = do
-  mHost <- lookupEnv "OLLAMA_HOST"
-  let baseUrl = maybe "http://127.0.0.1:11434" (normaliseOllamaHost . T.pack) mHost
-      apiKeyEnvVar = "SHROOM_TEST_OLLAMA_API_KEY"
-  setEnv apiKeyEnvVar "unused-ollama-checks-no-credential"
-  let model' =
-        (mkModel OpenAIChatCompletions modelId baseUrl)
-          { contextWindow = 8192
-          , maxOutputTokens = 4096
-          }
-      opts =
-        emptyOptions
-          { apiKey = Just (ApiKeyEnv apiKeyEnvVar)
-          , maxTokens = Just 4096
-          }
-  pure (baikaiBackend model' opts)
