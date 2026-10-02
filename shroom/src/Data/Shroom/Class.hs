@@ -1,5 +1,5 @@
 {- | The 'Describable' and 'Surveyable' typeclasses: attach a human-readable
-description, property properties, and example values to a type, so that an
+description, properties, and example values to a type, so that an
 LLM backend — or anything else that renders a type for a reader, human or
 model — can understand what it should produce.
 
@@ -90,7 +90,7 @@ class (ToJSON a) => Describable a where
 
 -- * Surveyable
 
-{- | Attach property properties and example values to a type.
+{- | Attach properties and example values to a type.
 
 This is the main user-filled class. Override the methods you need;
 all have sensible defaults (no properties, no examples).
@@ -98,7 +98,7 @@ all have sensible defaults (no properties, no examples).
 Superclass: 'Describable'.
 -}
 class (Describable a, Universe (Property a)) => Surveyable a where
-  {- | The type of property properties for @a@.  Must have a 'Universe'
+  {- | The type of properties for @a@.  Must have a 'Universe'
     instance.  Defaults to 'Void' (no properties).
   -}
   type Property a :: Type
@@ -134,13 +134,14 @@ class (Describable a, Universe (Property a)) => Surveyable a where
 -- * description helper functions
 
 {- | Render the full prompt fragment for a type: its description, any
-property properties, and example values (if any).
+properties, and example values (if any).
 
 This is what gets sent to the LLM alongside the JSON schema.
 Field descriptions are annotated with their JSON types from the OpenAPI
 schema (e.g. @- name (string): The user's full name.@).
 
-This is also the default implementation of 'promptDescription'.
+This is what 'Control.Monad.Prompt.Effect.runPrompt' sends as the prompt text
+for a 'Control.Monad.Prompt.Effect.RequestPrompt'.
 -}
 description :: (Surveyable a, ToSchema a) => Proxy a -> Text
 description p =

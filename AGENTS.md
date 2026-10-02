@@ -29,6 +29,21 @@ Please always speak like a 1970s British working class person!
 ## sop-core (`^>=0.5`) — heterogeneous tool lists
 - Tools registered as `NP ToolHandler '[Tool1, Tool2, ...]`; `hcmap`/`hcollapse`/`K` for traversal
 
+## baikai (`baikai`/`baikai-claude`/`baikai-openai` `>=0.7 && <0.8`, `baikai-effectful` `>=0.4 && <0.5`) — transport for `shroom-baikai`
+- Four front-door constructors in `Control.Monad.Prompt.Baikai`: `claudeBackend apiKey`;
+  `anthropicCompatBackend baseUrl modelId apiKey` (key is a plain `Text`, not `Maybe`);
+  `localOllamaBackend modelId` (reads `OLLAMA_HOST` itself, defaults to
+  `http://127.0.0.1:11434`); `openAICompatBackend baseUrl modelId mApiKey` (`Maybe Text` key —
+  `Nothing` for a host that checks no credential at all, e.g. a bare local Ollama or llama.cpp)
+- `baseUrl` takes no trailing `/v1` — `Baikai.Http.canonicalBaseUrl` strips one and the transport
+  appends its own; giving one composes to `/v1/v1/...`
+- No native Ollama provider — `localOllamaBackend` goes through `baikai-openai`'s OpenAI-compatible
+  Chat Completions client instead, since Ollama's own server speaks that wire format
+- `baikaiBackend :: Model -> Options -> Backend m` makes one `complete` call per `runBackendChat`;
+  wrapped in `try @SomeException` so nothing escapes as an IO exception, per `Backend`'s contract
+- `Baikai.Tool.mkTool`'s `parameters` field is an opaque `Value` — `schemaWithDefs`'s already-flat
+  schema passes straight through, no separate inlining needed on this side
+
 # Shell behaviour
 
 - Don't create `/tmp` files, just make edits in the project
