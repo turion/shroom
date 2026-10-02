@@ -88,11 +88,24 @@ String @"format"@ is left alone: Anthropic's structured outputs accept
 @ipv4@, @ipv6@ and @uuid@, and stripping it would throw away schema the API
 accepts.
 
-Note that a JSON Schema @"format"@ (and the folded bounds above) is an
-/annotation/, not a constraint: a live test against a schema declaring
+Whether a JSON Schema @"format"@ is actually enforced depends on the host,
+and the two disagree: Anthropic's own structured-outputs documentation
+lists @"format"@ among the schema features it enforces, alongside
+@additionalProperties: false@. A local model behind llama.cpp is weaker and
+uneven about it instead — llama.cpp's grammar converter compiles @uuid@,
+@date@, @time@ and @date-time@ into real grammar rules but leaves @email@,
+@uri@ and others unconstrained. A live test against a schema declaring
 @format: email@ got back @"thompsons sophia\@outlook.com "@, with a stray
-space in the middle. Sending it is still right, since it informs the model,
-but nothing on the wire enforces it. That is what the @Surveyable@
+space in the middle; which host that test ran against was never recorded,
+but the surrounding evidence points to Ollama rather than Anthropic: a
+direct call with @ANTHROPIC_API_KEY@ got a @401@ from @api.anthropic.com@,
+nothing in this project's history records a successful Anthropic call, and
+the failure's shape — an unconstrained @email@ next to formats llama.cpp
+does compile — matches llama.cpp's grammar converter exactly. Send
+@"format"@ regardless: it is correct schema, and Anthropic enforces it even
+where a local model may not. Whether the folded bounds above
+(@"minimum"@\/@"maximum"@) are enforced numerically by a llama.cpp-backed
+grammar is a separate, still-open question. That is what the @Surveyable@
 properties in 'Data.Shroom.Class' are for.
 -}
 normalizeSchemaForStructuredOutput :: Value -> Value
