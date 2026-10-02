@@ -33,8 +33,9 @@ type.
   `(Tool MySearch :> es, Prompt :> es) => Eff es a` — and a program reaching for a tool it was not
   given fails to compile. Build a binding with `toolBinding @MySearch`, offer it to `promptTools`,
   and supply the handler as an interpreter, `runTool mySearchHandler`. The older runtime-registry
-  path (`NP ToolHandler '[...]`, `makeDispatcher`, `toolDefsRaw`, built on `sop-core`) is still
-  there for callers who want a heterogeneous list instead of effect-row membership.
+  path (`makeDispatcher`, `ToolLoopOps`, `genericToolLoop`) had no call sites anywhere in the repo
+  and has been deleted. `toolDefsRaw` survives — it extracts `ToolDef` metadata from an
+  `NP ToolHandler '[...]` and is still exercised directly — so `sop-core` remains a dependency.
 * Two built-in web tools ship in `Control.Monad.Prompt.Tool.Web`: `WebFetch` (HTTP GET, HTML
   stripped, truncated) and `DuckDuckGoSearch`/`WikipediaSearch` (named-entity lookup, falling back
   to Wikipedia's own search).

@@ -29,8 +29,9 @@ re-prompt fixes a model declining outright) apart from a transport failure
 ('BackendTransportError', exactly what a retry is for). Because a 'Backend'
 makes one raw call and nothing more, the propose\/dispatch\/observe tool
 cycle runs here, one call at a time, rather than inside each backend; see
-'toolLoop', whose budget bookkeeping mirrors
-'Control.Monad.Prompt.Tool.genericToolLoop'\'s.
+'toolLoop' (below): a round costs one step only when at least one tool call
+succeeds, failed calls are free, and once the budget is spent the model gets
+one final tool-free call to answer with what it already has.
 -}
 module Control.Monad.Prompt.Effect (
   -- * The 'Prompt' effect
@@ -375,12 +376,10 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
 
     -- \| Drive one prompt request's worth of tool calling against 'backend',
     --    one 'runBackendChat' call at a time, until it answers or the step
-    --    budget is spent. The model to copy is
-    --    'Control.Monad.Prompt.Tool.genericToolLoop'\'s budget bookkeeping,
-    --    though not directly reusable there: it is typed over a backend-native
-    --    @ctx@\/@resp@ rather than @['ContextItem']@\/'BackendReply'.
+    --    budget is spent. Typed concretely over @['ContextItem']@\/'BackendReply'
+    --    rather than a backend-native @ctx@\/@resp@ pair.
     --
-    --    Budget rules (unchanged from 'Control.Monad.Prompt.Tool.genericToolLoop'):
+    --    Budget rules:
     --    a round costs one step only when at least one call succeeds, failed
     --    calls are free, each successful result is annotated with the remaining
     --    count, and exhaustion sends one final tool-free call so the model can
