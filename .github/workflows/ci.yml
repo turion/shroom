@@ -159,10 +159,26 @@ jobs:
     # with shroom. push/schedule/workflow_dispatch have no `pull_request` context, so they
     # fall through to `true` and are unaffected.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    timeout-minutes: 20
+    # haskell-actions/setup gave a bare GHC/cabal that resolved straight from Hackage,
+    # bypassing the flake's closure entirely; `nix develop` instead has to build that whole
+    # closure from source on a cold runner (no Cachix substituter yet — see the comment below),
+    # which is far slower, and the integration suite itself is slow against a small model over
+    # a tunnel. Raised from 20 to 45 to give that cold build headroom; shrink it again once a
+    # real cache exists.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
-      - uses: haskell-actions/setup@v2
+      - uses: cachix/install-nix-action@v31
+      # No "shroom" Cachix cache exists yet, and cachix-action's setup() calls
+      # `cachix use shroom` unconditionally (not just when pushing), which would 401 and fail
+      # this job on every run. skipAddingSubstituter disables just that pull-substituter
+      # registration until a cache is provisioned. To turn it on: create the "shroom" cache on
+      # cachix.org, add its CACHIX_AUTH_TOKEN as a repo secret, then drop this line.
+      - uses: cachix/cachix-action@v17
+        with:
+          name: shroom
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          skipAddingSubstituter: true
       - name: Open the SSH tunnel to the maintainer's Ollama
         # See research/remote-ollama-ci.md in the plan directory for the mechanism and the
         # threat model. The server-side ACL (permitopen + command="") is enforced by sshd via
@@ -182,15 +198,22 @@ jobs:
           ssh -o BatchMode=yes -f -N -L 11434:127.0.0.1:11434 "ci-ollama@${{ vars.OLLAMA_SERVER_HOST }}"
       - name: Check the tunnel actually came up
         run: curl --fail -sS http://127.0.0.1:11434/api/tags
+      - name: Update the cabal package index
+        # `nix develop` should already provide every dependency, so this ought to be
+        # unnecessary — but empirically it is sometimes required, and the trigger has not been
+        # pinned down. Two candidates: cabal refusing to solve at all without a package index on
+        # a fresh runner, and a test-only dependency escaping `shellFor`. Until one is confirmed,
+        # keep this line; it is cheap and the failure it prevents is obscure.
+        run: nix develop .#ghc912 --accept-flake-config -c cabal update -f-anthropic
       - name: Cabal test against the tunnelled Ollama
         # Bare host:port, no scheme and no /v1 — Ollama's own convention. -f-anthropic is
         # todo 2's "everything but Anthropic" invocation; the ollama flag stays at its
         # default (on). OLLAMA_MODEL must match services.ollama.shroom.model on the server
         # (nix/ollama-shroom.nix, default "llama3.2:1b" — the server is 2 cores / 12 GB,
-        # no GPU, and an 8B model there runs at roughly 1-2 tokens/second) — the suite
-        # falls back to "llama3.2:3b" otherwise, which the server never pulled, and fails
-        # with not_found_error rather than testing anything about shroom.
-        run: cabal test shroom-test-integration-ollama --enable-tests -f-anthropic --test-show-details=Always
+        # no GPU, and an 8B model there runs at roughly 1-2 tokens/second). If OLLAMA_MODEL is
+        # unset the suite falls back to a different default than the server has pulled, and
+        # fails with not_found_error rather than testing anything about shroom.
+        run: nix develop .#ghc912 --accept-flake-config -c cabal test shroom-test-integration-ollama --enable-tests -f-anthropic --test-show-details=Always
         env:
           OLLAMA_HOST: 127.0.0.1:11434
           OLLAMA_MODEL: llama3.2:1b
