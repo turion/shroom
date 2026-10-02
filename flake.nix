@@ -19,7 +19,6 @@
 
       # Always keep in sync with the tested-with section in the cabal file
       supportedGhcs = [
-        "ghc910"
         "ghc912"
         # "ghc914" # Uncomment as soon as nixpkgs is more advanced
       ];

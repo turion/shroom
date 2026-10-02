@@ -16,7 +16,6 @@ maintainer: programming@manuelbaerenz.de
 build-type: Simple
 -- extra-source-files:
 tested-with:
-  ghc ==9.10
   ghc ==9.12
 
 flag anthropic
