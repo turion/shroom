@@ -42,7 +42,9 @@ main = do
   ollamaIntegrationTests model >>= defaultMain
 
 {- | 'localOllamaBackend' honours @OLLAMA_HOST@ itself, so this suite no
-longer reads it directly the way it read it to build 'defaultOllamaBackendConfig'.
+longer reads it directly the way it once did, back when it built the old
+@Control.Monad.Prompt.Ollama@ module's @defaultOllamaBackendConfig@ — both
+deleted along with that module.
 
 The second backend built here, 'genericOpenAICompatBackend', is not one of
 'Control.Monad.Prompt.Baikai'\'s three front-door constructors: it is the

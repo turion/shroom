@@ -71,13 +71,25 @@ For the local case: install and start [Ollama](https://ollama.com), then run
 `ollama pull qwen3:8b` before the first call — `qwen3:8b` is small enough for
 a laptop and strong enough at structured output and tool calls to be worth
 recommending. Running the server declaratively on NixOS instead? This
-flake's `nixosModules.ollama-shroom` pulls the model on activation and can
-keep it resident between runs.
+flake's `nixosModules.ollama-shroom` pulls a model on activation and can
+keep it resident between runs — but its own default is sized for a small CI
+server, not a laptop, so set `services.ollama.shroom.model = "qwen3:8b";` to
+match the recommendation above.
+
+Want a different Claude model than `claudeBackend`'s default? Point
+`anthropicCompatBackend` at the real API instead of a proxy —
+`anthropicCompatBackend "https://api.anthropic.com" "claude-sonnet-5" apiKey`
+talks to the same official endpoint with a model id of your choice.
 
 No key, no network, at all? `Control.Monad.Prompt.FileMock`'s
 `fileMockBackend` reads canned JSON responses from files on disk and prints
 the exact prompt text it would have sent — the way to see what shroom
 actually generates without calling anything.
+
+Writing your own adapter instead of using `shroom-baikai` at all?
+`Control.Monad.Prompt.Backend`'s module Haddock explains the single-function
+`Backend` interface to satisfy — reach for it if `shroom-baikai`'s own
+dependency on the `baikai` family ever becomes a problem.
 
 ## The typeclass hierarchy
 

@@ -3,8 +3,8 @@
 
 {- | Non-object top-level response types, used only in "Integration.Ollama"
 to prove that a bare scalar or array root schema still round-trips through
-a real local model now that @Control.Monad.Prompt.Ollama@'s
-@{\"result\": ...}@ wrapper is gone: @baikai@\'s own
+a real local model now that the old @Control.Monad.Prompt.Ollama@ module —
+deleted, along with its @{\"result\": ...}@ wrapper — is gone: @baikai@\'s own
 'Baikai.ResponseFormat.jsonSchemaFormat' passes the schema straight through
 as a raw JSON 'Data.Aeson.Value', so there is nothing left to unwrap.
 

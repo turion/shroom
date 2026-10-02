@@ -210,9 +210,11 @@ jobs:
         # todo 2's "everything but Anthropic" invocation; the ollama flag stays at its
         # default (on). OLLAMA_MODEL must match services.ollama.shroom.model on the server
         # (nix/ollama-shroom.nix, default "llama3.2:1b" — the server is 2 cores / 12 GB,
-        # no GPU, and an 8B model there runs at roughly 1-2 tokens/second). If OLLAMA_MODEL is
-        # unset the suite falls back to a different default than the server has pulled, and
-        # fails with not_found_error rather than testing anything about shroom.
+        # no GPU, and an 8B model there runs at roughly 1-2 tokens/second). The suite's own
+        # fallback (shroom-baikai/test/Integration/Ollama.hs, used only if OLLAMA_MODEL were
+        # unset here) already agrees with that module default — llama3.2:1b both places — and
+        # the two must be kept in step by hand; a mismatch fails with not_found_error rather
+        # than testing anything about shroom.
         run: nix develop .#ghc912 --accept-flake-config -c cabal test shroom-test-integration-ollama --enable-tests -f-anthropic --test-show-details=Always
         env:
           OLLAMA_HOST: 127.0.0.1:11434

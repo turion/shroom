@@ -91,7 +91,8 @@ import Control.Monad.Prompt.Backend (
 a baikai 'Context'. 'ContextItem'\'s five constructors map onto baikai's
 own message shapes one for one: 'SystemMessage' items collect into
 @systemPrompt@ (there is only one slot, so several are joined with
-newlines, matching "Control.Monad.Prompt.Anthropic"\'s @contextItemsToAnthropic@);
+newlines, the same joining the deleted @Control.Monad.Prompt.Anthropic@
+module's old @contextItemsToAnthropic@ used before this adapter replaced it);
 'ToolCallMessage' becomes one 'AssistantMessage' carrying an
 'AssistantToolCall' block per call, with 'zeroUsage' and 'ToolUse' as its
 @stopReason@ since neither is known once a call has round-tripped through
@@ -215,8 +216,8 @@ front-door constructors below are built on this; reach for it directly only
 if none of them fit (a fourth provider, or non-default 'Options' this
 module does not expose a knob for).
 
-@responseFormat@ is set on every call, tools or no — matching
-"Control.Monad.Prompt.Anthropic"\'s existing behaviour of always requesting
+@responseFormat@ is set on every call, tools or no — matching the deleted
+@Control.Monad.Prompt.Anthropic@ module's old behaviour of always requesting
 structured output and letting the provider ignore it when a call stops for
 a tool call instead. @strict = True@: OpenAI honours it and it costs
 nothing extra since 'Control.Monad.Prompt.Schema.schemaWithDefs' already
@@ -258,11 +259,16 @@ anthropicModel baseUrl modelId = do
 
 {- | The real Claude API, via @baikai-claude@. Takes your Anthropic API key;
 defaults to @claude-haiku-4-5-20251001@ and 4096 max output tokens, matching
-"Control.Monad.Prompt.Anthropic"\'s old @mkAnthropicConfig@ defaults. The
-'Model'\'s @contextWindow@ \/ @maxOutputTokens@ (200000 \/ 8192) are Claude
-Haiku 4.5's published limits, not @baikai@\'s own zeroed defaults. This
-constructor does not hand back the 'Model' to override them for a different
-Claude model — build one with 'baikaiBackend' directly instead.
+the deleted @Control.Monad.Prompt.Anthropic@ module's old @mkAnthropicConfig@
+defaults. The 'Model'\'s @contextWindow@ \/ @maxOutputTokens@ (200000 \/
+8192) are Claude Haiku 4.5's published limits, not @baikai@\'s own zeroed
+defaults. This constructor does not hand back the 'Model' to override them
+for a different Claude model — reach for 'anthropicCompatBackend' instead,
+pointed at the same host: @anthropicCompatBackend \"https:\/\/api.anthropic.com\"
+\"claude-sonnet-5\" key@. Its placeholder @contextWindow@ \/
+@maxOutputTokens@ (8192 \/ 4096, see that function's Haddock) don't truncate
+anything either — @maxTokens@ in 'Options' is what actually bounds a
+response, and it is always set explicitly.
 -}
 claudeBackend :: (MonadIO m) => Text -> IO (Backend m)
 claudeBackend apiKey = do
