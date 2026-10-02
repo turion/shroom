@@ -8,8 +8,9 @@ the actual loop — stays the caller's job
 ("Control.Monad.Prompt.Effect"\'s @toolLoop@), same as every other
 'Backend'; this module only ever makes one call.
 
-Three front-door constructors cover what "Control.Monad.Prompt.Effect" needs
-to run against: 'claudeBackend' for the real Claude API (via
+Four front-door constructors cover what "Control.Monad.Prompt.Effect" needs
+to run against: 'claudeBackend' for the real Claude API and
+'anthropicCompatBackend' for any other Anthropic-compatible host (both via
 @baikai-claude@), 'localOllamaBackend' for a local Ollama server, and
 'openAICompatBackend' for any other OpenAI-compatible host (both of the
 latter two via @baikai-openai@). Each calls the matching provider's
@@ -20,6 +21,7 @@ needs a real API key.
 module Control.Monad.Prompt.Baikai (
   -- * Front door
   claudeBackend,
+  anthropicCompatBackend,
   localOllamaBackend,
   openAICompatBackend,
 
@@ -241,6 +243,19 @@ baikaiBackend model baseOpts =
 
 -- * Front door
 
+{- | The Anthropic wiring shared by 'claudeBackend' and
+'anthropicCompatBackend': registers @baikai-claude@\'s provider once and
+builds the bare 'AnthropicMessages' 'Model' for the given base URL and model
+id, @contextWindow@ \/ @maxOutputTokens@ left at @baikai@\'s own zeroed
+defaults. Each public constructor record-updates the result with its own
+limits — this helper never picks any itself, so the two call sites cannot
+drift apart by one of them forgetting to override a field the other set.
+-}
+anthropicModel :: Text -> Text -> IO Model
+anthropicModel baseUrl modelId = do
+  ClaudeProvider.register
+  pure (mkModel AnthropicMessages modelId baseUrl)
+
 {- | The real Claude API, via @baikai-claude@. Takes your Anthropic API key;
 defaults to @claude-haiku-4-5-20251001@ and 4096 max output tokens, matching
 "Control.Monad.Prompt.Anthropic"\'s old @mkAnthropicConfig@ defaults. The
@@ -251,14 +266,40 @@ Claude model — build one with 'baikaiBackend' directly instead.
 -}
 claudeBackend :: (MonadIO m) => Text -> IO (Backend m)
 claudeBackend apiKey = do
-  ClaudeProvider.register
-  let model =
-        (mkModel AnthropicMessages "claude-haiku-4-5-20251001" "https://api.anthropic.com")
-          { contextWindow = 200000
-          , maxOutputTokens = 8192
-          }
+  model <- anthropicModel "https://api.anthropic.com" "claude-haiku-4-5-20251001"
+  let model' = model {contextWindow = 200000, maxOutputTokens = 8192}
       opts = emptyOptions {apiKey = Just (ApiKeyLiteral apiKey), maxTokens = Just 4096}
-  pure (baikaiBackend model opts)
+  pure (baikaiBackend model' opts)
+
+{- | Any Anthropic-compatible host, via @baikai-claude@ — the Anthropic mirror
+of 'openAICompatBackend'. Takes the base URL (no trailing @\/v1@:
+'Baikai.Http.canonicalBaseUrl' strips one, and the transport appends its
+own, so giving one here would compose to @\/v1\/v1\/...@), the upstream
+model id, and an API key.
+
+Unlike 'openAICompatBackend'\'s key, this one is a plain 'Text', not a
+'Maybe'. @baikai@\'s keyless-host guard — refusing to dispatch to a host it
+has no default credential for unless an 'Baikai.Options.apiKey' is set —
+is 'openAICompatBackend'\'s problem to solve because a bare local Ollama or
+llama.cpp server genuinely checks no credential at all. An
+Anthropic-compatible host is a different proposition: a hosted one checks a
+real key, and a local proxy that doesn't still wants a placeholder — but one
+the caller supplies, since only the caller knows what the target expects,
+if anything. So this constructor takes whatever 'Text' you hand it and
+passes it straight through, unconditionally.
+
+'contextWindow' \/ 'maxOutputTokens' get the same conservative,
+clearly-a-placeholder defaults 'openAICompatBackend' uses (8192 \/ 4096)
+since neither is knowable without knowing which model is actually served;
+override with a record update once you do, via 'baikaiBackend' directly
+with your own 'Model'.
+-}
+anthropicCompatBackend :: (MonadIO m) => Text -> Text -> Text -> IO (Backend m)
+anthropicCompatBackend baseUrl modelId apiKey = do
+  model <- anthropicModel baseUrl modelId
+  let model' = model {contextWindow = 8192, maxOutputTokens = 4096}
+      opts = emptyOptions {apiKey = Just (ApiKeyLiteral apiKey), maxTokens = Just 4096}
+  pure (baikaiBackend model' opts)
 
 {- | A local Ollama server, reached through @baikai-openai@'s OpenAI-compatible
 Chat Completions client (baikai has no dedicated Ollama provider; Ollama's
