@@ -34,7 +34,11 @@ import ScalarTypes (ScalarInt (..), ScalarIntList (..), ScalarText (..))
 main :: IO ()
 main = do
   mModel <- lookupEnv "OLLAMA_MODEL"
-  let model = maybe "qwen3:8b" pack mModel
+  -- Falls back to the same tag 'nix/ollama-shroom.nix' pulls by default, so running
+  -- this suite locally against a module-provisioned Ollama without setting
+  -- OLLAMA_MODEL asks for a model that is actually there. Keep the two in agreement
+  -- by hand; a Haskell test suite has no business parsing a nix file at runtime.
+  let model = maybe "llama3.2:1b" pack mModel
   ollamaIntegrationTests model >>= defaultMain
 
 {- | 'localOllamaBackend' honours @OLLAMA_HOST@ itself, so this suite no
