@@ -48,7 +48,7 @@ common opts
     base >=4.20 && <4.22,
     effectful ^>=2.7,
     shroom,
-    text ^>=2.1.4,
+    text >=2.1.3 && <2.2,
     vector ^>=0.13,
 
   default-extensions:
@@ -73,7 +73,7 @@ common test-opts
     shroom,
     shroom:test-utils,
     shroom-baikai,
-    tasty ^>=1.4,
+    tasty >=1.4 && <1.6,
     tasty-hunit ^>=0.10,
 
 test-suite shroom-test-integration-claude

@@ -52,7 +52,7 @@ common opts
     sop-core ^>=0.5,
     tagsoup ^>=0.14,
     template-haskell >=2.22 && <2.25,
-    text ^>=2.1.4,
+    text >=2.1.3 && <2.2,
     time ^>=1.14,
     universe-base ^>=1.1,
     vector ^>=0.13,
@@ -107,7 +107,7 @@ library test-utils
 common test-opts
   build-depends:
     shroom,
-    tasty ^>=1.4,
+    tasty >=1.4 && <1.6,
     tasty-hunit ^>=0.10,
     test-utils,
 
