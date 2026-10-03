@@ -13,12 +13,12 @@
       inherit (nixpkgs) lib;
       projectName = "shroom";
       localPackages = {
-        shroom = ./.;
+        shroom = ./shroom;
+        shroom-baikai = ./shroom-baikai;
       };
 
       # Always keep in sync with the tested-with section in the cabal file
       supportedGhcs = [
-        "ghc910"
         "ghc912"
         # "ghc914" # Uncomment as soon as nixpkgs is more advanced
       ];
@@ -33,8 +33,81 @@
           # Haskell package overrides for dependencies
           dependenciesOverrides = with pkgs.haskell.lib;
             composeManyExtensions [
-              (hfinal: hprev: {
-              })
+              (hfinal: hprev:
+                let
+                  # Upstream test suites are not ours to run, and none of these can pass
+                  # in the sandbox: the baikai sdists ship neither test/fixtures nor
+                  # data/models, and claude's and openai's tasty suites call getEnv on an
+                  # API key and talk to the live service. Take the libraries only.
+                  fromHackage = pkg: ver: sha256:
+                    dontCheck (hfinal.callHackageDirect { inherit pkg ver sha256; } { });
+                in
+                {
+                  # nixpkgs-unstable does not package the baikai family at all (checked via
+                  # `nix eval`, 2026-09-29: only "claude" of the shroom-baikai dependency
+                  # set is present in haskellPackages), and its own "claude" is pinned to
+                  # 1.4.0, older than the 1.5.0 that baikai-claude needs. Pull all five
+                  # straight from Hackage. callHackageDirect fetches with fetchzip, so
+                  # every sha256 here is the *unpacked* source hash, as produced by
+                  # `nix store prefetch-file --unpack`.
+                  claude = fromHackage "claude" "1.5.0"
+                    "sha256-Jng3pCOl9d9XqXbHomBJNiXDMViKZYymj9AKTWwHhvY=";
+                  baikai-claude = fromHackage "baikai-claude" "0.7.0.0"
+                    "sha256-GSOzULFgbJae4Wf6vwdr2xR+83CwhrCuWMxuZJG6NZA=";
+                  baikai-effectful = fromHackage "baikai-effectful" "0.4.0.2"
+                    "sha256-SgcvuYmfJt8bF4WU5MCKQzTCBkAPdsy5G5X3nwPVPd0=";
+                  baikai-openai = fromHackage "baikai-openai" "0.7.0.0"
+                    "sha256-FVYkPkL8hzzaNY0YprnmRFVswJKHyqEk15hcPauyYkI=";
+
+                  # baikai-effectful 0.4.0.2 and shroom-baikai itself both want
+                  # effectful ^>=2.7; nixpkgs is on 2.6.1.0.
+                  effectful = fromHackage "effectful" "2.7.1.0"
+                    "sha256-1jr7uWldG/qzNljv41c8ustRFNLnD9DuOFBmL3BYT6g=";
+                  effectful-core = fromHackage "effectful-core" "2.7.1.2"
+                    "sha256-OZhGk0UY3BMWF+oUAQnCvF3hnzscBCm0Cz+nz8p2XM8=";
+                  # effectful-core 2.7 needs strict-mutable-base >=2; nixpkgs has 1.1.0.0.
+                  strict-mutable-base = fromHackage "strict-mutable-base" "2.0.0.0"
+                    "sha256-3o2PMN8l56X7ULqyNNJrJQZ8xgqqOsxhjm0jfULQt+k=";
+
+                  # baikai 0.7.1.0 wants streamly >=0.11, streamly-core >=0.3 and
+                  # generic-lens >=2.3; nixpkgs is still on 0.10.1 / 0.2.3 / 2.2.2.0, and
+                  # so is current nixos-unstable, so bumping the pin would not have helped.
+                  streamly = fromHackage "streamly" "0.11.1"
+                    "sha256-4h1MwaN7eXMvzXKyjggIjjR3BlsGzl4vfCO7VBGGvrc=";
+                  streamly-core = fromHackage "streamly-core" "0.3.1"
+                    "sha256-k9h+I74GNsluf55hJFDZiLwEO2x9moFvtCarCeCpaa4=";
+                  generic-lens = fromHackage "generic-lens" "2.3.0.0"
+                    "sha256-V8M8gkbrrLAsJ42IKa26HnU28sfljwUZuBiCJBV8ABs=";
+                  generic-lens-core = fromHackage "generic-lens-core" "2.3.0.0"
+                    "sha256-Abntgf3UMhQed5gOc6sDoVilMc0FRRCh8VJCeoQfNRY=";
+
+                  # baikai's remaining unmet bound is `tls >=2.2 && <2.5`, and that one is
+                  # not worth satisfying: tls 2.2 needs the crypton-x509 1.8 family and tls
+                  # 2.4 needs crypton >=1.1 (via mlkem, itself marked broken), so either
+                  # rebuilds the whole TLS/HTTP stack. nixpkgs' tls 2.1.8 is API-compatible
+                  # with what baikai actually uses -- it compiles clean against it -- so
+                  # relax the bound instead.
+                  baikai = doJailbreak (fromHackage "baikai" "0.7.1.0"
+                    "sha256-h2BWpYua+/RT/cDBqVNeAK9XFFrD5j8FXJQh9PHMa4Y=");
+
+                  # baikai declares `build-depends: openai ^>=2.5` -- a different Hackage
+                  # package (Servant bindings to the OpenAI API, unrelated to
+                  # baikai-openai). nixpkgs pins openai-2.5.3 and marks it broken; it is
+                  # broken only because its tasty suite calls getEnv "OPENAI_KEY" and hits
+                  # the live API, so the flag comes off together with the tests.
+                  openai = dontCheck (markUnbroken hprev.openai);
+
+                  # baikai-claude transitively pulls in cradle, also marked broken. Same
+                  # story: its spec shells out to a Python toolchain and reads
+                  # PYTHON_BIN_PATH, so 45 of its 51 examples fail in the sandbox while the
+                  # library itself compiles fine.
+                  cradle = dontCheck (markUnbroken hprev.cradle);
+
+                  # unicode-data 0.6.0 (via streamly) asserts against Unicode 15.1.0 while
+                  # GHC 9.12's base ships 16.0.0. The data tables are fine; only the
+                  # assertions are stale.
+                  unicode-data = dontCheck hprev.unicode-data;
+                })
             ];
 
           haskellPackagesFor = mapAttrs
@@ -82,53 +155,21 @@
             (ghcVersion: haskellPackages: haskellPackages.shellFor {
               packages = hps: attrValues (localPackagesFor (haskellPackagesExtended.${ghcVersion}));
               nativeBuildInputs = [
-                  haskellPackages.haskell-language-server
-                  pkgs.nixpkgs-fmt
-                  pkgs.cabal-install
-                  ];
+                haskellPackages.haskell-language-server
+                pkgs.nixpkgs-fmt
+                pkgs.cabal-install
+              ];
             })
             haskellPackagesFor;
 
           formatter = pkgs.nixpkgs-fmt;
-
-          # Start a local Ollama server with llama3.2:3b pre-pulled.
-          # Usage: nix run .#ollama-server
-          # Then in another terminal: cabal test shroom-test-integration-ollama
-          apps.ollama-server = {
-            type = "app";
-            program = toString (pkgs.writeShellScript "ollama-server" ''
-              export OLLAMA_MODELS="''${OLLAMA_MODELS:-$HOME/.ollama/models}"
-              export OLLAMA_HOST="''${OLLAMA_HOST:-127.0.0.1:11434}"
-
-              echo "Starting ollama server..."
-              ${pkgs.ollama}/bin/ollama serve &
-              OLLAMA_PID=$!
-
-              echo "Waiting for ollama to be ready..."
-              for i in $(${pkgs.coreutils}/bin/seq 1 30); do
-                if ${pkgs.curl}/bin/curl -sf "http://''${OLLAMA_HOST}/api/tags" > /dev/null 2>&1; then
-                  echo "Ollama is ready."
-                  break
-                fi
-                sleep 1
-              done
-
-              echo "Pulling llama3.2:3b (this may take a while on first run)..."
-              ${pkgs.ollama}/bin/ollama pull llama3.2:3b
-
-              echo ""
-              echo "Ollama server is running."
-              echo "  Model: llama3.2:3b"
-              echo "  Host:  http://''${OLLAMA_HOST}"
-              echo ""
-              echo "Run integration tests with:"
-              echo "  cabal test shroom-test-integration-ollama"
-              echo ""
-              echo "Press Ctrl+C to stop."
-              wait $OLLAMA_PID
-            '');
-          };
         }) // {
       inherit supportedGhcs;
+
+      # Import into a NixOS configuration as `services.ollama.shroom.enable = true;`
+      # (laptop), or with `auth.mode = "ssh-tunnel";` added (server reachable from CI).
+      # See nix/ollama-shroom.nix itself for import, deployment and CI-coupling docs —
+      # it is written for an agent reading only this file, in a different repository.
+      nixosModules.ollama-shroom = import ./nix/ollama-shroom.nix;
     };
 }

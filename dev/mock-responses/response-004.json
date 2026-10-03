@@ -1,1 +1,0 @@
-{"talkTitle":"Lazy Evaluation and the Future of Pure Functional Programming","talkAbstract":"Simon Peyton Jones reflects on the design decisions behind Haskell's lazy evaluation strategy, its trade-offs, and what it reveals about the nature of purity in functional languages.","talkSpeakerName":"Simon Peyton Jones"}

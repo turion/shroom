@@ -1,40 +1,231 @@
-name: CI
-
 on:
-  push:
-    branches: [main]
   pull_request:
-    branches: [main]
-
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '23 14 * * 2'
+name: build
 jobs:
-  build:
-    name: GHC ${{ matrix.ghc }}
+  lint:
+    name: "Run hlint"
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        ghc: ["9.10", "9.12"]
-
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
+    - name: Set up HLint
+      uses: haskell-actions/hlint-setup@v2
+      with:
+        version: "3.6.1"
+    - name: Run HLint
+      uses: haskell-actions/hlint-run@v2
+      with:
+        fail-on: warning
 
+  fourmolu:
+    name: "Run fourmolu"
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: haskell-actions/run-fourmolu@v13
+      with:
+        version: "0.19.0.1"
+
+  generateMatrix:
+    name: "Generate matrix from cabal"
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: kleidukos/get-tested@v0.1.9.1
+        id: set-matrix
+        with:
+          cabal-file: "shroom/shroom.cabal"
+          ubuntu: true
+          version: 0.1.6.0
+
+  build-cabal:
+    runs-on: ubuntu-latest
+    needs: generateMatrix
+    strategy:
+      matrix: ${{ fromJSON(needs.generateMatrix.outputs.matrix) }}
+    name: Haskell GHC ${{ matrix.ghc }} cabal
+    steps:
+      - uses: actions/checkout@v7
       - uses: haskell-actions/setup@v2
+        id: setup
         with:
           ghc-version: ${{ matrix.ghc }}
-          cabal-version: latest
-
-      - name: Cache cabal store
-        uses: actions/cache@v4
+      - name: Configure the build
+        run: |
+          cabal configure --enable-tests --enable-benchmarks --disable-documentation -f-anthropic -f-ollama
+          cabal build all --dry-run
+        # The last step generates dist-newstyle/cache/plan.json for the cache key.
+      - name: Restore cached dependencies
+        uses: actions/cache/restore@v6
+        id: cache
+        env:
+          key: ${{ runner.os }}-ghc-${{ steps.setup.outputs.ghc-version }}-cabal-${{ steps.setup.outputs.cabal-version }}
         with:
-          path: ~/.cabal/store
-          key: ${{ runner.os }}-ghc-${{ matrix.ghc }}-cabal-${{ hashFiles('shroom.cabal') }}
-          restore-keys: |
-            ${{ runner.os }}-ghc-${{ matrix.ghc }}-cabal-
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ env.key }}-plan-${{ hashFiles('**/plan.json') }}
+          restore-keys: ${{ env.key }}-
+      - name: Install dependencies
+        # If we had an exact cache hit, the dependencies will be up to date.
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cabal build all --enable-tests --enable-benchmarks --only-dependencies -f-anthropic -f-ollama
+      # Cache dependencies already here, so that we do not have to rebuild them should the subsequent steps fail.
+      - name: Save cached dependencies
+        uses: actions/cache/save@v6
+        # If we had an exact cache hit, trying to save the cache would error because of key clash.
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
-      - name: Update package list
-        run: cabal update
+      - name: Cabal build packages
+        run: cabal build all --enable-tests --enable-benchmarks -f-anthropic -f-ollama
+      - name: Cabal test
+        run: cabal test all --enable-tests --test-show-details=Always -f-anthropic -f-ollama
 
-      - name: Build
-        run: cabal build all
+  generate-flake-ghc-matrix:
+    name: Generate GHC versions for nix flake build matrix
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.generate-versions.outputs.versions }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: Generate versions
+        id: generate-versions
+        run: |
+          echo -n "versions=" >> "$GITHUB_OUTPUT"
+          nix eval .#supportedGhcs --json >> "$GITHUB_OUTPUT"
 
-      - name: Run unit tests
-        run: cabal test shroom-test --test-show-details=always
+  check-flake:
+    name: Check Flake
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - run: nix flake check
+      - name: Check whether .nix files are formatted
+        run: |
+          nix fmt
+          git diff --exit-code
+
+  check-cabal-file:
+    name: Check cabal file
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: haskell-actions/setup@v2
+      - uses: tfausak/cabal-gild-setup-action@v2
+        with:
+          version: 1.5.0.3
+      - run: ./cabal_check.sh
+
+  build-flake:
+    name: Nix Flake
+    needs:
+      - generate-flake-ghc-matrix
+    strategy:
+      matrix:
+        version: ${{ fromJSON(needs.generate-flake-ghc-matrix.outputs.versions) }}
+      fail-fast: false # So the cache is still filled
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      # No "shroom" Cachix cache exists yet, and cachix-action's setup() calls
+      # `cachix use shroom` unconditionally (not just when pushing), which would 401 and fail
+      # this job on every run. skipAddingSubstituter disables just that pull-substituter
+      # registration until a cache is provisioned. To turn it on: create the "shroom" cache on
+      # cachix.org, add its CACHIX_AUTH_TOKEN as a repo secret, then drop this line.
+      - uses: cachix/cachix-action@v17
+        with:
+          name: shroom
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          skipAddingSubstituter: true
+      - run: nix build .#${{ matrix.version }}.shroom-all --accept-flake-config
+      - run: nix develop .#${{ matrix.version }} --accept-flake-config -c cabal update
+      - run: nix develop .#${{ matrix.version }} --accept-flake-config -c cabal test all -f-anthropic -f-ollama
+
+  ollama-ci:
+    name: "Ollama integration, via SSH tunnel to the maintainer's server"
+    runs-on: ubuntu-latest
+    # Fork PRs get no secrets under plain `pull_request` (this workflow never uses
+    # `pull_request_target`), so a fork PR would already fail to reach the tunnel; this gate
+    # just makes that skip clean instead of failing red for a reason that has nothing to do
+    # with shroom. push/schedule/workflow_dispatch have no `pull_request` context, so they
+    # fall through to `true` and are unaffected.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # haskell-actions/setup gave a bare GHC/cabal that resolved straight from Hackage,
+    # bypassing the flake's closure entirely; `nix develop` instead has to build that whole
+    # closure from source on a cold runner (no Cachix substituter yet — see the comment below),
+    # which is far slower, and the integration suite itself is slow against a small model over
+    # a tunnel. Raised from 20 to 45 to give that cold build headroom; shrink it again once a
+    # real cache exists.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      # No "shroom" Cachix cache exists yet, and cachix-action's setup() calls
+      # `cachix use shroom` unconditionally (not just when pushing), which would 401 and fail
+      # this job on every run. skipAddingSubstituter disables just that pull-substituter
+      # registration until a cache is provisioned. To turn it on: create the "shroom" cache on
+      # cachix.org, add its CACHIX_AUTH_TOKEN as a repo secret, then drop this line.
+      - uses: cachix/cachix-action@v17
+        with:
+          name: shroom
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          skipAddingSubstituter: true
+      - name: Open the SSH tunnel to the maintainer's Ollama
+        # See research/remote-ollama-ci.md in the plan directory for the mechanism and the
+        # threat model. The server-side ACL (permitopen + command="") is enforced by sshd via
+        # nix/ollama-shroom.nix; this step only has to reach it. ssh-keyscan pins the host key
+        # instead of StrictHostKeyChecking=no, so a redirected DNS name fails loudly rather
+        # than tunnelling to somewhere else.
+        run: |
+          install -d -m 700 ~/.ssh
+          # A herestring writes whatever it's handed — CRLF, a missing trailing newline, even
+          # an empty secret — and exits 0, so a mangled key only surfaces two lines later as an
+          # opaque libcrypto error out of ssh. printf+tr normalises the common web-UI paste
+          # corruption, and ssh-keygen -y validates the result right where it was written.
+          printf '%s\n' "${{ secrets.OLLAMA_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
+          ssh-keyscan -H "${{ vars.OLLAMA_SERVER_HOST }}" >> ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -f -N -L 11434:127.0.0.1:11434 "ci-ollama@${{ vars.OLLAMA_SERVER_HOST }}"
+      - name: Check the tunnel actually came up
+        run: curl --fail -sS http://127.0.0.1:11434/api/tags
+      - name: Update the cabal package index
+        # `nix develop` should already provide every dependency, so this ought to be
+        # unnecessary — but empirically it is sometimes required, and the trigger has not been
+        # pinned down. Two candidates: cabal refusing to solve at all without a package index on
+        # a fresh runner, and a test-only dependency escaping `shellFor`. Until one is confirmed,
+        # keep this line; it is cheap and the failure it prevents is obscure.
+        run: nix develop .#ghc912 --accept-flake-config -c cabal update -f-anthropic
+      - name: Cabal test against the tunnelled Ollama
+        # Bare host:port, no scheme and no /v1 — Ollama's own convention. -f-anthropic is
+        # todo 2's "everything but Anthropic" invocation; the ollama flag stays at its
+        # default (on). OLLAMA_MODEL must match services.ollama.shroom.model on the server
+        # (nix/ollama-shroom.nix, default "llama3.2:1b" — the server is 2 cores / 12 GB,
+        # no GPU, and an 8B model there runs at roughly 1-2 tokens/second). The suite's own
+        # fallback (shroom-baikai/test/Integration/Ollama.hs, used only if OLLAMA_MODEL were
+        # unset here) already agrees with that module default — llama3.2:1b both places — and
+        # the two must be kept in step by hand; a mismatch fails with not_found_error rather
+        # than testing anything about shroom.
+        run: nix develop .#ghc912 --accept-flake-config -c cabal test shroom-test-integration-ollama --enable-tests -f-anthropic --test-show-details=Always
+        env:
+          OLLAMA_HOST: 127.0.0.1:11434
+          OLLAMA_MODEL: llama3.2:1b
+
+  success:
+    name: Successfully build and test on all systems
+    needs:
+      - build-cabal
+      - build-flake
+    runs-on:
+      - ubuntu-latest
+    steps:
+      - run: echo "Success"
