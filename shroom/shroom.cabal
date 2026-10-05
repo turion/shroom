@@ -32,6 +32,14 @@ flag web
   default: True
   manual: True
 
+flag online
+  description:
+    Master switch for the test suites that need network or an external
+    service. Off under nix, where the sandbox has no network.
+
+  default: True
+  manual: True
+
 common opts
   ghc-options:
     -Wall
@@ -141,7 +149,7 @@ test-suite shroom-test-web-tools
   build-depends:
     text
 
-  if !flag(web)
+  if !(flag(web) && flag(online))
     buildable: False
 
 executable shroom-dev

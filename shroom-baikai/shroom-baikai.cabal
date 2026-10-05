@@ -34,6 +34,14 @@ flag ollama
   default: True
   manual: True
 
+flag online
+  description:
+    Master switch for the test suites that need network or an external
+    service. Off under nix, where the sandbox has no network.
+
+  default: True
+  manual: True
+
 common opts
   ghc-options:
     -Wall
@@ -85,7 +93,7 @@ test-suite shroom-test-integration-claude
   other-modules:
     Integration.Cases
 
-  if !flag(anthropic)
+  if !(flag(anthropic) && flag(online))
     buildable: False
 
 test-suite shroom-test-integration-ollama
@@ -98,7 +106,7 @@ test-suite shroom-test-integration-ollama
     Integration.Cases
     ScalarTypes
 
-  if !flag(ollama)
+  if !(flag(ollama) && flag(online))
     buildable: False
 
 executable shroom-conference-claude

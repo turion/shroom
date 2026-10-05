@@ -119,7 +119,7 @@
 
           # Haskell package overrides to set the definitions of the locally defined packages to the current version in this repo
           localPackagesOverrides = hfinal: hprev: with pkgs.haskell.lib;
-            (mapAttrs (pname: path: hfinal.callCabal2nix pname path { }) localPackages);
+            (mapAttrs (pname: path: disableCabalFlag (hfinal.callCabal2nix pname path { }) "online") localPackages);
 
           haskellPackagesExtended = mapAttrs
             (ghcVersion: haskellPackages: haskellPackages.override (haskellPackagesPrevious: {
