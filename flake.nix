@@ -20,6 +20,10 @@
       # Always keep in sync with the tested-with section in the cabal file
       supportedGhcs = [
         "ghc912"
+        # "ghc910" # Dropped: baikai-claude declares `time ^>=1.14`, but the pinned nixpkgs'
+        # ghc910 package set ships time-1.12.2, so dependency resolution fails. No bound change
+        # in shroom's own cabal files can fix this; it needs a baikai-claude release with a wider
+        # time bound (0.7.1.0 still pins ^>=1.14), or a local jailbreak of that pin.
         # "ghc914" # Uncomment as soon as nixpkgs is more advanced
       ];
 
