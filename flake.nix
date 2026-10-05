@@ -6,6 +6,11 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
+  nixConfig = {
+    extra-substituters = [ "https://shroom.cachix.org" ];
+    extra-trusted-public-keys = [ "shroom.cachix.org-1:+5M8Sh9tQUwVdR0F4mycIEJMj1juRlhwktVXCf2z7nI=" ];
+  };
+
   outputs = { nixpkgs, flake-utils, ... }:
     with builtins;
     with nixpkgs.lib;

@@ -99,7 +99,7 @@ jobs:
         id: generate-versions
         run: |
           echo -n "versions=" >> "$GITHUB_OUTPUT"
-          nix eval .#supportedGhcs --json >> "$GITHUB_OUTPUT"
+          nix eval .#supportedGhcs --json --accept-flake-config >> "$GITHUB_OUTPUT"
 
   check-flake:
     name: Check Flake
@@ -107,10 +107,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
-      - run: nix flake check
+      - run: nix flake check --accept-flake-config
       - name: Check whether .nix files are formatted
         run: |
-          nix fmt
+          nix fmt --accept-flake-config
           git diff --exit-code
 
   check-cabal-file:
@@ -136,16 +136,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
-      # No "shroom" Cachix cache exists yet, and cachix-action's setup() calls
-      # `cachix use shroom` unconditionally (not just when pushing), which would 401 and fail
-      # this job on every run. skipAddingSubstituter disables just that pull-substituter
-      # registration until a cache is provisioned. To turn it on: create the "shroom" cache on
-      # cachix.org, add its CACHIX_AUTH_TOKEN as a repo secret, then drop this line.
       - uses: cachix/cachix-action@v17
         with:
           name: shroom
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-          skipAddingSubstituter: true
       - run: nix build .#${{ matrix.version }}.shroom-all --accept-flake-config
       - run: nix develop .#${{ matrix.version }} --accept-flake-config -c cabal update
       - run: nix develop .#${{ matrix.version }} --accept-flake-config -c cabal test all -f-anthropic -f-ollama
@@ -161,24 +155,19 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     # haskell-actions/setup gave a bare GHC/cabal that resolved straight from Hackage,
     # bypassing the flake's closure entirely; `nix develop` instead has to build that whole
-    # closure from source on a cold runner (no Cachix substituter yet — see the comment below),
-    # which is far slower, and the integration suite itself is slow against a small model over
-    # a tunnel. Raised from 20 to 45 to give that cold build headroom; shrink it again once a
-    # real cache exists.
+    # closure from source, which is far slower, and the integration suite itself is slow
+    # against a small model over a tunnel. The `shroom` cache is now wired via flake.nix's
+    # `nixConfig` plus the cachix-action step below, but the first run after that wiring still
+    # has to populate the cache from cold — 45 was sized for that cold build. Recalibrate it on
+    # the second, warm run instead, once the cache is actually populated.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
-      # No "shroom" Cachix cache exists yet, and cachix-action's setup() calls
-      # `cachix use shroom` unconditionally (not just when pushing), which would 401 and fail
-      # this job on every run. skipAddingSubstituter disables just that pull-substituter
-      # registration until a cache is provisioned. To turn it on: create the "shroom" cache on
-      # cachix.org, add its CACHIX_AUTH_TOKEN as a repo secret, then drop this line.
       - uses: cachix/cachix-action@v17
         with:
           name: shroom
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-          skipAddingSubstituter: true
       - name: Open the SSH tunnel to the maintainer's Ollama
         # See research/remote-ollama-ci.md in the plan directory for the mechanism and the
         # threat model. The server-side ACL (permitopen + command="") is enforced by sshd via
