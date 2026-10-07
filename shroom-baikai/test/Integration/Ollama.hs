@@ -9,7 +9,7 @@ import Data.Text qualified as T
 
 -- tasty
 import Test.Tasty (TestTree, defaultMain, testGroup)
-import Test.Tasty.HUnit (assertBool, assertFailure, testCase, testCaseSteps, (@?=))
+import Test.Tasty.HUnit (assertBool, assertFailure, testCase, testCaseSteps)
 
 -- shroom
 import Control.Monad.Prompt.Baikai (localOllamaBackend, normaliseOllamaHost, openAICompatBackend)
@@ -81,7 +81,9 @@ ollamaIntegrationTests model = do
                 Effect.prompt @ScalarInt
               case result of
                 Left err -> assertFailure (show err)
-                Right (ScalarInt n) -> n @?= 8
+                -- Any 'Int' proves the non-object top-level type round-tripped;
+                -- see "Integration.Cases" for why the answer is not asserted.
+                Right (ScalarInt _) -> pure ()
           , testCase "prompt returns a non-object Text" $ do
               result <- Effect.runPromptResultEff localBackend (defaultPromptConfig {maxRetries = 10}) $ do
                 Effect.context "Return the word \"hello\" and nothing else."
@@ -95,7 +97,9 @@ ollamaIntegrationTests model = do
                 Effect.prompt @ScalarIntList
               case result of
                 Left err -> assertFailure (show err)
-                Right (ScalarIntList xs) -> xs @?= [1, 2, 3]
+                -- Any list of 'Int' proves the non-object array round-tripped;
+                -- the values are the model's to get right, not shroom's.
+                Right (ScalarIntList _) -> pure ()
           ]
       , testGroup
           "openAICompatBackend (explicit base URL, explicit key)"

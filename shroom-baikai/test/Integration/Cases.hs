@@ -19,15 +19,29 @@ and failure reporting in "Integration.Claude"; 'celebrityChain' and the
 non-object top-level response types in "Integration.Ollama") alongside a
 call to 'backendIntegrationTests'.
 
-'conferenceChain'\'s assertions here are deliberately looser than
-"Integration.Ollama" checked on its own before this module existed: the
-upper bound on speaker count (@n <= 10@) encoded an assumption about a weak
-local model's typical output size, not a property every provider must
-satisfy, so it is dropped from the shared list rather than risking a
-spurious failure against a provider that reasons about more speakers. The
-slot-continuity check (each slot picks up exactly where the last one left
-off) is a genuine property of a valid schedule regardless of provider, so
-it stays.
+These cases, and the non-object top-level ones in "Integration.Ollama",
+assert shroom's plumbing, not the model's capability; this paragraph is the
+one statement of that rule for both files. An
+assertion stays if it is a property any correct provider must satisfy, or
+evidence that shroom's own machinery worked (the response parsed into the
+declared type, fields were mapped to the right names, a non-object top-level
+type was round-tripped, a tool was dispatched and its result read
+back in); it is dropped or weakened if passing it requires the model to be
+/good/. Applied to the assertions here: the upper bound on speaker count
+(@n <= 10@) encoded an assumption about a weak local model's typical output
+size, so it is dropped rather than risking a spurious failure against a
+provider that reasons about more speakers; the exact answers (the counter's
+value being 42, the user's name being @"Alice"@) were the model's to get
+right, so they are weakened to what the machinery is responsible for, namely
+that a 'Counter' came back at all, and that the name and email fields hold
+non-empty text with the \@ in the email field only. In "Integration.Ollama"
+the same goes for the spider-legs answer and the first three integers:
+only that a 'ScalarInt' and a 'ScalarIntList' came back is asserted, never
+@8@ or @[1, 2, 3]@, since a small local model may get those wrong. The slot-continuity
+check (each slot picks up exactly where the last one left off), the
+speaker-count floor and @length talks == n@ (cross-field coherence) and the
+tool-was-called check stay, being properties of a valid result regardless of
+provider.
 -}
 module Integration.Cases (backendIntegrationTests, sharedPromptConfig) where
 
@@ -42,6 +56,7 @@ import Effectful.State.Static.Local (State)
 
 -- text
 import Data.Text (Text)
+import Data.Text qualified as T
 
 -- tasty
 import Test.Tasty (TestTree, testGroup)
@@ -83,14 +98,19 @@ backendIntegrationTests backend =
           Effect.prompt @User
         case result of
           Left err -> assertFailure (show err)
-          Right user -> userName user @?= "Alice"
+          Right user -> do
+            assertBool "name is non-empty" (not (T.null (userName user)))
+            assertBool "email is non-empty" (not (T.null (userEmail user)))
+            assertBool "email field holds an address" ("@" `T.isInfixOf` userEmail user)
+            assertBool "name field does not hold an address" (not ("@" `T.isInfixOf` userName user))
     , testCase "prompt returns a Counter" $ do
         result <- Effect.runPromptResultEff backend sharedPromptConfig $ do
           Effect.context "Return a JSON counter object with value 42."
           Effect.prompt @Counter
         case result of
           Left err -> assertFailure (show err)
-          Right (Counter n) -> n @?= 42
+          -- Any 'Int' proves the non-object top-level type round-tripped.
+          Right (Counter _) -> pure ()
     , testCase "conferenceChain produces a valid schedule" $ do
         result <- Effect.runPromptResultEff backend sharedPromptConfig conferenceChain
         case result of
