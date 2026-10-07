@@ -199,7 +199,17 @@ jobs:
           ssh-keyscan -H "${{ vars.OLLAMA_SERVER_HOST }}" >> ~/.ssh/known_hosts
           ssh -o BatchMode=yes -f -N -L 11434:127.0.0.1:11434 "ci-ollama@${{ vars.OLLAMA_SERVER_HOST }}"
       - name: Check the tunnel actually came up
-        run: curl --fail -sS http://127.0.0.1:11434/api/tags
+        # The /api/ps line is a meter, not a gate: it records in every run's log whether a
+        # model was resident when the suite started. Empty `models` = nothing resident, so
+        # this run pays the full cold load; an `expires_at` a few minutes out = keepAlive is
+        # on Ollama's default; no expiry or one far out = "-1" is in effect. `|| true` keeps
+        # it from ever failing the step — only the /api/tags check is a precondition.
+        run: |
+          curl --fail -sS http://127.0.0.1:11434/api/tags
+          echo
+          echo "Resident models (GET /api/ps, diagnostic only):"
+          curl -sS http://127.0.0.1:11434/api/ps || true
+          echo
       - name: Cabal test against the tunnelled Ollama
         # Bare host:port, no scheme and no /v1 — Ollama's own convention. -f-anthropic is
         # todo 2's "everything but Anthropic" invocation; the ollama flag stays at its

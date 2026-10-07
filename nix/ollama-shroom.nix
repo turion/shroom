@@ -20,7 +20,7 @@
 #   services.ollama.shroom = {
 #     enable = true;
 #     model = "llama3.2:1b";               # must match .github/workflows/ci.yml's OLLAMA_MODEL — see below
-#     keepAlive = "-1";                     # dedicated host: keep it resident, never reload between runs
+#     # keepAlive = "-1";                   # redundant: auth.mode = "ssh-tunnel" already defaults it to "-1" (resident, never reloaded between runs); set it only to override
 #     auth.mode = "ssh-tunnel";
 #     auth.sshTunnel.publicKey = "ssh-ed25519 AAAA... ci";  # public half only; the private half is a GitHub secret, see below
 #   };
@@ -30,9 +30,10 @@
 #   services.ollama.shroom = {
 #     enable = true;
 #     model = "qwen3:8b";                   # a laptop has headroom an 8B model can use
-#     # auth.mode defaults to "local"; keepAlive defaults to Ollama's own upstream
-#     # default rather than staying resident forever, so the model doesn't sit
-#     # pinned in RAM between sessions.
+#     # auth.mode defaults to "local", and in that mode keepAlive defaults to
+#     # Ollama's own upstream default ("5m") rather than staying resident forever,
+#     # so the model doesn't sit pinned in RAM between sessions. (Only "ssh-tunnel"
+#     # mode defaults keepAlive to "-1".)
 #   };
 #
 # ## The one coupling that breaks CI if ignored
@@ -51,8 +52,8 @@
 #
 # ## Sizing
 #
-# The model is held resident once loaded (see `keepAlive`), so pick one that fits the
-# host: a 2-core / 12 GB server wants a 1b-class model; `qwen3:8b` is the laptop default.
+# In `ssh-tunnel` mode the model is held resident once loaded (see `keepAlive`), so pick
+# one that fits the host: a 2-core / 12 GB server wants a 1b-class model; `qwen3:8b` is the laptop default.
 let
   cfg = config.services.ollama.shroom;
 
@@ -90,17 +91,24 @@ in
 
     keepAlive = lib.mkOption {
       type = lib.types.str;
-      default = "5m";
+      default = if cfg.auth.mode == "ssh-tunnel" then "-1" else "5m";
+      defaultText = lib.literalExpression ''if config.services.ollama.shroom.auth.mode == "ssh-tunnel" then "-1" else "5m"'';
       example = "-1";
       description = ''
-        Value for `OLLAMA_KEEP_ALIVE`. Defaults to Ollama's own upstream behaviour
-        (unload after 5 minutes idle) rather than staying resident forever: a
-        dedicated CI-tunnel server wants `"-1"` so it never reloads the model between
-        test runs, but the same setting on a laptop pins a multi-GB model in RAM
-        indefinitely — the maintainer has had to stop Ollama by hand over exactly
-        this. One module serves both machines and they want opposite things here, so
-        each machine's own configuration chooses: set `"-1"` explicitly on a
-        dedicated server, leave the default everywhere else.
+        Value for `OLLAMA_KEEP_ALIVE`. The default follows `auth.mode`:
+
+        - `auth.mode = "ssh-tunnel"` (a dedicated host CI tunnels to) defaults to
+          `"-1"`, so the model stays resident and is never reloaded between test
+          runs. Left to Ollama's own default, every CI run started cold and paid
+          roughly 19 seconds of model load before the first token.
+        - `auth.mode = "local"` (the laptop) defaults to `"5m"`, Ollama's own upstream
+          behaviour (unload after 5 minutes idle): `"-1"` on a laptop pins a multi-GB
+          model in RAM indefinitely — the maintainer has had to stop Ollama by hand
+          over exactly this.
+
+        One module serves both machines and they want opposite things here, so the
+        mode picks the default. Setting this option explicitly on a machine overrides
+        the default in either mode.
       '';
     };
 
