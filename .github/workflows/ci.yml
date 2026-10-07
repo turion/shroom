@@ -160,6 +160,12 @@ jobs:
     # `nixConfig` plus the cachix-action step below, but the first run after that wiring still
     # has to populate the cache from cold — 45 was sized for that cold build. Recalibrate it on
     # the second, warm run instead, once the cache is actually populated.
+    #
+    # Deliberately no `needs: build-flake`: if that job went red, this one would be skipped
+    # and never observed. The tunnel opens right before the test step, so a slow cold build
+    # only makes this job slow and cannot kill the tunnel. What can still blow the 45 minutes
+    # is a cold build (a flake.lock bump, or possibly cache eviction) and the suite's own
+    # runtime on the 2-core server, which is unobserved even on a warm cache.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
@@ -173,7 +179,7 @@ jobs:
         # unnecessary — but empirically it is sometimes required, and the trigger has not been
         # pinned down. Two candidates: cabal refusing to solve at all without a package index on
         # a fresh runner, and a test-only dependency escaping `shellFor`. Until one is confirmed,
-        # keep this line; it is cheap and the failure it prevents is obscure.
+        # keep this line; it is cheap on a warm cache and the failure it prevents is obscure.
         run: nix develop .#ghc912 --accept-flake-config -c cabal update -f-anthropic
       - name: Open the SSH tunnel to the maintainer's Ollama
         # See research/remote-ollama-ci.md in the plan directory for the mechanism and the
