@@ -32,7 +32,7 @@ module Control.Monad.Prompt.Baikai (
 ) where
 
 -- base
-import Control.Exception (SomeException, try)
+import Control.Exception (SomeAsyncException, SomeException, fromException, tryJust)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Foldable (toList)
 import System.Environment (lookupEnv)
@@ -225,9 +225,14 @@ produces schema OpenAI's strict subset accepts (@additionalProperties:
 false@ throughout); Anthropic's structured outputs are always
 schema-enforcing and ignore the flag either way.
 
-Per 'Backend'\'s own contract, no 'SomeException' a 'complete' call can
-throw escapes this function — it comes back as 'BackendTransportError'
-instead.
+Per 'Backend'\'s own contract, no /synchronous/ 'SomeException' a 'complete'
+call can throw escapes this function — it comes back as
+'BackendTransportError' instead. /Asynchronous/ exceptions
+('SomeAsyncException': @System.Timeout.timeout@\'s @Timeout@, @ThreadKilled@,
+@UserInterrupt@, an @async@ cancellation) are the caller's control flow, not
+a transport failure, so they propagate: a @timeout@ around a hung call
+returns 'Nothing' instead of the prompt loop retrying it as an ordinary
+backend error.
 -}
 baikaiBackend :: (MonadIO m) => Model -> Options -> Backend m
 baikaiBackend model baseOpts =
@@ -237,10 +242,17 @@ baikaiBackend model baseOpts =
           baseOpts
             { responseFormat = Just (JsonSchema ((jsonSchemaFormat "response" schema) {strict = True}))
             }
-    result <- try @SomeException (runEff (runBaikai (complete model bCtx opts)))
+    result <- tryJust synchronousOnly (runEff (runBaikai (complete model bCtx opts)))
     pure $ case result of
       Left ex -> Left (BackendTransportError (T.pack (show ex)))
       Right resp -> interpretResponse resp
+  where
+    -- 'Nothing' lets an asynchronous exception keep propagating; 'Just'
+    -- catches the synchronous ones.
+    synchronousOnly :: SomeException -> Maybe SomeException
+    synchronousOnly ex = case fromException ex of
+      Just (_ :: SomeAsyncException) -> Nothing
+      Nothing -> Just ex
 
 -- * Front door
 

@@ -116,3 +116,18 @@ executable shroom-conference-claude
   main-is: Claude.hs
   build-depends:
     time ^>=1.14
+
+-- Offline: talks only to a localhost socket opened by the test itself, so
+-- unlike the integration suites it is not behind the @online@ flag, and the
+-- offline test gate runs it.
+test-suite shroom-test-baikai-offline
+  import: opts
+  default-language: GHC2024
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test/Offline
+  main-is: Main.hs
+  build-depends:
+    network ^>=3.2,
+    shroom-baikai,
+    tasty >=1.4 && <1.6,
+    tasty-hunit ^>=0.10,
