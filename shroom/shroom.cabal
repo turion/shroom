@@ -125,6 +125,8 @@ test-suite shroom-test
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: Main.hs
+  build-depends:
+    network ^>=3.2
 
 test-suite shroom-test-conference
   import: opts, test-opts

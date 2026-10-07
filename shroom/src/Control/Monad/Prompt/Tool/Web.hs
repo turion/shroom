@@ -28,7 +28,7 @@ result <- runPromptResultEff backend defaultPromptConfig $
 module Control.Monad.Prompt.Tool.Web (module Control.Monad.Prompt.Tool.Web) where
 
 -- base
-import Control.Exception (SomeException, try)
+import Control.Exception (SomeAsyncException, SomeException, fromException, tryJust)
 import Data.Char (isAlphaNum)
 
 -- text
@@ -128,9 +128,28 @@ instance Toolable WebFetch where
 userAgentHeader :: Req.Option scheme
 userAgentHeader = Req.header "User-Agent" "shroom/0.1 (https://github.com/turion/shroom)"
 
+{- | Run an action, catching /synchronous/ exceptions only. All three web
+handlers wrap their HTTP call in this, so a failed request (connection
+refused, bad status, ...) comes back as a 'Left' and becomes a tool-error
+result. /Asynchronous/ exceptions ('SomeAsyncException':
+@System.Timeout.timeout@\'s @Timeout@, @ThreadKilled@, an @async@
+cancellation) are the caller's control flow, not a tool failure, so they
+propagate: a @timeout@ around a hung request returns 'Nothing' instead of
+the model being handed a @\<\<timeout\>\>@ tool result and the loop carrying on.
+-}
+trySynchronous :: IO a -> IO (Either SomeException a)
+trySynchronous = tryJust synchronousOnly
+  where
+    -- 'Nothing' lets an asynchronous exception keep propagating; 'Just'
+    -- catches the synchronous ones.
+    synchronousOnly :: SomeException -> Maybe SomeException
+    synchronousOnly ex = case fromException ex of
+      Just (_ :: SomeAsyncException) -> Nothing
+      Nothing -> Just ex
+
 webFetchHandler :: ToolHandler WebFetch
 webFetchHandler = ToolHandler $ \(WebFetch url) -> do
-  result <- try @SomeException $ runReq defaultHttpConfig $ do
+  result <- trySynchronous $ runReq defaultHttpConfig $ do
     uri <- mkURI url
     case useHttpsURI uri of
       Just (u, opts) -> do
@@ -218,7 +237,7 @@ instance Aeson.FromJSON DDGResponse where
 -- | Query DuckDuckGo Instant Answer API, return AbstractText (+ URL) or Answer.
 duckDuckGoSearchHandler :: ToolHandler DuckDuckGoSearch
 duckDuckGoSearchHandler = ToolHandler $ \(DuckDuckGoSearch q) -> do
-  result <- try @SomeException $ runReq defaultHttpConfig $ do
+  result <- trySynchronous $ runReq defaultHttpConfig $ do
     r <-
       req
         GET
@@ -293,7 +312,7 @@ Works for any query; use 'webFetchHandler' to read a returned URL.
 -}
 wikipediaSearchHandler :: ToolHandler WikipediaSearch
 wikipediaSearchHandler = ToolHandler $ \(WikipediaSearch q) -> do
-  result <- try @SomeException $ runReq defaultHttpConfig $ do
+  result <- trySynchronous $ runReq defaultHttpConfig $ do
     r <-
       req
         GET
