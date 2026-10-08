@@ -222,7 +222,10 @@ jobs:
         # the two must be kept in step by hand; a mismatch fails with not_found_error rather
         # than testing anything about shroom.
         # Each case reports as it finishes; one slow case fails on 10m cap instead of eating the job's 45 minutes.
-        run: nix develop .#ghc912 --accept-flake-config -c cabal test shroom-test-integration-ollama --enable-tests -f-anthropic --test-show-details=streaming --test-options=--timeout=10m
+        # The conferenceChain cases test model capability, which a 1b model on 2 CPU cores cannot
+        # do inside that cap; CI asserts plumbing, so they are skipped here and run locally. The
+        # tasty pattern is its own --test-option pair: cabal word-splits --test-options.
+        run: nix develop .#ghc912 --accept-flake-config -c cabal test shroom-test-integration-ollama --enable-tests -f-anthropic --test-show-details=streaming --test-options=--timeout=10m --test-option=-p --test-option='!/conferenceChain/'
         env:
           OLLAMA_HOST: 127.0.0.1:11434
           OLLAMA_MODEL: llama3.2:1b
