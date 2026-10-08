@@ -3,6 +3,9 @@ module Main (main) where
 -- base
 import System.Environment (lookupEnv)
 
+-- aeson
+import Data.Aeson (object)
+
 -- text
 import Data.Text (Text, pack)
 import Data.Text qualified as T
@@ -12,7 +15,8 @@ import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit (assertBool, assertFailure, testCase, testCaseSteps)
 
 -- shroom
-import Control.Monad.Prompt.Baikai (localOllamaBackend, normaliseOllamaHost, openAICompatBackend)
+import Control.Monad.Prompt.Backend (Backend (..), BackendReply (..), ContextItem (..))
+import Control.Monad.Prompt.Baikai (anthropicCompatBackend, localOllamaBackend, normaliseOllamaHost, openAICompatBackend)
 import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Effect qualified as Effect
 import Control.Monad.Prompt.Tool (runTool, toolBinding)
@@ -45,6 +49,18 @@ underneath, but with an explicit placeholder key where 'localOllamaBackend'
 always passes 'Nothing' — exercising the constructor's @Just@ branch, which
 'localOllamaBackend' never reaches. Ollama itself checks no credential, so
 the placeholder only has to be non-empty, never correct.
+
+The third calls 'Control.Monad.Prompt.Baikai.anthropicCompatBackend' against the
+same host, which Ollama also serves as an Anthropic Messages API (@\/v1\/messages@).
+Its one case sends a plain request through 'runBackendChat' and asserts that a
+reply came back and was parsed as an Anthropic message, so it covers the
+Anthropic Messages wire format and @baikai-claude@'s envelope parsing through
+shroom's adapter, without a paid key. It does /not/ run the shared typed
+'backendIntegrationTests' cases: Ollama's @\/v1\/messages@ ignores the
+structured-output schema and answers in prose, so typed prompting on the
+Anthropic path is covered only by the local Claude suite ("Integration.Claude").
+Nor does it cover 'Control.Monad.Prompt.Baikai.claudeBackend'\'s fixed
+@api.anthropic.com@ URL.
 -}
 ollamaIntegrationTests :: Text -> IO TestTree
 ollamaIntegrationTests model = do
@@ -52,6 +68,7 @@ ollamaIntegrationTests model = do
   mHost <- lookupEnv "OLLAMA_HOST"
   let baseUrl = maybe "http://127.0.0.1:11434" (normaliseOllamaHost . T.pack) mHost
   genericBackend <- openAICompatBackend baseUrl model (Just "unused-ollama-checks-no-credential")
+  anthropicBackend <- anthropicCompatBackend baseUrl model "unused-ollama-checks-no-credential"
   pure $
     testGroup
       "Ollama integration"
@@ -104,4 +121,22 @@ ollamaIntegrationTests model = do
       , testGroup
           "openAICompatBackend (explicit base URL, explicit key)"
           [backendIntegrationTests genericBackend]
+      , testGroup
+          "anthropicCompatBackend (Ollama's Anthropic Messages API)"
+          [ testCase "a plain request comes back as a parsed Anthropic reply" $ do
+              -- Transport only: Ollama's @\/v1\/messages@ ignores the schema, so
+              -- all this asserts is that a reply arrived, was read as an
+              -- Anthropic message and carries some text.
+              result <-
+                runBackendChat
+                  anthropicBackend
+                  [UserMessage "Say hello."]
+                  "Reply with one short sentence."
+                  (object [])
+                  []
+              case result of
+                Left err -> assertFailure (show err)
+                Right (BackendAnswer t) -> assertBool "non-empty reply" (not (T.null (T.strip t)))
+                Right reply -> assertFailure ("expected an answer, got: " <> show reply)
+          ]
       ]
