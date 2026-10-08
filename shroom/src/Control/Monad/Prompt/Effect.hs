@@ -155,7 +155,8 @@ promptsParallel = mapConcurrently id
 data PromptConfig = PromptConfig
   { maxRetries :: Int
   {- ^ Maximum number of re-prompts when a parsed value fails property
-  validation, or on a 'Control.Monad.Prompt.Backend.BackendTransportError'.
+  validation, on a 'Control.Monad.Prompt.Backend.BackendTruncated' reply, or
+  on a 'Control.Monad.Prompt.Backend.BackendTransportError'.
   Default: 3.
   -}
   , maxToolSteps :: Maybe Int
@@ -220,7 +221,9 @@ orElse l r = do
 "Effectful.Error.Static". On a parse failure, a property violation or a
 'BackendTransportError' the request is retried up to 'maxRetries' times,
 each time appending the offending response (as an 'AssistantMessage') and a
-'UserMessage' naming what went wrong. A 'BackendRefusal' is terminal and
+'UserMessage' naming what went wrong. A 'BackendTruncated' reply is retried
+the same way, but appends only a 'UserMessage' saying the reply was cut off
+at the length limit — the half-finished text is not replayed. A 'BackendRefusal' is terminal and
 consumes no retry budget — the model declining outright is not something a
 re-prompt fixes. 'debugLog' emits the same before\/after-call lines with the
 same OK \/ PARSE FAIL \/ VALIDATION FAIL \/ ERROR outcomes as before.
@@ -320,6 +323,21 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
           -- Terminal: a refusal is not something a re-prompt can fix.
           logDebug $ "✗ REFUSAL: " <> refusalMessage
           throwError $ refusalMessage <> "\n" <> attemptsStr
+        Left (BackendTruncated partial) -> do
+          -- Retried, but with a message that says what went wrong: a blind
+          -- re-prompt would get the same overlong answer. The cut-off text
+          -- stays out of the context; it is half a document.
+          logDebug $ "✗ TRUNCATED: " <> partial
+          if retriesLeft <= 0
+            then throwError $ "The reply was cut off at the length limit.\n" <> attemptsStr
+            else do
+              let retryCtx =
+                    ctx
+                      <> [ UserMessage $
+                             "IMPORTANT: Your previous response was cut off at the length limit, so it was incomplete.\n"
+                               <> "Generate a new, shorter JSON response that matches the required schema exactly."
+                         ]
+              retry retryCtx typeDesc schema checkProps totalRetries (retriesLeft - 1)
         Left (BackendTransportError err) -> do
           logDebug $ "✗ ERROR: " <> err
           if retriesLeft <= 0

@@ -13,9 +13,10 @@ import System.Timeout (timeout)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BC
+import Data.ByteString.Lazy qualified as BL
 
 -- aeson
-import Data.Aeson (Value (Number, Object), decodeStrict, object)
+import Data.Aeson (Value (Null, Number, Object), decodeStrict, encode, object, (.=))
 import Data.Aeson.KeyMap qualified as KeyMap
 
 -- text
@@ -44,7 +45,7 @@ import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 
 -- shroom
-import Control.Monad.Prompt.Backend (Backend (..))
+import Control.Monad.Prompt.Backend (Backend (..), BackendError (..))
 import Control.Monad.Prompt.Baikai (localOllamaBackend, openAICompatBackend)
 
 main :: IO ()
@@ -78,6 +79,11 @@ tests =
             backend <- localOllamaBackend "unused"
             void (timeout 5_000_000 (runBackendChat backend [] "a type" (object []) []))
             recorded >>= assertTokenCap
+    , testCase "a finish_reason of length is a truncated reply, not an answer that fails to parse" $
+        withLengthStopServer "{\"userName\":\"Ali" $ \port -> do
+          backend <- openAICompatBackend ("http://127.0.0.1:" <> T.pack (show port)) "unused" (Just "unused")
+          result <- timeout 5_000_000 (runBackendChat backend [] "a type" (object []) [])
+          result @?= Just (Left (BackendTruncated "{\"userName\":\"Ali"))
     ]
 
 {- | The request body names the cap @max_tokens@ — the only spelling Ollama's
@@ -180,3 +186,46 @@ readRequestBody conn = go BS.empty
         (v : _) -> fst <$> BC.readInt (BC.strip v)
         [] -> Nothing
     toLowerAscii c = if isAsciiUpper c then toEnum (fromEnum c + 32) else c
+
+{- | Run an action against a localhost HTTP server that answers its first
+request with a streamed (SSE) OpenAI chat-completions reply: the given text
+as the content, then a final chunk with @finish_reason: "length"@, then the
+usage chunk and @[DONE]@ — what a server does when the output hits the token
+cap. The client's @stream: true@ request is why the answer is SSE.
+-}
+withLengthStopServer :: T.Text -> (PortNumber -> IO a) -> IO a
+withLengthStopServer content act =
+  withListener $ \listener port ->
+    bracket
+      ( forkIO . void $ do
+          (conn, _) <- accept listener
+          bracket (pure conn) close $ \c -> do
+            void (readRequestBody c)
+            sendAll c $
+              "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n"
+                <> sseEvent (chunk (object ["role" .= ("assistant" :: T.Text), "content" .= content]) Null)
+                <> sseEvent (chunk (object []) "length")
+                <> sseEvent
+                  ( object
+                      [ "id" .= ("chatcmpl-test" :: T.Text)
+                      , "object" .= ("chat.completion.chunk" :: T.Text)
+                      , "created" .= (0 :: Int)
+                      , "model" .= ("unused" :: T.Text)
+                      , "choices" .= ([] :: [Value])
+                      , "usage" .= object ["prompt_tokens" .= (10 :: Int), "completion_tokens" .= (4096 :: Int), "total_tokens" .= (4106 :: Int)]
+                      ]
+                  )
+                <> "data: [DONE]\n\n"
+      )
+      killThread
+      (\_ -> act port)
+  where
+    chunk delta finish =
+      object
+        [ "id" .= ("chatcmpl-test" :: T.Text)
+        , "object" .= ("chat.completion.chunk" :: T.Text)
+        , "created" .= (0 :: Int)
+        , "model" .= ("unused" :: T.Text)
+        , "choices" .= ([object ["index" .= (0 :: Int), "delta" .= delta, "finish_reason" .= (finish :: Value)]] :: [Value])
+        ]
+    sseEvent v = "data: " <> BL.toStrict (encode v) <> "\n\n"

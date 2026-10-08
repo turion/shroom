@@ -62,7 +62,7 @@ import Baikai.Model (Compat (CompatNone, CompatOpenAICompletions), Model (..), m
 import Baikai.Options (Options (..), emptyOptions)
 import Baikai.Response (Response (..), flattenAssistantText, responseError)
 import Baikai.ResponseFormat (JsonSchemaFormat (strict), ResponseFormat (JsonSchema), jsonSchemaFormat)
-import Baikai.StopReason (StopReason (ToolUse))
+import Baikai.StopReason (StopReason (Length, ToolUse))
 import Baikai.Tool (Tool, mkTool)
 import Baikai.Usage (zeroUsage)
 
@@ -185,9 +185,12 @@ on Anthropic's streaming path, per 'BackendError'\'s own Haddock — this
 adapter uses baikai's non-streaming 'complete', so it is 'Nothing' in
 practice, but the field is threaded through regardless). Any other
 category (auth, rate limit, decode failure, ...) is exactly what
-a retry is for, so it becomes 'BackendTransportError'. With no error, any
-'AssistantToolCall' blocks in the reply mean 'BackendToolCalls'; otherwise
-it is a final 'BackendAnswer', read via 'flattenAssistantText'.
+a retry is for, so it becomes 'BackendTransportError'. A 'Length' stop (not
+an error to baikai) is a reply cut off by the token or context limit, so it
+becomes 'BackendTruncated' rather than an answer that would only fail to
+parse. With neither, any 'AssistantToolCall' blocks in the reply mean
+'BackendToolCalls'; otherwise it is a final 'BackendAnswer', read via
+'flattenAssistantText'.
 -}
 interpretResponse :: Response -> Either BackendError BackendReply
 interpretResponse resp = case responseError resp of
@@ -195,11 +198,16 @@ interpretResponse resp = case responseError resp of
     | BE.category err == ContentFiltered ->
         Left (BackendRefusal {refusalCategory = BE.refusalCategory err, refusalMessage = BE.message err})
     | otherwise -> Left (BackendTransportError (BE.message err))
-  Nothing ->
-    let calls = [tc | AssistantToolCall tc <- toList resp.message.content]
-     in if null calls
-          then Right (BackendAnswer (flattenAssistantText resp.message.content))
-          else Right (BackendToolCalls (fmap fromBaikaiToolCall calls))
+  Nothing
+    -- Cut off by the token or context limit: whatever arrived, text or
+    -- tool-call arguments, is half a document.
+    | resp.message.stopReason == Length ->
+        Left (BackendTruncated (flattenAssistantText resp.message.content))
+    | otherwise ->
+        let calls = [tc | AssistantToolCall tc <- toList resp.message.content]
+         in if null calls
+              then Right (BackendAnswer (flattenAssistantText resp.message.content))
+              else Right (BackendToolCalls (fmap fromBaikaiToolCall calls))
 
 fromBaikaiToolCall :: BContent.ToolCall -> ToolCall
 fromBaikaiToolCall bc =

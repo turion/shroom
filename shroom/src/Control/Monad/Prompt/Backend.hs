@@ -182,8 +182,8 @@ data BackendReply
     BackendToolCalls [ToolCall]
   deriving (Eq, Show)
 
-{- | Why a 'Backend' call failed, distinguishing a refusal from a transport
-failure.
+{- | Why a 'Backend' call failed, distinguishing a refusal from a truncated
+reply and from a transport failure.
 
 A refusal is terminal: the model declining outright is not something a
 re-prompt fixes, so retrying just spends retry budget on real API calls
@@ -214,6 +214,16 @@ data BackendError
       , refusalMessage :: Text
       -- ^ The provider's own message text, for logging\/debugging.
       }
+  | {- | The reply was cut off by the output-token or context limit (a
+    @finish_reason: "length"@ stop) and so is, at best, half a JSON
+    document. Carries whatever text arrived before the cut, for logging
+    only — it is not a usable answer. Unlike a refusal this is worth a
+    retry, but unlike a transport failure it should not be retried blind: a
+    re-prompt that says nothing gets the same overlong answer again, so the
+    retry loop tells the model its reply was cut off and asks for a shorter
+    one.
+    -}
+    BackendTruncated Text
   | -- | Anything else: an HTTP failure, a decode failure, a timeout, ...
     BackendTransportError Text
   deriving (Eq, Show)

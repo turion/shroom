@@ -58,7 +58,7 @@ import Effectful.Error.Static (Error)
 import Effectful.State.Static.Local (State)
 
 -- shroom
-import Control.Monad.Prompt.Backend (Backend (..), BackendReply (..), ContextItem (..), ToolCall (..), ToolDef (..))
+import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..), ContextItem (..), ToolCall (..), ToolDef (..), renderContextItems)
 import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Effect qualified as Eff
 import Control.Monad.Prompt.Promptable (Promptable)
@@ -92,6 +92,20 @@ barrierBackend entered expected =
           if n >= expected then pure () else threadDelay 1000 >> waitForAll
     waitForAll
     pure (Right (BackendAnswer "0"))
+
+{- | A mock 'Backend' whose first @n@ calls come back 'BackendTruncated' (with
+a half-finished JSON document as the partial text) and whose later calls
+answer with @answer@, recording each call's context as flat text.
+-}
+truncatedBackend :: (MonadIO m) => Int -> Text -> IORef Int -> IORef [Text] -> Backend m
+truncatedBackend n answer callRef seenCtxs =
+  Backend $ \ctx _typeDesc _schema _toolDefs -> liftIO $ do
+    atomicModifyIORef' seenCtxs (\xs -> (xs <> [renderContextItems ctx], ()))
+    call <- atomicModifyIORef' callRef (\k -> (k + 1, k))
+    pure $
+      if call < n
+        then Left (BackendTruncated "{\"userName\":\"Ali")
+        else Right (BackendAnswer answer)
 
 {- | A mock 'Backend' that requests the given tool call once, then answers
 @"0"@ (a valid 'Counter') once the conversation shows a tool result. Proves
@@ -569,6 +583,36 @@ main =
                     Right _ -> assertFailure "Expected Left but got Right"
                   seen <- readIORef seenContexts
                   length seen @?= 3
+              , testCase "a truncated reply is retried with a message saying so, not a parse error" $ do
+                  callRef <- newIORef 0
+                  seenContexts <- newIORef ([] :: [Text])
+                  let backend = truncatedBackend 1 "{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}" callRef seenContexts
+                  result <-
+                    Eff.runPromptResultEff backend (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.prompt @User
+                  result @?= Right (User "Alice" "alice@example.com")
+                  seen <- readIORef seenContexts
+                  length seen @?= 2
+                  assertContains "IMPORTANT: Your previous response was cut off at the length limit" (seen !! 1)
+                  assertContains "shorter" (seen !! 1)
+                  assertNotContains "could not be parsed" (seen !! 1)
+                  -- The half-finished text is not replayed into the context.
+                  assertNotContains "Ali\"" (seen !! 1)
+              , testCase "a truncated reply that keeps recurring ends in a length error, not a JSON decode error" $ do
+                  callRef <- newIORef 0
+                  seenContexts <- newIORef ([] :: [Text])
+                  let backend = truncatedBackend maxBound "unused" callRef seenContexts
+                  result <-
+                    Eff.runPromptResultEff backend (defaultPromptConfig {maxRetries = 1}) $
+                      Eff.prompt @User
+                  case result of
+                    Left err -> do
+                      assertContains "cut off at the length limit" err
+                      assertNotContains "JSON decode error" err
+                    Right _ -> assertFailure "Expected Left but got Right"
+                  seen <- readIORef seenContexts
+                  -- 1 original + 1 retry = 2 total calls
+                  length seen @?= 2
               ]
           , testGroup
               "promptPar / promptsParallel genuinely run concurrently"
