@@ -25,16 +25,43 @@
 #     auth.sshTunnel.publicKey = "ssh-ed25519 AAAA... ci";  # public half only; the private half is a GitHub secret, see below
 #   };
 #
-# ## A pasteable laptop example
+# ## A pasteable laptop example (no GPU: CPU-only)
 #
 #   services.ollama.shroom = {
 #     enable = true;
-#     model = "qwen3:8b";                   # a laptop has headroom an 8B model can use
+#     model = "qwen3:8b";                   # CPU-only: a laptop has RAM an 8B model can use
 #     # auth.mode defaults to "local", and in that mode keepAlive defaults to
 #     # Ollama's own upstream default ("5m") rather than staying resident forever,
 #     # so the model doesn't sit pinned in RAM between sessions. (Only "ssh-tunnel"
 #     # mode defaults keepAlive to "-1".)
 #   };
+#
+# ## A pasteable laptop example with an NVIDIA GPU (~4 GB VRAM)
+#
+# This module sets no `services.ollama.package`, so the host chooses GPU acceleration
+# itself. NixOS 26.05 removed `services.ollama.acceleration`; pick the package instead
+# (`pkgs.ollama-{cpu,cuda,rocm,vulkan}`):
+#
+#   services.ollama.package = pkgs.ollama-cuda;
+#   services.ollama.environmentVariables = {
+#     OLLAMA_CONTEXT_LENGTH = "8192";       # shroom's prompts run ~4k tokens, over Ollama's default 4096
+#     OLLAMA_FLASH_ATTENTION = "1";
+#     OLLAMA_KV_CACHE_TYPE = "q8_0";        # quantised KV cache, to fit a small card
+#   };
+#   services.ollama.shroom = {
+#     enable = true;
+#     model = "qwen3:4b-instruct-2507-q4_K_M";  # fits a ~4 GB card fully, see below
+#   };
+#
+#   - `pkgs.ollama-cuda` needs unfree CUDA libraries allowed
+#     (`nixpkgs.config.allowUnfree = true`, or a narrower `allowUnfreePredicate`).
+#   - It also needs `cache.nixos-cuda.org` as a substituter (with its public key in
+#     `trusted-public-keys`), or ollama-cuda builds from source.
+#   - Prefer the `instruct-2507` variant: the qwen3 base tags emit `<think>` blocks
+#     (`qwen3:0.6b` took 149 s on one run for that reason).
+#   - After the first request, check that `/api/ps` reports `size_vram == size` for the
+#     model. If it doesn't, the model has spilled over to the CPU, and that is silent:
+#     nothing errors, it is just slow. Pick a smaller model or quantisation.
 #
 # ## The one coupling that breaks CI if ignored
 #
@@ -53,7 +80,10 @@
 # ## Sizing
 #
 # In `ssh-tunnel` mode the model is held resident once loaded (see `keepAlive`), so pick
-# one that fits the host: a 2-core / 12 GB server wants a 1b-class model; `qwen3:8b` is the laptop default.
+# one that fits the host: a 2-core / 12 GB server wants a 1b-class model; `qwen3:8b` is
+# the choice for a CPU-only laptop. A host with a GPU should instead pick a model that
+# fits its VRAM fully, since spillover to the CPU is silent; see the GPU laptop example
+# above.
 let
   cfg = config.services.ollama.shroom;
 
@@ -80,8 +110,11 @@ in
         — it is weak at both structured output and tool calls, the two things shroom
         leans on hardest. The default above is the CI-server size: the server CI
         tunnels to is 2 cores / 12 GB with no GPU, where an 8B model runs at roughly
-        1-2 tokens/second. A laptop has room for more — set this to `"qwen3:8b"`
-        explicitly for that case.
+        1-2 tokens/second. A CPU-only laptop has room for more — set this to
+        `"qwen3:8b"` explicitly for that case. A laptop with a GPU should instead pick
+        a model that fits its VRAM fully, because spillover to the CPU is silent: for a
+        ~4 GB NVIDIA card, `"qwen3:4b-instruct-2507-q4_K_M"`. See the GPU laptop
+        example at the top of `nix/ollama-shroom.nix`.
 
         This option does not, by itself, make shroom's integration suite ask for this
         model: `OLLAMA_MODEL` in `.github/workflows/ci.yml` still has to be set to the
