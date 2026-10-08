@@ -1,4 +1,4 @@
-{ config, lib, ... }:
+{ config, lib, pkgs, ... }:
 
 # shroom's test Ollama — the three names this module goes by.
 #
@@ -51,7 +51,11 @@
 #   services.ollama.shroom = {
 #     enable = true;
 #     model = "qwen3:4b-instruct-2507-q4_K_M";  # fits a ~4 GB card fully, see below
+#     gpuLayers = 99;                       # all layers on the GPU; see `gpuLayers` and `gpuModel`
 #   };
+#
+# With `gpuLayers` set, run local tests with `OLLAMA_MODEL=qwen3:4b-instruct-2507-q4_K_M-gpu`
+# (`<model>-gpu`, also readable as `config.services.ollama.shroom.gpuModel`).
 #
 #   - `pkgs.ollama-cuda` needs unfree CUDA libraries allowed
 #     (`nixpkgs.config.allowUnfree = true`, or a narrower `allowUnfreePredicate`).
@@ -62,6 +66,8 @@
 #   - After the first request, check that `/api/ps` reports `size_vram == size` for the
 #     model. If it doesn't, the model has spilled over to the CPU, and that is silent:
 #     nothing errors, it is just slow. Pick a smaller model or quantisation.
+#   - Even when the model fits, llama.cpp's fit step keeps a fixed 1024 MiB of VRAM free, so a
+#     small card ends up half-used (30 of 37 layers here). `gpuLayers` overrides that.
 #
 # ## The one coupling that breaks CI if ignored
 #
@@ -155,6 +161,35 @@ in
       '';
     };
 
+    gpuLayers = lib.mkOption {
+      type = lib.types.nullOr lib.types.ints.unsigned;
+      default = null;
+      example = 99;
+      description = ''
+        Number of model layers to put on the GPU (Ollama's `num_gpu`), or `null` to leave
+        Ollama's own choice alone. Ollama's fit step keeps a fixed amount of VRAM free
+        (1024 MiB), so on a small card (~4 GB) it offloads only part of a model that would
+        fit entirely, which makes it several times slower. `99` means "all layers".
+        Only makes sense with a GPU `services.ollama.package` (e.g. `pkgs.ollama-cuda`).
+
+        shroom talks Ollama's OpenAI-compatible API, which cannot pass `num_gpu` per
+        request. So when this is set, a oneshot unit creates an alias model
+        `<model>-gpu` (readable as `gpuModel`) with that `num_gpu` once the base model
+        has been pulled; point `OLLAMA_MODEL` at the alias.
+      '';
+    };
+
+    gpuModel = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      readOnly = true;
+      default = if cfg.gpuLayers == null then null else "${cfg.model}-gpu";
+      defaultText = lib.literalExpression ''if config.services.ollama.shroom.gpuLayers == null then null else "''${config.services.ollama.shroom.model}-gpu"'';
+      description = ''
+        Name of the alias model created when `gpuLayers` is set (`null` otherwise). Set
+        `OLLAMA_MODEL` to this for local runs.
+      '';
+    };
+
     auth.mode = lib.mkOption {
       type = lib.types.enum [ "local" "ssh-tunnel" ];
       default = "local";
@@ -191,6 +226,48 @@ in
       # nixpkgs' own model loader: a systemd unit ordered after ollama.service that
       # pulls each listed model once it's up.
       loadModels = [ cfg.model ];
+    };
+
+    # The alias carrying `num_gpu`. Ordered after nixpkgs' loader, but that unit is
+    # `Type=exec` and keeps pulling after it has started, so the script polls `/api/show`
+    # (bounded) for the base model rather than trusting the ordering. A timeout fails the
+    # unit and `Restart` tries again; `/api/create` overwrites, so re-running is harmless.
+    systemd.services.ollama-shroom-gpu-alias = lib.mkIf (cfg.gpuLayers != null) {
+      description = "Create the ${cfg.gpuModel} alias with num_gpu = ${toString cfg.gpuLayers}";
+      wantedBy = [ "multi-user.target" "ollama.service" ];
+      requires = [ "ollama.service" ];
+      wants = [ "ollama-model-loader.service" ];
+      after = [ "ollama.service" "ollama-model-loader.service" ];
+      bindsTo = [ "ollama.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        DynamicUser = true;
+        Restart = "on-failure";
+        RestartSec = "30s";
+      };
+      script =
+        let
+          curl = lib.getExe pkgs.curl;
+          api = "http://${config.services.ollama.host}:${toString config.services.ollama.port}/api";
+          show = lib.escapeShellArg (builtins.toJSON { model = cfg.model; });
+          create = lib.escapeShellArg (builtins.toJSON {
+            model = cfg.gpuModel;
+            from = cfg.model;
+            parameters.num_gpu = cfg.gpuLayers;
+            stream = false;
+          });
+        in
+        ''
+          for _ in $(seq 60); do
+            if '${curl}' --silent --fail --output /dev/null --data ${show} '${api}/show'; then
+              exec '${curl}' --silent --show-error --fail --data ${create} '${api}/create'
+            fi
+            sleep 5
+          done
+          echo "${cfg.model} still not available after 5 minutes" >&2
+          exit 1
+        '';
     };
 
     users.users = lib.mkIf (cfg.auth.mode == "ssh-tunnel") {
