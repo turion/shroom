@@ -21,29 +21,33 @@ Please always speak like a 1970s British working class person!
 
 # Key dependency patterns
 
-## claude (`^>=1.4.0`) — Anthropic API client
-- Modules: `Claude.V1`, `Claude.V1.Messages`
-- Request: `_CreateMessage { model, messages :: Vector Message, system :: Maybe SystemPrompt, max_tokens, tools, output_config }`
-- System prompt: `systemText :: Text -> SystemPrompt`
-- Structured output: `output_config = Just (jsonSchemaConfig schema)`
-- Tool use: register via `tools = Just (V.fromList toolDefs)`, detect `stop_reason = Just Tool_Use`, extract `ContentBlock_Tool_Use {tool_use_id, name, input}`, reply with `Content_Tool_Result {tool_use_id, content, is_error}`
-- Default model: `"claude-haiku-4-5-20251001"` (NOT `claude-3-5-haiku-20241022` — returns 404)
-
-## ollama-haskell (`^>=0.2`) — Ollama API client
-- Modules: `Data.Ollama.Chat`, `Data.Ollama.Common.Config/Error/SchemaBuilder/Types`
-- Request: `defaultChatOps { modelName, messages :: NonEmpty Message, format = Just fmt, stream = Nothing }`
-- Messages: single flat list; `systemMessage`/`userMessage`/`assistantMessage` constructors; type desc always appended as final user turn
-- Structured output: `Format` supports objects only; scalars/arrays wrapped in `{"result": <val>}` and unwrapped after
-- CRITICAL: Ollama does NOT resolve `$ref` in `format` — always run `inlineSchema` first to flatten all refs
-- Tool support: not implemented (stub)
-
 ## openapi3 (`^>=3.2`) — schema generation
 - `declareSchemaRef` is in `Data.OpenApi`; `runDeclare` is in `Data.OpenApi.Declare`
 - `toJSON (toSchema prx)` alone is NOT enough — omits sub-schemas; use `schemaWithDefs` instead
-- `fixSchemaForAnthropic`: adds `additionalProperties: false`, removes `minimum`/`maximum`/`format`, rewrites `$ref` paths
+- `normalizeSchemaForStructuredOutput` (renamed from `fixSchemaForAnthropic` — it's no longer provider-specific): adds `additionalProperties: false`, rewrites `$ref` paths, folds `minimum`/`maximum` into the field's `description` (removed from the wire, not silently dropped). Leaves string `format` alone — Anthropic enforces it; a local model behind llama.cpp enforces only some formats (`uuid`/`date`/`time`/`date-time`, not `email`/`uri`), per `Control.Monad.Prompt.Schema`'s Haddock
 
-## sop-core (`^>=0.5`) — heterogeneous tool lists
-- Tools registered as `NP ToolHandler '[Tool1, Tool2, ...]`; `hcmap`/`hcollapse`/`K` for traversal
+## sop-core (`^>=0.5`) — tool metadata extraction
+- `toolDefsRaw :: NP ToolHandler '[Tool1, Tool2, ...] -> [ToolDef]` walks a heterogeneous handler list to build the `ToolDef`s a backend registers with the LLM API; `hcmap`/`hcollapse`/`K` for traversal
+- `shroom/test-utils/WebToolReport.hs` uses `sop-core` independently of `toolDefsRaw`, with its own `hcpure`/`hcollapse` traversal over the built-in tool list
+
+## baikai (`baikai`/`baikai-claude`/`baikai-openai` `>=0.7 && <0.8`, `baikai-effectful` `>=0.4 && <0.5`) — transport for `shroom-baikai`
+- Four front-door constructors in `Control.Monad.Prompt.Baikai`: `claudeBackend apiKey`;
+  `anthropicCompatBackend baseUrl modelId apiKey` (key is a plain `Text`, not `Maybe`);
+  `localOllamaBackend modelId` (reads `OLLAMA_HOST` itself, defaults to
+  `http://127.0.0.1:11434`); `openAICompatBackend baseUrl modelId mApiKey` (`Maybe Text` key —
+  `Nothing` for a host that checks no credential at all, e.g. a bare local Ollama or llama.cpp)
+- `baseUrl` takes no trailing `/v1` — `Baikai.Http.canonicalBaseUrl` strips one and the transport
+  appends its own; giving one composes to `/v1/v1/...`
+- No native Ollama provider — `localOllamaBackend` goes through `baikai-openai`'s OpenAI-compatible
+  Chat Completions client instead, since Ollama's own server speaks that wire format
+- `baikaiBackend :: Model -> Options -> Backend m` makes one `complete` call per `runBackendChat`;
+  wrapped in `try @SomeException` so nothing escapes as an IO exception, per `Backend`'s contract
+- `Baikai.Tool.mkTool`'s `parameters` field is an opaque `Value` — `schemaWithDefs`'s already-flat
+  schema passes straight through, no separate inlining needed on this side
+- `baikai-openai` sends the token cap as `max_completion_tokens` by default and Ollama ignores that
+  field (measured: `max_completion_tokens=16` → 991 tokens, `max_tokens=16` → 16). `openAICompatBackend`
+  therefore sets `Model.compat = CompatOpenAICompletions … {maxTokensField = MaxTokensField}` (kept
+  off `api.openai.com`, whose newer models reject `max_tokens`); the offline suite asserts the wire body
 
 # Shell behaviour
 

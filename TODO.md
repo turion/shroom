@@ -1,113 +1,35 @@
 # shroom — planned features
 
-## Simplification: Completely generic schema
+The open backlog now lives in GitHub issues, <https://github.com/turion/shroom/issues>, not in
+this file. What stays here are the records of decisions already taken, which are deliberately not
+issues.
 
-Since the LLM is the only one ever seeing the data in a schema,
-the particular chosen schema doesn't matter.
-We could just require Generic and derive a generic schema and ToJSON/FromJSON instances
-that are always compatible.
+The direction from here, each its own arc: **C** ("shroom becomes a layer" — stop owning
+transports; this is done), then **B** ([#4](https://github.com/turion/shroom/issues/4)), **A**
+([#5](https://github.com/turion/shroom/issues/5)), **D**
+([#6](https://github.com/turion/shroom/issues/6)), then **C3**
+([#7](https://github.com/turion/shroom/issues/7)) well after. See
+`~/.claude/plans/arc-shroom-layer`'s `decisions.md` for how that order was chosen.
 
-## Multimodal inputs
+## Decided against, during "shroom becomes a layer" (2026-10)
 
-Support passing images (and potentially audio) alongside text context.
-Requires extending the `context` / `promptWith` API to accept typed media
-values, and updating backends that support vision (Claude, newer Ollama models).
+Each dropped because `shikumi` and/or `langchain-hs` already ship it, and arriving second at a
+feature they already have is not a strategy:
 
-## Tool use support
+* **Streaming** — token-by-token responses.
+* **Compaction** — trimming or summarising context once it grows too large.
+* **Multimodal inputs/generation** — images or audio alongside text context.
+* **Routing** — a dedicated routing/orchestration layer. `prompt @SumType` plus an ordinary `case`
+  already covers type-level branching, which is a smaller and different claim.
+* **The Louter backend** — depending on `louter` for all transport instead of writing adapters of
+  our own. Rejected: `louter` has been untouched since 2026-05-05, and `shroom-baikai` already
+  reaches Claude, any OpenAI-compatible host and any Anthropic-compatible host without it.
 
-Declare callable tools and let the model choose which to invoke.
-Grace handles this elegantly via sum types + automatic execution; shroom could
-expose a declarative `Tool` abstraction so that tool definitions, schemas, and
-result injection are handled by the library rather than the caller.
+# ScopedProgramT refactor — moved out
 
-## Improve Ollama handling
-
-Maybe it's something about the JSON schema that can be improved
-
-## Nested schemas
-
-## Anthropic API schema
-
-Why do we need to modify so much
-
-## Planning/thinking mode
-
-## Informal properties
-
-* To the Describe class, add `informalProperties :: [Text]` that are properties that we can't easily verify algorithmically, like "The name should be in english".
-* To PromptT, add a constructor `Improve :: Describe a => a -> PromptT m (Maybe a)` that asks the AI whether the properties are fulfilled, and if not suggest an improved version that does fulfill them.
- 
-## Streaming
-
-Support streaming LLM responses token-by-token. Would require extending `LLMBackend`
-with a streaming method variant and threading a callback or conduit through `runPromptT`.
-Both Anthropic and Ollama support streaming. Mainly useful for long-form outputs and
-interactive UX.
-
-## Interactive REPL
-
-An interactive REPL (à la intelli-monad) allowing the user to run `PromptT` programs
-step-by-step, inspect accumulated context, and edit the current prompt in `$EDITOR`
-before sending. Useful for iterative prompt development and debugging without writing
-test files.
-
-## Hook system
-
-Pre/post-call hooks: a `Hook` mechanism allowing users to register side-effectful
-callbacks that fire before and after each LLM call. Useful for logging, metrics,
-rate-limiting, and custom retry logic external to the core framework.
-
-## What features does anthropic and/or ollama have that we're currently not using?
-
-## Compaction
-
-## Backend specific features
-
-Typeclass constraint on the backend possible in the prompt definition.
-E.g. URL images in anthropic
-
-
-## Image/multimodal generation
-
-## Tool use follow up
-
-### OCR tool
-
-Separate cabal package shroom-ocr with bindings to the best ocr library available.
-LLM may call OCR on an image.
-
-### Key value storage tool
-
-* User may store e.g. an image or a longer text or a file in a key value store living on the user side
-* LLM may retrieve, write, rename, delete etc. the key value store
-
-### Local file manipulation tool
-
-
-### Tool example
-
-Implement a "Facts about a celebrity" tool use example.
-The LLM is first instructed to offer a list of 3 celebrities.
-User chooses one of them randomly.
-Next step: LLM should read their wikipedia article and summarize one trivia fact.
-
-
-# Adding structured data to the prompt
-
-# ScopedProgramT refactor
-
-
--- The only difference: spm parameter here
-data Instr spm a where ...
-
-data ScopedProgramT instr m a where
-  Lift, Bind -- as usual
-  
-  -- Shallow effect handler
-  Instr :: instr (ScopedProgramT m) a -> ProgramT instr m a
-
-
-# Louter backend
-
-Might even explore whether we want to completely depend on louter and always use it.
-Simplifies architecture. Does it support ollama?
+Archived as its own repository, `~/haskell/scoped-operational` (2026-09-29): a scoped,
+higher-order-effect variant of `operational`'s `ProgramT`, extracted from this repo's dangling
+`lyotqyrmwvst` head. It existed to give shroom's old hand-rolled program monad (see CHANGELOG for
+its removal) the scoped effects that `effectful` now provides natively, so once this arc moved
+shroom onto `effectful` the experiment had no consumer left. See
+that repository's README for the full story; it is preserved thinking, not maintained to build.

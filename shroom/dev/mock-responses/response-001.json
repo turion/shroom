@@ -1,0 +1,19 @@
+{
+  "speakers": [
+    {
+      "speakerName": { "firstName": "Ada", "lastName": "Lovelace" },
+      "speakerAffiliation": "University of Cambridge",
+      "speakerBio": "Ada Lovelace is widely considered the world's first computer programmer, known for her work on Charles Babbage's Analytical Engine."
+    },
+    {
+      "speakerName": { "firstName": "Haskell", "lastName": "Curry" },
+      "speakerAffiliation": "Penn State University",
+      "speakerBio": "Haskell Curry was a mathematician and logician who made foundational contributions to combinatory logic and lambda calculus."
+    },
+    {
+      "speakerName": { "firstName": "Simon", "lastName": "Peyton Jones" },
+      "speakerAffiliation": "University of Glasgow",
+      "speakerBio": "Simon Peyton Jones is the lead designer of the Haskell programming language and a key contributor to functional programming research."
+    }
+  ]
+}
