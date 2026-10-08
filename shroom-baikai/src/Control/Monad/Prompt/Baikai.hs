@@ -50,6 +50,7 @@ import Effectful (runEff)
 -- baikai
 import Baikai.Api (Api (AnthropicMessages, OpenAIChatCompletions))
 import Baikai.Auth (ApiKeySource (ApiKeyLiteral))
+import Baikai.Compat (MaxTokensField (MaxTokensField), OpenAICompletionsCompat (maxTokensField), autoDetectOpenAICompletions, hostMatchesSuffix, urlHost)
 import Baikai.Content (AssistantContent (AssistantToolCall))
 import Baikai.Content qualified as BContent
 import Baikai.Context (Context (messages, systemPrompt, tools), emptyContext)
@@ -57,7 +58,7 @@ import Baikai.Error (ErrorCategory (ContentFiltered))
 import Baikai.Error qualified as BE
 import Baikai.Message (AssistantPayload (..), Message, assistant, toolResultErrorText, toolResultMessage, toolResultText, user)
 import Baikai.Message qualified as BMessage
-import Baikai.Model (Model (..), mkModel)
+import Baikai.Model (Compat (CompatNone, CompatOpenAICompletions), Model (..), mkModel)
 import Baikai.Options (Options (..), emptyOptions)
 import Baikai.Response (Response (..), flattenAssistantText, responseError)
 import Baikai.ResponseFormat (JsonSchemaFormat (strict), ResponseFormat (JsonSchema), jsonSchemaFormat)
@@ -380,6 +381,14 @@ clearly-a-placeholder defaults (8192 \/ 4096) since neither is knowable
 without knowing which model is actually pulled; override with a record
 update once you do (again, via 'baikaiBackend' directly with your own
 'Model').
+
+The token cap goes out as @max_tokens@, not @max_completion_tokens@:
+@baikai-openai@ sends the latter by default, and Ollama's OpenAI-compatible
+layer ignores it (it documents only @max_tokens@), so the cap would
+protect nothing — a measured request ran to ~7,500 tokens past a
+4096 cap. The host's other auto-detected quirks are kept. The one
+exception is @api.openai.com@ itself, whose o-series and newer models
+reject @max_tokens@ and so keep the default.
 -}
 openAICompatBackend :: (MonadIO m) => Text -> Text -> Maybe Text -> IO (Backend m)
 openAICompatBackend baseUrl modelId mApiKey = do
@@ -388,6 +397,7 @@ openAICompatBackend baseUrl modelId mApiKey = do
         (mkModel OpenAIChatCompletions modelId baseUrl)
           { contextWindow = 8192
           , maxOutputTokens = 4096
+          , compat = legacyMaxTokensCompat baseUrl
           }
       opts =
         emptyOptions
@@ -395,3 +405,16 @@ openAICompatBackend baseUrl modelId mApiKey = do
           , maxTokens = Just 4096
           }
   pure (baikaiBackend model opts)
+
+{- | The 'Compat' 'openAICompatBackend' hands @baikai-openai@: whatever it
+would have auto-detected from the base URL, except that the token cap is
+named @max_tokens@ — see 'openAICompatBackend' for why. Left to
+auto-detection ('CompatNone') for @api.openai.com@, which requires
+@max_completion_tokens@ on its newer models.
+-}
+legacyMaxTokensCompat :: Text -> Compat
+legacyMaxTokensCompat baseUrl
+  | maybe False (`hostMatchesSuffix` "api.openai.com") (urlHost baseUrl) = CompatNone
+  | otherwise =
+      CompatOpenAICompletions
+        (autoDetectOpenAICompletions baseUrl) {maxTokensField = MaxTokensField}

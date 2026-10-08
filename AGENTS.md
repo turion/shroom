@@ -44,6 +44,10 @@ Please always speak like a 1970s British working class person!
   wrapped in `try @SomeException` so nothing escapes as an IO exception, per `Backend`'s contract
 - `Baikai.Tool.mkTool`'s `parameters` field is an opaque `Value` — `schemaWithDefs`'s already-flat
   schema passes straight through, no separate inlining needed on this side
+- `baikai-openai` sends the token cap as `max_completion_tokens` by default and Ollama ignores that
+  field (measured: `max_completion_tokens=16` → 991 tokens, `max_tokens=16` → 16). `openAICompatBackend`
+  therefore sets `Model.compat = CompatOpenAICompletions … {maxTokensField = MaxTokensField}` (kept
+  off `api.openai.com`, whose newer models reject `max_tokens`); the offline suite asserts the wire body
 
 # Shell behaviour
 

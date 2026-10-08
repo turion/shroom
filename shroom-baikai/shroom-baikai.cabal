@@ -127,6 +127,7 @@ test-suite shroom-test-baikai-offline
   hs-source-dirs: test/Offline
   main-is: Main.hs
   build-depends:
+    bytestring >=0.12 && <0.13,
     network ^>=3.2,
     shroom-baikai,
     tasty >=1.4 && <1.6,
