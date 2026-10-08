@@ -123,7 +123,7 @@ toBaikaiMessages (AssistantMessage t) = [assistant t]
 toBaikaiMessages (ToolCallMessage calls) =
   [ BMessage.AssistantMessage
       AssistantPayload
-        { content = V.fromList ((\tc -> AssistantToolCall (toBaikaiToolCall tc)) <$> calls)
+        { content = V.fromList (AssistantToolCall . toBaikaiToolCall <$> calls)
         , usage = zeroUsage
         , stopReason = ToolUse
         , errorMessage = Nothing
