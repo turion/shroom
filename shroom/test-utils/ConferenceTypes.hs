@@ -33,6 +33,7 @@ module ConferenceTypes (
 
 -- base
 import Data.List (nub)
+import Data.Proxy (Proxy (..))
 import GHC.Generics (Generic)
 
 -- text
@@ -179,15 +180,6 @@ instance Surveyable SpeakerName
 
 instance Promptable SpeakerName
 
-$(deriveDescribable ''Speakers)
-
-instance Surveyable Speakers where
-  type Property Speakers = SpeakersProperty
-  describeProperties _ SpeakersBetween3And10 = Just "The list must contain between 3 and 10 speakers (inclusive)."
-  propertyHolds s SpeakersBetween3And10 = let n = length (speakers s) in n >= 3 && n <= 10
-
-instance Promptable Speakers
-
 $(deriveDescribable ''Speaker)
 
 instance Surveyable Speaker where
@@ -200,6 +192,17 @@ instance Surveyable Speaker where
   propertyHolds s SpeakerAffiliationNotEmpty = not (T.null (speakerAffiliation s))
 
 instance Promptable Speaker
+
+$(deriveDescribable ''Speakers)
+
+instance Surveyable Speakers where
+  type Property Speakers = Either SpeakersProperty SpeakerProperty
+  describeProperties _ (Left SpeakersBetween3And10) = Just "The list must contain between 3 and 10 speakers (inclusive)."
+  describeProperties _ (Right p) = describeEvery "Every speaker" (Proxy @Speaker) p
+  propertyHolds s (Left SpeakersBetween3And10) = let n = length (speakers s) in n >= 3 && n <= 10
+  propertyHolds s (Right p) = everyHolds (speakers s) p
+
+instance Promptable Speakers
 
 $(deriveDescribable ''Talk)
 
@@ -224,23 +227,25 @@ instance Promptable Slot
 $(deriveDescribable ''ConferenceSchedule)
 
 instance Surveyable ConferenceSchedule where
-  type Property ConferenceSchedule = ScheduleProperty
-  describeProperties _ ScheduleHasAtLeastOneSlot = Just "The schedule must contain at least one slot."
-  describeProperties _ ScheduleSlotsAreContiguous = Just "Slots must be contiguous: each slot's end time must equal the next slot's start time."
-  describeProperties _ ScheduleEachTalkOccursOnce = Just "Each talk must appear in exactly one slot (no duplicate talks)."
-  describeProperties _ ScheduleStartsAtNine = Just "ZuriHac always starts at 09:00 local time (07:00 UTC in June). The first slot must start then."
-  propertyHolds s ScheduleHasAtLeastOneSlot = not (null (scheduleSlots s))
-  propertyHolds s ScheduleSlotsAreContiguous =
+  type Property ConferenceSchedule = Either ScheduleProperty SlotProperty
+  describeProperties _ (Left ScheduleHasAtLeastOneSlot) = Just "The schedule must contain at least one slot."
+  describeProperties _ (Left ScheduleSlotsAreContiguous) = Just "Slots must be contiguous: each slot's end time must equal the next slot's start time."
+  describeProperties _ (Left ScheduleEachTalkOccursOnce) = Just "Each talk must appear in exactly one slot (no duplicate talks)."
+  describeProperties _ (Left ScheduleStartsAtNine) = Just "ZuriHac always starts at 09:00 local time (07:00 UTC in June). The first slot must start then."
+  describeProperties _ (Right p) = describeEvery "Every slot" (Proxy @Slot) p
+  propertyHolds s (Left ScheduleHasAtLeastOneSlot) = not (null (scheduleSlots s))
+  propertyHolds s (Left ScheduleSlotsAreContiguous) =
     let slots = scheduleSlots s
         pairs = zip slots (drop 1 slots)
      in all (\(a, b) -> slotEnd a == slotStart b) pairs
-  propertyHolds s ScheduleEachTalkOccursOnce =
+  propertyHolds s (Left ScheduleEachTalkOccursOnce) =
     let titles = fmap (talkTitle . slotTalk) (scheduleSlots s)
      in length titles == length (nub titles)
-  propertyHolds s ScheduleStartsAtNine =
+  propertyHolds s (Left ScheduleStartsAtNine) =
     case scheduleSlots s of
       [] -> False
       (first : _) -> utctDayTime (slotStart first) == secondsToDiffTime (7 * 3600)
+  propertyHolds s (Right p) = everyHolds (scheduleSlots s) p
 
 instance Promptable ConferenceSchedule
 

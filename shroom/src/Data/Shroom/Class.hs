@@ -131,6 +131,50 @@ class (Describable a, Universe (Property a)) => Surveyable a where
   examples :: Proxy a -> Set a
   examples _ = S.empty
 
+-- * Lifting element properties into containers
+
+{- | Check that one of an element type's properties holds for every element
+of a container. Use it to lift the element's properties into the container's
+own 'Property' type, as one side of an 'Either':
+
+@
+instance Surveyable Speakers where
+  type Property Speakers = Either SpeakersProperty SpeakerProperty
+  propertyHolds s (Left SpeakersBetween3And10) = ...
+  propertyHolds s (Right p) = everyHolds (speakers s) p
+  describeProperties _ (Left SpeakersBetween3And10) = ...
+  describeProperties _ (Right p) = describeEvery \"Every speaker\" (Proxy \@Speaker) p
+@
+
+Name the element's concrete property type (here @SpeakerProperty@) rather than
+writing @Property Speaker@ in the instance head: GHC rejects the latter without
+@UndecidableInstances@, as a type family application is no smaller than the
+instance's own left-hand side.
+
+'Control.Monad.Prompt.Effect.runPrompt' only checks the properties of the
+top-level value, and 'description' only lists those, so without this lift a
+property of the elements is neither told to the model nor checked.
+This is a hand-written helper; a derivable version is tracked in
+<https://github.com/turion/shroom/issues/18 issue #18>.
+
+Vacuously 'True' for an empty container.
+-}
+everyHolds :: (Foldable f, Surveyable a) => f a -> Property a -> Bool
+everyHolds xs p = all (`propertyHolds` p) xs
+
+{- | Describe an element's property as a property of every element of a
+container, to be used from 'describeProperties' alongside 'everyHolds'.
+The label is joined to the element's own description with a colon, e.g.
+@describeEvery \"Every speaker\"@ turns \"The speaker's last name must not be
+empty.\" into \"Every speaker: The speaker's last name must not be empty.\".
+
+Returns 'Nothing' when the element has no description for the property.
+See 'everyHolds' for the pattern, and
+<https://github.com/turion/shroom/issues/18 issue #18> for the derivable version.
+-}
+describeEvery :: (Surveyable a) => Text -> Proxy a -> Property a -> Maybe Text
+describeEvery label p prop = (\d -> label <> ": " <> d) <$> describeProperties p prop
+
 -- * description helper functions
 
 {- | Render the full prompt fragment for a type: its description, any

@@ -4,10 +4,14 @@ module Main (main) where
 import Control.Monad (void)
 import Data.IORef
 import Data.List (nub)
+import Data.Proxy (Proxy (..))
 
 -- text
 import Data.Text (Text)
 import Data.Text qualified as T
+
+-- time
+import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 
 -- tasty
 import Test.Tasty (defaultMain, testGroup)
@@ -17,6 +21,7 @@ import Test.Tasty.HUnit (testCase, (@?=))
 import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Effect qualified as Effect
 import Control.Monad.Prompt.Tool (runTool, toolBinding)
+import Data.Shroom.Class (description, propertyHolds)
 
 -- test
 import ConferenceTypes
@@ -204,6 +209,45 @@ main =
           -- Retry context should explain the violated property
           assertContains "IMPORTANT" (seen !! 1)
           assertContains "between 3 and 10" (seen !! 1)
+      , testCase "speaker element property: empty last name inside Speakers triggers retry" $ do
+          -- First response has 3 speakers, one with an empty lastName: the
+          -- element property is lifted into Speakers, so it is checked and retried.
+          let emptyLastName =
+                "{\"speakers\":["
+                  <> "{\"speakerName\":{\"firstName\":\"Grace\",\"lastName\":\"Hopper\"},\"speakerAffiliation\":\"Yale University\",\"speakerBio\":\".\"},"
+                  <> "{\"speakerName\":{\"firstName\":\"Alan\",\"lastName\":\"\"},\"speakerAffiliation\":\"University of Manchester\",\"speakerBio\":\".\"},"
+                  <> "{\"speakerName\":{\"firstName\":\"John\",\"lastName\":\"McCarthy\"},\"speakerAffiliation\":\"Stanford University\",\"speakerBio\":\".\"}"
+                  <> "]}"
+          responses <- newIORef [emptyLastName, speakersJson, talk1Json, talk2Json, talk3Json, scheduleJson]
+          seenCtxs <- newIORef ([] :: [Text])
+          let cfg = SeqMockConfig responses seenCtxs
+          result <- Effect.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 2}) conferenceChain
+          case result of
+            Left err -> fail $ "Expected Right but got Left: " <> T.unpack err
+            Right (allSpeakers, _, _) ->
+              not (any (T.null . lastName . speakerName) (speakers allSpeakers)) @?= True
+          seen <- readIORef seenCtxs
+          -- 1 bad speakers + 1 good speakers + 3 talks + 1 schedule = 6 calls
+          length seen @?= 6
+          assertContains "IMPORTANT" (seen !! 1)
+          assertContains "Every speaker: The speaker's last name must not be empty." (seen !! 1)
+      , testCase "Speakers lifts Speaker's properties: an empty lastName violates the Right property" $ do
+          let speaker ln = Speaker (SpeakerName "A" ln) "X" "."
+              ok = Speakers [speaker "B", speaker "C", speaker "D"]
+              bad = Speakers [speaker "B", speaker "", speaker "D"]
+          propertyHolds ok (Right SpeakerLastNameNotEmpty) @?= True
+          propertyHolds bad (Right SpeakerLastNameNotEmpty) @?= False
+          propertyHolds bad (Left SpeakersBetween3And10) @?= True
+      , testCase "description of Speakers mentions the lifted last-name rule" $
+          assertContains "Every speaker: The speaker's last name must not be empty." (description (Proxy @Speakers))
+      , testCase "ConferenceSchedule lifts Slot's properties: a slot ending before it starts is rejected" $ do
+          let t h = UTCTime (fromGregorian 2027 6 11) (secondsToDiffTime (h * 3600))
+              talk = Talk "T" "A" (SpeakerName "A" "B") []
+              good = ConferenceSchedule (t 0) [Slot (t 7) (t 8) talk]
+              bad = ConferenceSchedule (t 0) [Slot (t 8) (t 7) talk]
+          propertyHolds good (Right SlotStartBeforeEnd) @?= True
+          propertyHolds bad (Right SlotStartBeforeEnd) @?= False
+          assertContains "Every slot: The slot's start time must be strictly before its end time." (description (Proxy @ConferenceSchedule))
       , testCase "conferenceChainWithTools: chain runs successfully (mock ignores tools)" $ do
           -- Verify that passing a real tool binding and dispatcher compiles
           -- and produces the correct result even when the backend doesn't invoke tools.
