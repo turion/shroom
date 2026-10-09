@@ -15,6 +15,7 @@ import System.Timeout (timeout)
 
 -- aeson
 import Data.Aeson (FromJSON, ToJSON, Value (..), toJSON)
+import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.Text (encodeToLazyText)
 
 -- text
@@ -254,6 +255,20 @@ instance Describable Metric where describeType _ = "A measurement written out in
 instance Surveyable Metric
 instance Promptable Metric where
   prompt = Eff.withContext "Always prefer metric units." Eff.prompt
+
+{- | A mock 'Backend' that answers from a list in order (repeating the last
+reply once the list runs out, like 'seqMockBackend') and records, for every
+call, the rendered context, the type description and the schema it was sent —
+which 'seqMockBackend' does not keep.
+-}
+recordingBackend :: (MonadIO m) => IORef [Text] -> IORef [(Text, Text, Value)] -> Backend m
+recordingBackend responses seen =
+  Backend $ \ctx typeDesc schema _toolDefs -> liftIO $ do
+    atomicModifyIORef' seen (\xs -> (xs <> [(renderContextItems ctx, typeDesc, schema)], ()))
+    atomicModifyIORef' responses $ \case
+      [] -> ([], Left (BackendTransportError "recordingBackend: no more responses"))
+      [x] -> ([x], Right (BackendAnswer x))
+      (x : rest) -> (rest, Right (BackendAnswer x))
 
 {- | Run an action against a localhost TCP listener that accepts a connection
 and then never reads from it or writes to it. Binds port 0, so the OS picks a
@@ -543,6 +558,108 @@ main =
       , testGroup
           "Prompt effect (effectful)"
           [ testGroup
+              "improve"
+              [ testCase "a fine reply about a valid value yields Nothing, and the request carries the value, the description and a flat verdict schema" $ do
+                  responses <- newIORef (["{\"verdict\":\"fine\"}"] :: [Text])
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.improve (User "Alice" "alice@example.com")
+                  result @?= Right Nothing
+                  calls <- readIORef seen
+                  length calls @?= 1
+                  let (ctxTxt, typeDesc, schema) = calls !! 0
+                  assertContains "\"userName\":\"Alice\"" ctxTxt
+                  assertContains "\"userEmail\":\"alice@example.com\"" ctxTxt
+                  assertContains (description (Proxy @User)) typeDesc
+                  case schema of
+                    Object root -> do
+                      KM.lookup "type" root @?= Just (String "object")
+                      assertBool "no oneOf at the root" (not (KM.member "oneOf" root))
+                      assertBool "no $ref at the root" (not (KM.member "$ref" root))
+                      case KM.lookup "properties" root of
+                        Just (Object props) -> do
+                          assertBool "verdict property" (KM.member "verdict" props)
+                          assertBool "value property" (KM.member "value" props)
+                        other -> assertFailure ("expected a properties object, got " <> show other)
+                    other -> assertFailure ("expected an object schema root, got " <> show other)
+              , testCase "an improved reply yields Just the parsed value" $ do
+                  responses <-
+                    newIORef
+                      (["{\"verdict\":\"improved\",\"value\":{\"userName\":\"Alicia\",\"userEmail\":\"alice@example.com\"}}"] :: [Text])
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.improve (User "Alice" "alice@example.com")
+                  result @?= Right (Just (User "Alicia" "alice@example.com"))
+                  length <$> readIORef seen >>= (@?= 1)
+              , testCase "an improved value violating a property is retried with a correction naming it" $ do
+                  responses <-
+                    newIORef
+                      ( [ "{\"verdict\":\"improved\",\"value\":{\"userName\":\"Alicia\",\"userEmail\":\"\"}}"
+                        , "{\"verdict\":\"improved\",\"value\":{\"userName\":\"Alicia\",\"userEmail\":\"alicia@example.com\"}}"
+                        ] ::
+                          [Text]
+                      )
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.improve (User "Alice" "alice@example.com")
+                  result @?= Right (Just (User "Alicia" "alicia@example.com"))
+                  calls <- readIORef seen
+                  length calls @?= 2
+                  let (ctx1, _, _) = calls !! 1
+                  assertContains "Violated properties:" ctx1
+                  assertContains "The email address is not empty." ctx1
+              , testCase "a fine reply about a violating value is retried until the result satisfies the property" $ do
+                  responses <-
+                    newIORef
+                      ( [ "{\"verdict\":\"fine\"}"
+                        , "{\"verdict\":\"improved\",\"value\":{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}}"
+                        ] ::
+                          [Text]
+                      )
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.improve (User "Alice" "")
+                  result @?= Right (Just (User "Alice" "alice@example.com"))
+                  calls <- readIORef seen
+                  length calls @?= 2
+                  let (ctx0, _, _) = calls !! 0
+                      (ctx1, _, _) = calls !! 1
+                  assertNotContains "Violated properties" ctx0
+                  assertContains "Violated properties:" ctx1
+                  assertContains "The email address is not empty." ctx1
+              , testCase "a fine reply about a violating value is an error once retries run out" $ do
+                  responses <- newIORef (["{\"verdict\":\"fine\"}"] :: [Text])
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 1}) $
+                      Eff.improve (User "Alice" "")
+                  case result of
+                    Left err -> assertContains "The email address is not empty." err
+                    Right r -> assertFailure ("expected a failure, got " <> show r)
+                  length <$> readIORef seen >>= (@?= 2)
+              , testCase "the scoped message is not persisted; the raw reply is" $ do
+                  responses <-
+                    newIORef
+                      (["{\"verdict\":\"fine\"}", "{\"userName\":\"Bob\",\"userEmail\":\"bob@example.com\"}"] :: [Text])
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) defaultPromptConfig $ do
+                      _ <- Eff.improve (User "Alice" "alice@example.com")
+                      Eff.prompt @User
+                  result @?= Right (User "Bob" "bob@example.com")
+                  calls <- readIORef seen
+                  length calls @?= 2
+                  let (ctx0, _, _) = calls !! 0
+                      (ctx1, _, _) = calls !! 1
+                  assertContains "Here is a value of the type described below" ctx0
+                  assertNotContains "Here is a value of the type described below" ctx1
+                  assertContains "[assistant] {\"verdict\":\"fine\"}" ctx1
+              ]
+          , testGroup
               "retry loop"
               [ testCase "validation passes immediately — no retry" $ do
                   responses <- newIORef ["{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}"]

@@ -84,6 +84,15 @@ type.
   numeric `format`) with keywords Anthropic's structured outputs reject with a 400 and
   `normalizeSchemaForStructuredOutput` does not yet strip, so these may fail against Claude until it
   does.
+* **New: `improve :: a -> Eff es (Maybe a)`** in `Control.Monad.Prompt.Effect`, a fourth `Prompt`
+  request (`RequestImprove`) beside `prompt`/`promptWith`/`promptTools`. It shows the model an
+  existing value as JSON and gets back one verdict object, `{"verdict": "fine" | "improved",
+  "value": <a>}`: `Nothing` means the value is valid and the model is content with it, `Just v`
+  is a corrected whole value. An `improved` value that fails to parse or violates a property is
+  re-prompted like any request, and a `fine` verdict about a value that itself violates a property
+  is retried the same way, so `Nothing` is never returned for an invalid value. `improve` is flat:
+  it never calls the type's own `Promptable.prompt`. Informal properties, which only the model can
+  judge, are still #26.
 
 ## 0.1.0.0 -- 2026-05-28
 
