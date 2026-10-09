@@ -1,7 +1,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-{- | Prompt a single-constructor type field by field: @deriving via 'Generically'@.
+{- | Prompt a type field by field, after choosing its constructor if it has
+several: @deriving via 'Generically'@.
 
 @
 data Musician = Musician
@@ -33,11 +34,19 @@ every field type. Only the class method
 'prompt' for @'Generically' a@ builds an @a@ in several requests, all inside one
 snapshot of the context:
 
+0. Only for a type with several constructors: a message tells the model it is
+   about to build a value of @a@, described by 'description', and asks which
+   constructor to build it with. The model is asked for a 'ConstructorChoice', an
+   enum of the constructor names. The reply stays in the context. A type with
+   one constructor skips this step.
 1. A message tells the model it is about to build a value of @a@, described by
-   'description', field by field, and the model is asked for a 'Cue': a short,
+   'description', field by field (after a choice: that it chose this constructor),
+   and the model is asked for a 'Cue': a short,
    specific steer that every field will follow. The reply stays in the context.
+   A constructor without fields skips this step and the next.
 2. For each field in order, a message names the field (a record's field name,
-   otherwise the constructor's name and the field's position), and the field
+   otherwise the constructor's name and the field's position, and for a type with
+   several constructors always the constructor too), and the field
    type's __own__ 'Control.Monad.Prompt.Promptable.prompt' is called. Its
    answer stays in the context, so each field sees the earlier ones. A field type
    whose own @prompt@ scopes its context (and so leaves no answer behind) has its
@@ -55,13 +64,16 @@ snapshot of the context:
    'Control.Monad.Prompt.Promptable.prompt', that is, what it was plus the value.
 
 That is @n + 2@ requests for a record with @n@ fields (cue, fields, improve),
-more for a field that is itself generic, and one more for every retry.
+@n + 3@ for a constructor with @n > 0@ fields of a type with several constructors
+(choice, cue, fields, improve) and 2 for a constructor without fields (choice,
+improve), more for a field that is itself generic, and one more for every retry.
 
 == Which types
 
-A type with exactly one constructor. A type with several constructors is rejected
-at compile time (GHC cannot solve @Code a ~ '[xs]@); choosing a constructor first
-is not implemented yet.
+Every type with 'SOP.Generic' and 'SOP.HasDatatypeInfo' whose every field type is
+'Promptable'. A sum's flat schema, which 'Control.Monad.Prompt.Effect.improve' sends,
+has its @oneOf@ rewritten to @anyOf@ on the wire: see
+'Control.Monad.Prompt.Backend.schemaWithDefs'.
 
 == Orphan instances
 
@@ -69,12 +81,14 @@ This module holds two orphans, each commented where it is defined.
 -}
 module Control.Monad.Prompt.Generic (
   Cue (..),
+  ConstructorChoice,
 ) where
 
 -- base
 import Control.Monad (unless)
 import Data.Maybe (fromMaybe)
 import Data.Proxy (Proxy (..))
+import Data.Typeable (Typeable)
 import Data.Void (Void)
 import GHC.Generics (Generically (..))
 
@@ -84,14 +98,14 @@ import Data.Text qualified as T
 import Data.Text.Lazy (toStrict)
 
 -- aeson
-import Data.Aeson (FromJSON, ToJSON)
+import Data.Aeson (FromJSON (..), ToJSON (..), Value (String), withText)
 import Data.Aeson.Text (encodeToLazyText)
 
 -- openapi3
-import Data.OpenApi (ToSchema (..))
+import Data.OpenApi (NamedSchema (..), OpenApiType (..), Schema (..), ToSchema (..))
 
 -- generics-sop
-import Generics.SOP (All, Code, ConstructorInfo, I (..), NP (..), NS (..), SList (..), SOP (..), constructorInfo, constructorName, datatypeInfo, sList, to)
+import Generics.SOP (All, All2, Code, ConstructorInfo, I (..), K (..), NP (..), NS (..), SList (..), SOP (..), constructorInfo, constructorName, datatypeInfo, datatypeName, sList, to)
 import Generics.SOP qualified as SOP
 
 -- effectful
@@ -108,8 +122,8 @@ import Data.Shroom.Class
 -- * The cue
 
 {- | A short, specific steer that every field of a value under construction
-follows: a tone, a setting, a constraint. The first thing the strategy asks the
-model for.
+follows: a tone, a setting, a constraint. The strategy asks the model for it
+before the first field, once the constructor is known.
 -}
 newtype Cue = Cue Text
   deriving stock (Eq, Show)
@@ -124,17 +138,75 @@ instance Surveyable Cue where
 -- | Flat, like the base types.
 instance Promptable Cue
 
+-- * The constructor choice
+
+{- | The constructor of an @a@ to build, one of the constructors of @a@. The first
+thing the strategy asks the model for when @a@ has several constructors.
+
+On the wire it is a string, one of the constructor names, and nothing else is
+accepted; its schema is a string enum named after @a@, so the choices of two
+sum types do not collide.
+-}
+newtype ConstructorChoice a = ConstructorChoice (NS (K ()) (Code a))
+
+-- | The names of the constructors of @a@, in order.
+constructorNames :: forall a. (SOP.HasDatatypeInfo a) => Proxy a -> [Text]
+constructorNames prx = go (constructorInfo (datatypeInfo prx))
+  where
+    go :: NP ConstructorInfo xss -> [Text]
+    go Nil = []
+    go (c :* cs) = T.pack (constructorName c) : go cs
+
+-- | The name of the chosen constructor.
+choiceName :: NP ConstructorInfo xss -> NS (K ()) xss -> Text
+choiceName (c :* _) (Z _) = T.pack (constructorName c)
+choiceName (_ :* cs) (S choice) = choiceName cs choice
+choiceName Nil choice = case choice of {}
+
+-- | The choice naming a constructor, if there is one of that name.
+choiceFromName :: NP ConstructorInfo xss -> Text -> Maybe (NS (K ()) xss)
+choiceFromName Nil _ = Nothing
+choiceFromName (c :* cs) name
+  | T.pack (constructorName c) == name = Just (Z (K ()))
+  | otherwise = S <$> choiceFromName cs name
+
+instance (SOP.HasDatatypeInfo a) => ToJSON (ConstructorChoice a) where
+  toJSON (ConstructorChoice choice) = String (choiceName (constructorInfo (datatypeInfo (Proxy @a))) choice)
+
+instance (SOP.HasDatatypeInfo a) => FromJSON (ConstructorChoice a) where
+  parseJSON = withText "ConstructorChoice" $ \name ->
+    case choiceFromName (constructorInfo (datatypeInfo (Proxy @a))) name of
+      Just choice -> pure (ConstructorChoice choice)
+      Nothing -> fail ("not the name of a constructor: " <> T.unpack name <> ", expected one of " <> T.unpack (T.intercalate ", " (constructorNames (Proxy @a))))
+
+instance (Typeable a, SOP.HasDatatypeInfo a) => ToSchema (ConstructorChoice a) where
+  declareNamedSchema _ =
+    pure $
+      NamedSchema
+        (Just (T.pack (datatypeName (datatypeInfo (Proxy @a))) <> "Choice"))
+        mempty
+          { _schemaType = Just OpenApiString
+          , _schemaEnum = Just (String <$> constructorNames (Proxy @a))
+          }
+
+instance (SOP.HasDatatypeInfo a, Describable a) => Describable (ConstructorChoice a) where
+  describeType _ =
+    "A choice of which kind of the type described below to build, made by naming one of its constructors, exactly as written.\n"
+      <> describeType (Proxy @a)
+
+instance (SOP.HasDatatypeInfo a, Describable a) => Surveyable (ConstructorChoice a) where
+  type Property (ConstructorChoice a) = Void
+
+-- | Flat, like the 'Cue'.
+instance (Typeable a, SOP.HasDatatypeInfo a, Describable a) => Promptable (ConstructorChoice a)
+
 -- * The strategy
 
-{- | The strategy for a type with one constructor, see the module header. Written
-for @a@ itself; the 'Promptable' instance for 'Generically' wraps it.
-
-The single-constructor restriction is the @Code a ~ '[xs]@ constraint. A sum case
-would add the choice of a constructor in front of 'promptFields', which is
-already written per constructor.
+{- | The strategy, see the module header. Written for @a@ itself; the
+'Promptable' instance for 'Generically' wraps it.
 -}
-promptProduct ::
-  forall a xs es.
+promptGeneric ::
+  forall a es.
   ( Prompt :> es
   , State [ContextItem] :> es
   , Surveyable a
@@ -142,25 +214,79 @@ promptProduct ::
   , FromJSON a
   , SOP.Generic a
   , SOP.HasDatatypeInfo a
-  , Code a ~ '[xs]
-  , All Promptable xs
+  , All2 Promptable (Code a)
   ) =>
   Eff es a
-promptProduct = do
+promptGeneric = do
   (saved :: [ContextItem]) <- get
-  -- Persistent context, not 'withContext': that would drop every answer.
-  addContextItem $
-    UserMessage $
-      "You are about to build a value of the type described below, field by field.\n"
-        <> description (Proxy @a)
-        <> "\nBefore the first field, give one short, specific steer that every field will follow."
-  _cue <- Promptable.prompt @Cue
-  let constructor = singleConstructor (constructorInfo (datatypeInfo (Proxy @a)))
-  fields <- promptFields (fieldLabel constructor) 0
-  let draft = to (SOP (Z fields))
+  let parent = description (Proxy @a)
+      choose = (\(ConstructorChoice choice) -> choice) <$> Promptable.prompt @(ConstructorChoice a)
+  built <- promptConstructors parent choose (constructorInfo (datatypeInfo (Proxy @a)))
+  let draft = to (SOP built)
   final <- fromMaybe draft <$> improve draft
   put (saved <> [AssistantMessage (encodeJson final)])
   pure final
+
+{- | Build the fields of one of the constructors. A single constructor is the
+type itself and needs no choice; with several, the model is first told what is
+being built and asked which constructor (the action @choose@ does the asking), and
+then the fields of that constructor are built. @parent@ is the description of the
+whole type.
+-}
+promptConstructors ::
+  forall xss es.
+  (Prompt :> es, State [ContextItem] :> es, All2 Promptable xss) =>
+  Text ->
+  Eff es (NS (K ()) xss) ->
+  NP ConstructorInfo xss ->
+  Eff es (NS (NP I) xss)
+promptConstructors parent choose constructors = case constructors of
+  constructor :* Nil -> Z <$> promptConstructor parent False constructor
+  _ -> do
+    -- Persistent context, not 'withContext': that would drop every answer.
+    addContextItem $
+      UserMessage $
+        "You are about to build a value of the type described below. First choose which of its constructors to build it with; then its fields are built one by one.\n"
+          <> parent
+    choice <- choose
+    promptChosen parent constructors choice
+
+-- | Build the fields of the chosen one of several constructors.
+promptChosen ::
+  forall xss es.
+  (Prompt :> es, State [ContextItem] :> es, All2 Promptable xss) =>
+  Text ->
+  NP ConstructorInfo xss ->
+  NS (K ()) xss ->
+  Eff es (NS (NP I) xss)
+promptChosen parent (constructor :* _) (Z _) = Z <$> promptConstructor parent True constructor
+promptChosen parent (_ :* constructors) (S choice) = S <$> promptChosen parent constructors choice
+promptChosen _ Nil choice = case choice of {}
+
+{- | The product strategy for one constructor: a message and the 'Cue', then its
+fields. A constructor without fields is built at once. The flag says whether the
+constructor was chosen among several, which the messages then say.
+-}
+promptConstructor ::
+  forall xs es.
+  (Prompt :> es, State [ContextItem] :> es, All Promptable xs) =>
+  Text ->
+  Bool ->
+  ConstructorInfo xs ->
+  Eff es (NP I xs)
+promptConstructor parent chosen constructor = case sList :: SList xs of
+  SNil -> pure Nil
+  SCons -> do
+    addContextItem $
+      UserMessage $
+        if chosen
+          then "You chose the constructor " <> T.pack (constructorName constructor) <> ". Before its first field, give one short, specific steer that every field will follow."
+          else
+            "You are about to build a value of the type described below, field by field.\n"
+              <> parent
+              <> "\nBefore the first field, give one short, specific steer that every field will follow."
+    _cue <- Promptable.prompt @Cue
+    promptFields (fieldLabel chosen constructor) 0
 
 {- | Prompt each field of one constructor in order, each through its own type's
 'Promptable.prompt', after a message naming it. The label function says how to
@@ -193,14 +319,18 @@ endsInAssistantMessage ctx = case reverse ctx of
   AssistantMessage _ : _ -> True
   _ -> False
 
--- | The name of the field at a position: the record field's, else the constructor's and the position.
-fieldLabel :: ConstructorInfo xs -> Int -> Text
-fieldLabel constructor i = case fieldNameAt i constructor of
-  Just name -> "the field " <> name
-  Nothing -> "field " <> T.pack (show (i + 1)) <> " of constructor " <> T.pack (constructorName constructor)
-
-singleConstructor :: NP f '[xs] -> f xs
-singleConstructor (x :* Nil) = x
+{- | The name of the field at a position: the record field's, else the
+constructor's and the position. When the constructor was chosen among several,
+a record field's name is followed by the constructor's as well.
+-}
+fieldLabel :: Bool -> ConstructorInfo xs -> Int -> Text
+fieldLabel chosen constructor i = case fieldNameAt i constructor of
+  Just name
+    | chosen -> "the field " <> name <> " of constructor " <> conName
+    | otherwise -> "the field " <> name
+  Nothing -> "field " <> T.pack (show (i + 1)) <> " of constructor " <> conName
+  where
+    conName = T.pack (constructorName constructor)
 
 encodeJson :: (ToJSON v) => v -> Text
 encodeJson = toStrict . encodeToLazyText
@@ -234,9 +364,8 @@ instance
   , FromJSON (Generically a)
   , SOP.Generic a
   , SOP.HasDatatypeInfo a
-  , Code a ~ '[xs]
-  , All Promptable xs
+  , All2 Promptable (Code a)
   ) =>
   Promptable (Generically a)
   where
-  prompt = Generically <$> promptProduct @a
+  prompt = Generically <$> promptGeneric @a

@@ -103,12 +103,28 @@ type.
   appends the value's JSON as one `AssistantMessage`, as after a flat `prompt`. A record with `n`
   fields costs `n + 2` requests, plus retries and the requests of any generic field. `X` needs
   `SOP.Generic` and `SOP.HasDatatypeInfo` (so `generics-sop` in your `build-depends`) and a
-  `Promptable` instance for every field type; a type with several constructors is rejected at compile
-  time for now. It takes effect through the class method `Promptable.prompt`;
-  `Control.Monad.Prompt.Effect.prompt` stays flat. `Describable`/`Surveyable (Generically a)` are in
+  `Promptable` instance for every field type. It takes effect through the class method
+  `Promptable.prompt`; `Control.Monad.Prompt.Effect.prompt` stays flat.
+  `Describable`/`Surveyable (Generically a)` are in
   `Data.Shroom.Class`; `shroom` carries two orphan instances, `ToSchema (Generically a)` (which
   `openapi3` lacks) and `Promptable (Generically a)` itself, so import `Control.Monad.Prompt` or
   `Control.Monad.Prompt.Generic` for them to apply.
+* **`deriving via Generically X` also builds sum types** (#22): a type with several constructors is
+  prompted by first asking the model which constructor to build, through the new
+  `ConstructorChoice X` (a string enum of the constructor names, described with the constructors'
+  Haddock; its reply stays in the context like the cue's), then running the product strategy on that
+  constructor's fields, with the chosen constructor named in the cue and field messages, then
+  `improve`. A constructor with no fields is assembled at once, without cue or field requests
+  (`improve` still runs), and a single-constructor type skips the choice, so a product costs what
+  it did. A sum with `k` fields in its chosen constructor costs `k + 3` requests (choice, cue,
+  fields, improve), a nullary one 2.
+* **Wire-schema change: `normalizeSchemaForStructuredOutput` rewrites `oneOf` to `anyOf`.**
+  `openapi3` renders every sum type with a non-nullary constructor as `oneOf`, which Anthropic's
+  structured outputs do not list as supported (they list `anyOf` and `allOf`), so such a type could
+  not be prompted flat either. Every schema `shroom` sends now says `anyOf` where it said `oneOf`,
+  including tool parameter schemas (`schemaWithDefs` feeds them too), which is harmless: the
+  alternatives `openapi3` generates are told apart by their tag, so "at least one" and "exactly
+  one" accept the same values.
 
 ## 0.1.0.0 -- 2026-05-28
 

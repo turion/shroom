@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Main (main) where
 
@@ -43,7 +44,7 @@ import Network.Socket (
  )
 
 -- openapi3
-import Data.OpenApi (ToSchema)
+import Data.OpenApi (ToSchema, toSchema)
 
 -- universe-base
 import Data.Universe.Class (Universe)
@@ -65,12 +66,13 @@ import Effectful.Error.Static (Error)
 import Effectful.State.Static.Local (State, get)
 
 -- shroom
-import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..), ContextItem (..), ToolCall (..), ToolDef (..), renderContextItems)
+import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..), ContextItem (..), ToolCall (..), ToolDef (..), renderContextItems, schemaWithDefs)
 import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Effect qualified as Eff
 import Control.Monad.Prompt.Generic ()
 import Control.Monad.Prompt.Promptable (Promptable)
 import Control.Monad.Prompt.Promptable qualified as Promptable
+import Control.Monad.Prompt.TH (deriveDescribable)
 import Control.Monad.Prompt.Tool (Tool, ToolHandler (..), Toolable, runTool, toolBinding, toolDefsRaw, toolName)
 import Control.Monad.Prompt.Tool.Web
 import Data.Shroom.Class (Describable (..), Surveyable (..), description)
@@ -327,6 +329,26 @@ instance Describable Gig where describeType _ = "A gig at a venue."
 instance Surveyable Gig
 deriving via Generically Gig instance Promptable Gig
 
+-- | A treat on offer.
+data Treat
+  = -- | A cake, in a given flavour.
+    Cake
+      { cakeFlavour :: Text
+      -- ^ What the cake tastes of.
+      }
+  | -- | A biscuit, with a kind and a count.
+    Biscuit Text Int
+  | -- | No treat at all.
+    NoTreat
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+-- The constructors' Haddock comes from the splice, so the description is not written by hand.
+$(deriveDescribable ''Treat)
+
+instance Surveyable Treat
+deriving via Generically Treat instance Promptable Treat
+
 {- | A mock 'Backend' that answers from a list in order (repeating the last
 reply once the list runs out, like 'seqMockBackend') and records, for every
 call, the rendered context, the type description and the schema it was sent —
@@ -360,6 +382,10 @@ callCtx calls n = case calls !! n of (ctx, _, _) -> ctx
 -- | The type description of the n-th recorded call.
 callDesc :: [(Text, Text, Value)] -> Int -> Text
 callDesc calls n = case calls !! n of (_, desc, _) -> desc
+
+-- | The schema sent with the n-th recorded call.
+callSchema :: [(Text, Text, Value)] -> Int -> Value
+callSchema calls n = case calls !! n of (_, _, schema) -> schema
 
 {- | Run an action against a localhost TCP listener that accepts a connection
 and then never reads from it or writes to it. Binds port 0, so the OS picks a
@@ -868,6 +894,120 @@ main =
                   -- the venue request sees the finished band as one message, not its parts
                   assertContains "[assistant] {\"bandName\":\"The Quarks\",\"bandSize\":4}" (callCtx calls 5)
                   assertNotContains "quiet" (callCtx calls 5)
+              ]
+          , testGroup
+              "Generically (sums)"
+              [ testCase "a record constructor prompts choice, cue, its fields, improve" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["\"Cake\"", "\"Keep it sweet.\"", "\"lemon\"", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Treat)
+                  result @?= Right (Cake "lemon")
+                  length calls @?= 4
+                  let parent = description (Proxy @Treat)
+                  -- the choice: asked about the type, with the parent in its context
+                  assertContains "which kind of the type described below" (callDesc calls 0)
+                  assertContains parent (callCtx calls 0)
+                  assertContains "First choose which of its constructors" (callCtx calls 0)
+                  -- the cue: names the chosen constructor, sees the choice's reply
+                  assertContains "short, specific steer" (callDesc calls 1)
+                  assertContains "You chose the constructor Cake" (callCtx calls 1)
+                  assertContains "[assistant] \"Cake\"" (callCtx calls 1)
+                  -- the field: names the constructor, sees the cue and the choice
+                  assertContains "A piece of text." (callDesc calls 2)
+                  assertContains "the field cakeFlavour of constructor Cake" (callCtx calls 2)
+                  assertContains "[assistant] \"Cake\"" (callCtx calls 2)
+                  assertContains "[assistant] \"Keep it sweet.\"" (callCtx calls 2)
+                  -- the improve request is about the whole value
+                  assertContains parent (callDesc calls 3)
+                  assertContains "\"cakeFlavour\":\"lemon\"" (callCtx calls 3)
+              , testCase "a positional constructor's fields are named by constructor and position" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["\"Biscuit\"", "\"Be traditional.\"", "\"digestive\"", "12", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Treat)
+                  result @?= Right (Biscuit "digestive" 12)
+                  length calls @?= 5
+                  assertContains "You chose the constructor Biscuit" (callCtx calls 1)
+                  assertContains "field 1 of constructor Biscuit" (callCtx calls 2)
+                  assertContains "field 2 of constructor Biscuit" (callCtx calls 3)
+                  assertContains "[assistant] \"digestive\"" (callCtx calls 3)
+              , testCase "a constructor without fields is assembled without cue or field prompts, then improved" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["\"NoTreat\"", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Treat)
+                  result @?= Right NoTreat
+                  length calls @?= 2
+                  assertContains "[assistant] \"NoTreat\"" (callCtx calls 1)
+                  assertNotContains "Next, produce" (callCtx calls 1)
+                  assertNotContains "short, specific steer" (callCtx calls 1)
+                  assertContains "\"verdict\"" (callDesc calls 1)
+              , testCase "an improved verdict replaces the draft" $ do
+                  (result, calls) <-
+                    runRecording
+                      [ "\"Cake\""
+                      , "\"Keep it sweet.\""
+                      , "\"lemon\""
+                      , "{\"verdict\":\"improved\",\"value\":{\"tag\":\"Cake\",\"cakeFlavour\":\"chocolate\"}}"
+                      ]
+                      2
+                      (Promptable.prompt @Treat)
+                  result @?= Right (Cake "chocolate")
+                  length calls @?= 4
+                  -- the improve request's own schema carries the sum, as anyOf
+                  let improveSchema = TL.toStrict (encodeToLazyText (callSchema calls 3))
+                  assertContains "anyOf" improveSchema
+                  assertNotContains "oneOf" improveSchema
+              , testCase "the constructor choice's schema is an enum of exactly the constructor names, and its description has their Haddock" $ do
+                  (_, calls) <-
+                    runRecording
+                      ["\"NoTreat\"", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Treat)
+                  case callSchema calls 0 of
+                    Object schema -> do
+                      KM.lookup "type" schema @?= Just (String "string")
+                      KM.lookup "enum" schema @?= Just (toJSON (["Cake", "Biscuit", "NoTreat"] :: [Text]))
+                    other -> assertFailure ("expected a schema object, got " <> show other)
+                  assertContains "A treat on offer." (callDesc calls 0)
+                  assertContains "A cake, in a given flavour." (callDesc calls 0)
+                  assertContains "A biscuit, with a kind and a count." (callDesc calls 0)
+                  assertContains "No treat at all." (callDesc calls 0)
+              , testCase "a name that is not a constructor is rejected and retried" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["\"Pancake\"", "\"NoTreat\"", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Treat)
+                  result @?= Right NoTreat
+                  length calls @?= 3
+                  assertContains "not the name of a constructor: Pancake" (callCtx calls 1)
+              , testCase "the caller's context ends as what it was plus one AssistantMessage with the final value's JSON" $ do
+                  (result, _) <-
+                    runRecording
+                      ["\"Cake\"", "\"Keep it sweet.\"", "\"lemon\"", "{\"verdict\":\"fine\"}"]
+                      2
+                      $ do
+                        Eff.context "Hello."
+                        treat <- Promptable.prompt @Treat
+                        (ctx :: [ContextItem]) <- get
+                        pure (treat, ctx)
+                  result
+                    @?= Right
+                      ( Cake "lemon"
+                      , [UserMessage "Hello.", AssistantMessage (TL.toStrict (encodeToLazyText (Cake "lemon")))]
+                      )
+              , testCase "a sum type's wire schema says anyOf where openapi3 says oneOf" $ do
+                  let rendered :: (ToJSON v) => v -> Text
+                      rendered = TL.toStrict . encodeToLazyText
+                  -- the premise: openapi3 itself renders this sum as a oneOf
+                  assertContains "oneOf" (rendered (toSchema (Proxy @Treat)))
+                  assertNotContains "oneOf" (rendered (schemaWithDefs (Proxy @Treat)))
+                  assertContains "anyOf" (rendered (schemaWithDefs (Proxy @Treat)))
               ]
           , testGroup
               "retry loop"
