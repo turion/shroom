@@ -52,6 +52,7 @@ data Person = Person
   -- ^ The person's age in years.
   }
   deriving (Eq, Ord, Show, Generic, ToJSON, ToSchema)
+  deriving anyclass (SOP.Generic, SOP.HasDatatypeInfo)
 
 -- | A contact address that is an email address.
 newtype Email = Email
@@ -74,6 +75,7 @@ data Delivery
   | -- | Do not send the message at all.
     Hold
   deriving (Eq, Ord, Show, Generic, ToJSON, ToSchema)
+  deriving anyclass (SOP.Generic, SOP.HasDatatypeInfo)
 
 -- | A piece of fruit.
 data Fruit
@@ -93,6 +95,7 @@ data Fruit
       }
   | FruitLemon
   deriving (Eq, Ord, Show, Generic, ToJSON, ToSchema)
+  deriving anyclass (SOP.Generic, SOP.HasDatatypeInfo)
 
 $(deriveDescribable ''Person)
 

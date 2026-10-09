@@ -17,6 +17,9 @@ import Data.Aeson (FromJSON, ToJSON)
 -- openapi3
 import Data.OpenApi (ToSchema)
 
+-- generics-sop
+import Generics.SOP qualified as SOP
+
 -- containers
 import Data.Set qualified as S
 
@@ -41,7 +44,7 @@ data User = User
 -- | An integer counter that keeps track of how many times an event has occurred.
 newtype Counter = Counter Int
   deriving stock (Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 -- | A geographic coordinate expressed as a latitude\/longitude pair.
 data Coordinate = Coordinate
@@ -51,6 +54,7 @@ data Coordinate = Coordinate
   -- ^ The longitude in degrees.
   }
   deriving (Generic, ToJSON, FromJSON, ToSchema)
+  deriving anyclass (SOP.Generic, SOP.HasDatatypeInfo)
 
 -- | A property of a user that should hold.
 data UserProperty = UserEmailNotEmpty | UserEmailHasAtSign

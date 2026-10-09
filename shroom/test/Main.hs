@@ -47,6 +47,9 @@ import Data.OpenApi (ToSchema)
 -- sop-core
 import Data.SOP (NP (..))
 
+-- generics-sop
+import Generics.SOP qualified as SOP
+
 -- tasty
 import Test.Tasty (defaultMain, testGroup)
 import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
@@ -186,7 +189,7 @@ data Zblorf = Zblorf
   , zblorfSnorklast :: Text
   }
   deriving stock (Eq, Show, Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 -- | A record containing 'Zblorf' — one named-schema hop further in.
 data Quexnorb = Quexnorb
@@ -194,7 +197,7 @@ data Quexnorb = Quexnorb
   , quexnorbLabel :: Text
   }
   deriving stock (Eq, Show, Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 {- | The actual type under test: an array of 'Quexnorb', itself referencing
 'Zblorf'. This is what 'ConferenceTypes.Speakers' looks like structurally
@@ -204,7 +207,7 @@ live-model integration one.
 -}
 newtype Quexnorbs = Quexnorbs {quexnorbs :: [Quexnorb]}
   deriving stock (Eq, Show, Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 instance Describable Zblorf where describeType _ = "A record with two unguessable-name fields."
 instance Surveyable Zblorf

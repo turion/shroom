@@ -49,6 +49,9 @@ import Data.Aeson (FromJSON, ToJSON)
 -- openapi3
 import Data.OpenApi (ToSchema)
 
+-- generics-sop
+import Generics.SOP qualified as SOP
+
 -- universe-base
 import Data.Universe.Class (Universe)
 
@@ -76,6 +79,7 @@ data SpeakerName = SpeakerName
   -- ^ The person's family name, e.g. "Peyton Jones".
   }
   deriving (Eq, Ord, Show, Generic, ToJSON, FromJSON, ToSchema)
+  deriving anyclass (SOP.Generic, SOP.HasDatatypeInfo)
 
 -- | A speaker at ZuriHac, identified by name, affiliation, and a short bio.
 data Speaker = Speaker
@@ -338,7 +342,7 @@ newtype SpeakerLookup = SpeakerLookup
   -- ^ The full name of the speaker to look up.
   }
   deriving stock (Eq, Show, Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 $(deriveDescribable ''SpeakerLookup)
 
