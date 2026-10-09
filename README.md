@@ -281,21 +281,56 @@ See [TODO.md](TODO.md) for planned features.
 
 ## Installation
 
-Add both packages to your `cabal` file — `shroom` alone can describe a type and build a prompt,
-but reaches no provider at all without an adapter:
+The source holds three packages:
+
+- **`shroom-class`** — describes types: `Describable`, `Surveyable` and `deriveDescribable`
+  (`Data.Shroom.Class`, `Control.Monad.Prompt.TH`). It has no program layer and no LLM client.
+- **`shroom`** — prompts: `Promptable`, the `Prompt` effect and the rest of the program layer. It
+  depends on `shroom-class` and re-exports both of its modules, so a package that depends on
+  `shroom` needs no new import and no new `build-depends` entry.
+- **`shroom-baikai`** — the adapters that reach a provider. `shroom` alone can describe a type and
+  build a prompt, but reaches no provider at all without one.
+
+To prompt, add both of the last two to your `cabal` file:
 
 ```
 build-depends: shroom, shroom-baikai
 ```
 
-Neither is on Hackage yet (see [TODO.md](TODO.md), arc A). For now, point your `cabal.project` at
-the source, which holds both as sibling directories:
+### A package that only describes its types
+
+A package that only describes its types — for example one that is also built for a frontend —
+depends on no shroom package other than `shroom-class`, and so not on `shroom`:
+
+```
+build-depends: shroom-class, aeson, openapi3
+ghc-options: -haddock
+```
+
+Next to the types it holds the `Describable` and `Surveyable` instances
+(`$(deriveDescribable ''T)`; `-haddock` is needed because `deriveDescribable` reads the type's and
+its fields' Haddock comments) **and** the `ToJSON`, `FromJSON` and `ToSchema` instances that
+`Promptable` needs. Those instances come from `aeson` and `openapi3`, so both are listed above.
+`openapi3` costs nothing extra, since it is already in `shroom-class`'s dependency closure, but it
+still has to be listed: cabal hides a package that is only a transitive dependency. A type that
+declares a `Property` for `Surveyable` also needs a `Universe` instance for it, which makes
+`universe-base` a further `build-depends` entry. Then only the one-line `instance Promptable T` has
+to live where `shroom` is a dependency, typically the package that runs the prompts.
+
+### Building from source
+
+None of these is on Hackage yet (see [TODO.md](TODO.md), arc A). For now, point your `cabal.project`
+at the source, which holds them as sibling directories:
 
 ```
 packages:
   path/to/shroom
   path/to/shroom-baikai
+  path/to/shroom-class
 ```
+
+A `cabal.project` that lists `shroom`'s packages by path, or a `source-repository-package` with
+`subdir:`, must list `shroom-class` too.
 
 ## Disclaimer
 

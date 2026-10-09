@@ -10,8 +10,9 @@ Describable          — 'describeType': one sentence from Haddock (auto-derived
     └── Surveyable   — 'Property', 'propertyHolds', 'describeProperties', 'examples' (user-filled)
 @
 
-'Promptable', which builds on 'Surveyable' to render a full prompt, lives on
-the far side of the pure\/effectful boundary — see below.
+@Promptable@, which builds on 'Surveyable' to render a full prompt, lives on
+the far side of the pure\/effectful boundary — in the @shroom@ package, as
+@Control.Monad.Prompt.Promptable@ — see below.
 
 Typical usage:
 
@@ -33,7 +34,9 @@ instance Promptable User  -- from "Control.Monad.Prompt.Promptable"; uses the
 
 == Pure\/effectful boundary
 
-This module is pure: it depends only on @aeson@, @text@, @containers@,
+This module is pure, and the package boundary coincides with that line: it
+lives in @shroom-class@, which has no program layer, while everything effectful
+lives in @shroom@. It depends only on @aeson@, @text@, @containers@,
 @openapi3@ and @universe-base@, and nothing under @Data.Shroom.@ may import
 "Control.Monad.Prompt" or any of its submodules. That is deliberate, not
 incidental — a later arc (shroom-shikumi, "C3") needs exactly this pure half,
