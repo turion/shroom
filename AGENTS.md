@@ -18,6 +18,7 @@ Please always speak like a 1970s British working class person!
 - Assume standard Haskell boot/base packages are available (filepath, directory, etc.) without checking locally. Just add them to cabal deps and proceed.
 - After each finished plan, run `cabal build all --enable-tests`. It should finish without warnings.
 - After each finished plan, run `cabal test` and summarize the test results.
+- The golden files of `shroom-class` (`shroom-class/test/golden/`) are regenerated with `cabal test shroom-class-test --test-options=--accept`; review the diff afterwards.
 
 # Key dependency patterns
 

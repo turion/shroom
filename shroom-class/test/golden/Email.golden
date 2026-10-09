@@ -1,0 +1,11 @@
+
+Produce a value of the following type:
+A contact address that is an email address.
+- emailAddress (string): The email address, which must contain an at sign.
+
+The following properties MUST hold in your response:
+- The email address is not empty.
+- The email address must contain an '@' character.
+Example valid JSON responses:
+{"emailAddress":"ada@example.org"}
+{"emailAddress":"alan@example.com"}

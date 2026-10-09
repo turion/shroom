@@ -1,0 +1,6 @@
+
+Produce a value of the following type:
+A person with a name and an age.
+- personName (string): The person's full name.
+- personAge (integer): The person's age in years.
+

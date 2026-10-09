@@ -15,7 +15,7 @@ maintainer: programming@manuelbaerenz.de
 -- copyright:
 build-type: Simple
 extra-doc-files: CHANGELOG.md
--- extra-source-files:
+extra-source-files: test/golden/*.golden
 tested-with:
   ghc ==9.12
 
@@ -42,3 +42,15 @@ library
 
   hs-source-dirs: src
   default-language: GHC2024
+
+test-suite shroom-class-test
+  import: opts
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Main.hs
+  default-language: GHC2024
+  ghc-options: -haddock
+  build-depends:
+    shroom-class,
+    tasty >=1.4 && <1.6,
+    tasty-golden ^>=2.3,
