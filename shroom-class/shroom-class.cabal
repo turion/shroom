@@ -32,6 +32,7 @@ common opts
     openapi3 ^>=3.2,
     template-haskell >=2.22 && <2.25,
     text >=2.1.2 && <2.2,
+    time ^>=1.14,
     universe-base ^>=1.1,
 
   default-extensions:
@@ -57,3 +58,4 @@ test-suite shroom-class-test
     shroom-class,
     tasty >=1.4 && <1.6,
     tasty-golden ^>=2.3,
+    tasty-hunit ^>=0.10,

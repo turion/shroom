@@ -5,6 +5,7 @@
 module Main (main) where
 
 -- base
+import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (fromMaybe)
 import Data.Proxy (Proxy (..))
 import GHC.Generics (Generic)
@@ -35,6 +36,9 @@ import Test.Tasty (defaultMain, testGroup)
 
 -- tasty-golden
 import Test.Tasty.Golden (goldenVsString)
+
+-- tasty-hunit
+import Test.Tasty.HUnit (assertBool, testCase)
 
 -- shroom-class
 import Control.Monad.Prompt.TH (deriveDescribable)
@@ -223,8 +227,19 @@ main =
           structuralReport
             (Proxy @Parcel)
             [Letter (Email "") (Name "Ada"), Crate (Name ""), Crate (Name "Ada"), Blank]
+      , testGroup
+          "base types"
+          [ contains "Text" (description (Proxy @Text)) "A piece of text."
+          , contains "[Int]" (description (Proxy @[Int])) "A list of values of the following type: A whole number."
+          , contains "NonEmpty Bool" (description (Proxy @(NonEmpty Bool))) "A truth value: true or false."
+          , contains "Maybe Text" (description (Proxy @(Maybe Text))) "A piece of text."
+          , contains "[Maybe Int]" (describeType (Proxy @[Maybe Int])) "A whole number."
+          ]
       ]
   where
+    contains name rendered needle =
+      testCase name $
+        assertBool ("expected " <> show needle <> " in " <> show rendered) (needle `T.isInfixOf` rendered)
     golden name rendered =
       goldenVsString name ("test/golden/" <> name <> ".golden") $
         pure $

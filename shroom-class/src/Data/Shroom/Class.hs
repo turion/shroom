@@ -39,7 +39,7 @@ instance Promptable User  -- from Control.Monad.Prompt.Promptable; uses the
 This module is pure, and the package boundary coincides with that line: it
 lives in @shroom-class@, which has no program layer, while everything effectful
 lives in @shroom@. It depends only on @aeson@, @text@, @containers@,
-@openapi3@, @universe-base@ and @generics-sop@, and nothing under @Data.Shroom.@ may import
+@openapi3@, @universe-base@, @generics-sop@ and @time@, and nothing under @Data.Shroom.@ may import
 @Control.Monad.Prompt@ or any of its submodules. That is deliberate, not
 incidental — a later arc (shroom-shikumi, "C3") needs exactly this pure half,
 with no program layer attached, to feed shikumi's own instruction and
@@ -51,9 +51,11 @@ module Data.Shroom.Class (module Data.Shroom.Class) where
 -- base
 
 import Data.Kind (Type)
+import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (mapMaybe)
 import Data.Proxy (Proxy (..))
 import Data.Void (Void)
+import Numeric.Natural (Natural)
 
 -- containers
 import Data.Set (Set)
@@ -74,6 +76,9 @@ import Data.Text.Lazy.Encoding (decodeUtf8)
 
 -- openapi3
 import Data.OpenApi (ToSchema, toSchema)
+
+-- time
+import Data.Time (Day, UTCTime)
 
 -- universe-base
 import Data.Universe.Class (Universe, universe)
@@ -138,6 +143,114 @@ class (Describable a, Universe (Property a)) => Surveyable a where
   -}
   examples :: Proxy a -> Set a
   examples _ = S.empty
+
+-- * Base types
+
+-- Instances for common base types, so that a type with a field of one of them
+-- can derive its own instances. Each describes the type in a short plain
+-- sentence and has no properties: 'Property' is 'Void', written out explicitly.
+--
+-- They live in this module itself, not a sibling: here they are not orphans,
+-- and modules importing only "Data.Shroom.Class" see them.
+
+instance Describable Text where
+  describeType _ = "A piece of text."
+
+instance Surveyable Text where
+  type Property Text = Void
+
+instance Describable Int where
+  describeType _ = "A whole number."
+
+instance Surveyable Int where
+  type Property Int = Void
+
+instance Describable Integer where
+  describeType _ = "A whole number."
+
+instance Surveyable Integer where
+  type Property Integer = Void
+
+instance Describable Natural where
+  describeType _ = "A non-negative whole number."
+
+instance Surveyable Natural where
+  type Property Natural = Void
+
+instance Describable Double where
+  describeType _ = "A number, possibly with a fractional part."
+
+instance Surveyable Double where
+  type Property Double = Void
+
+instance Describable Float where
+  describeType _ = "A number, possibly with a fractional part."
+
+instance Surveyable Float where
+  type Property Float = Void
+
+instance Describable Bool where
+  describeType _ = "A truth value: true or false."
+
+instance Surveyable Bool where
+  type Property Bool = Void
+
+instance Describable Char where
+  describeType _ = "A single character."
+
+instance Surveyable Char where
+  type Property Char = Void
+
+instance Describable UTCTime where
+  describeType _ = "A point in time, in UTC."
+
+instance Surveyable UTCTime where
+  type Property UTCTime = Void
+
+instance Describable Day where
+  describeType _ = "A calendar date."
+
+instance Surveyable Day where
+  type Property Day = Void
+
+{- | A list, described through its element type.
+
+Does not lift the element's properties: they are neither described nor checked
+for the container. Use 'everyHolds' and 'describeEvery' by hand for now; a
+derivable version is tracked in
+<https://github.com/turion/shroom/issues/18 issue #18>.
+-}
+instance (Describable a) => Describable [a] where
+  describeType _ = "A list of values of the following type: " <> describeType (Proxy @a)
+
+instance (Describable a) => Surveyable [a] where
+  type Property [a] = Void
+
+{- | A non-empty list, described through its element type.
+
+Does not lift the element's properties: they are neither described nor checked
+for the container. Use 'everyHolds' and 'describeEvery' by hand for now; a
+derivable version is tracked in
+<https://github.com/turion/shroom/issues/18 issue #18>.
+-}
+instance (Describable a) => Describable (NonEmpty a) where
+  describeType _ = "A non-empty list of values of the following type: " <> describeType (Proxy @a)
+
+instance (Describable a) => Surveyable (NonEmpty a) where
+  type Property (NonEmpty a) = Void
+
+{- | An optional value, described through its element type.
+
+Does not lift the element's properties: they are neither described nor checked
+for the container. Use 'everyHolds' and 'describeEvery' by hand for now; a
+derivable version is tracked in
+<https://github.com/turion/shroom/issues/18 issue #18>.
+-}
+instance (Describable a) => Describable (Maybe a) where
+  describeType _ = "A value that may be absent (null), and otherwise of the following type: " <> describeType (Proxy @a)
+
+instance (Describable a) => Surveyable (Maybe a) where
+  type Property (Maybe a) = Void
 
 -- * Lifting element properties into containers
 
