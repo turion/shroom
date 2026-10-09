@@ -20,7 +20,8 @@ type.
   `State`, scoping is `local`-style, failure is `Error Text`, and a chain runs end to end via
   `runPromptResultEff` against a `Backend` value.
   - `Promptable`'s single method changed from `promptDescription :: Proxy a -> Text` to
-    `prompt :: (Prompt :> es) => Eff es a` — an instance now writes a program, not a text renderer.
+    `prompt :: (Prompt :> es, State [ContextItem] :> es) => Eff es a` — an instance now writes a
+    program, not a text renderer (see the breaking note on the `State` constraint below).
   - **Behaviour change: `<*>` is no longer concurrent.** Two independent `prompt` calls combined
     with `<*>` now run sequentially, like any other `Applicative`. The old `PromptT` ran `<*>`
     through `unliftio`'s `concurrently` implicitly; nothing in `effectful` does that on its own,
@@ -68,6 +69,21 @@ type.
   `build-depends`) or the one-line opt-out `type Property X = Void`, and a custom `Property` must now
   write both `propertyHolds` and `describeProperties`. `shroom-class`'s changelog has the migration
   note, the compile error to search for, and what container fields do (nothing yet).
+* **Breaking: `Promptable`'s method `prompt` now also needs `State [ContextItem] :> es`**, so an
+  override can scope context with `withContext` around the default request. This breaks more than
+  overrides: any polymorphic user function `(Prompt :> es) => … ` that calls the class method
+  `prompt` (not `Control.Monad.Prompt.Effect.prompt`, which is unchanged) must now also require
+  `State [ContextItem] :> es` (`State` from `Effectful.State.Static.Local`, `ContextItem` from
+  `Control.Monad.Prompt.Backend`). A chain that already calls `context` has that constraint
+  anyway, and `runPromptResultEff` supplies it, so a concrete program is unaffected.
+* **New: base-type `Promptable` instances.** `Text`, `Int`, `Integer`, `Natural`, `Double`, `Float`,
+  `Bool`, `Char`, `UTCTime`, `Day`, `[a]`, `NonEmpty a` and `Maybe a` are now `Promptable` with the
+  default flat strategy, matching the `Surveyable` instances `Data.Shroom.Class` already gives them,
+  so a bare value or a field of one of them can be prompted. Caveat: `openapi3` renders `Char`
+  (`minLength`/`maxLength`), `Natural` (`exclusiveMinimum`) and, unconfirmed, `Double`/`Float` (a
+  numeric `format`) with keywords Anthropic's structured outputs reject with a 400 and
+  `normalizeSchemaForStructuredOutput` does not yet strip, so these may fail against Claude until it
+  does.
 
 ## 0.1.0.0 -- 2026-05-28
 

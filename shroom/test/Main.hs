@@ -65,6 +65,7 @@ import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendRep
 import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Effect qualified as Eff
 import Control.Monad.Prompt.Promptable (Promptable)
+import Control.Monad.Prompt.Promptable qualified as Promptable
 import Control.Monad.Prompt.Tool (Tool, ToolHandler (..), Toolable, runTool, toolBinding, toolDefsRaw, toolName)
 import Control.Monad.Prompt.Tool.Web
 import Data.Shroom.Class (Describable (..), Surveyable (..), description)
@@ -238,6 +239,21 @@ data Guest = Guest
 instance Describable Guest where describeType _ = "A guest with a label and a registered user."
 instance Surveyable Guest
 instance Promptable Guest
+
+-- * An override that scopes context
+
+{- | A value whose 'Promptable' instance overrides 'prompt' to scope a piece of
+context around the default request, which the class method's @State
+[ContextItem]@ constraint makes possible.
+-}
+newtype Metric = Metric {metricText :: Text}
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Metric where describeType _ = "A measurement written out in text."
+instance Surveyable Metric
+instance Promptable Metric where
+  prompt = Eff.withContext "Always prefer metric units." Eff.prompt
 
 {- | Run an action against a localhost TCP listener that accepts a connection
 and then never reads from it or writes to it. Binds port 0, so the OS picks a
@@ -583,6 +599,35 @@ main =
                   assertNotContains "Violated properties" (seen !! 0)
                   assertContains "Violated properties:" (seen !! 1)
                   assertContains "- Field guestUser: The email address is not empty." (seen !! 1)
+              , testCase "the class method prompts a bare Text and a [Int]" $ do
+                  textResponses <- newIORef ["\"hello\""]
+                  textSeen <- newIORef ([] :: [Text])
+                  textResult <-
+                    Eff.runPromptResultEff (seqMockBackend (SeqMockConfig textResponses textSeen)) (defaultPromptConfig {maxRetries = 0}) $
+                      Promptable.prompt @Text
+                  textResult @?= Right "hello"
+                  length <$> readIORef textSeen >>= (@?= 1)
+                  intsResponses <- newIORef ["[1,2,3]"]
+                  intsSeen <- newIORef ([] :: [Text])
+                  intsResult <-
+                    Eff.runPromptResultEff (seqMockBackend (SeqMockConfig intsResponses intsSeen)) (defaultPromptConfig {maxRetries = 0}) $
+                      Promptable.prompt @[Int]
+                  intsResult @?= Right [1, 2, 3 :: Int]
+                  length <$> readIORef intsSeen >>= (@?= 1)
+              , testCase "a prompt override scopes its context to its own request" $ do
+                  responses <- newIORef ["{\"metricText\":\"3 km\"}", "{\"metricText\":\"4 km\"}"]
+                  seenContexts <- newIORef ([] :: [Text])
+                  let cfg = SeqMockConfig responses seenContexts
+                  result <-
+                    Eff.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 0}) $ do
+                      m <- Promptable.prompt @Metric
+                      _ <- Eff.prompt @Metric
+                      pure m
+                  result @?= Right (Metric "3 km")
+                  seen <- readIORef seenContexts
+                  length seen @?= 2
+                  assertContains "Always prefer metric units." (seen !! 0)
+                  assertNotContains "Always prefer metric units." (seen !! 1)
               , testCase "JSON decode error triggers retry — distinct wording from a property violation" $ do
                   responses <-
                     newIORef

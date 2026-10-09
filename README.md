@@ -116,7 +116,8 @@ Describable          — describeType: one sentence (auto-derived from Haddock)
     `Either MyProperty (Structural MyType)`, see `Data.Shroom.Class`
   - `examples` — sample values to include in the prompt
 
-- **`Promptable`** — a single method, `prompt :: (Prompt :> es) => Eff es a`,
+- **`Promptable`** — a single method,
+  `prompt :: (Prompt :> es, State [ContextItem] :> es) => Eff es a`,
   the `effectful` program that requests a value of the type from the LLM.
   The default sends `Control.Monad.Prompt.Effect`'s `RequestPrompt`, which
   renders the prompt from the type's description, properties and examples,
