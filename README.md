@@ -125,6 +125,23 @@ Describable          — describeType: one sentence (auto-derived from Haddock)
   is the normal case; override `prompt` to add type-specific context,
   fallback logic, or any other custom program.
 
+## Prompting a type part by part
+
+`instance Promptable MyType` asks for the whole value in one request. For a record or sum whose
+parts must cohere, derive the instance via `Generically` instead:
+
+```haskell
+deriving via Generically Musician instance Promptable Musician
+```
+
+`prompt` then builds a `Musician` field by field (for a sum, it first asks which constructor),
+steered by a short cue and finished by an `improve` pass, each field through its own type's
+`Promptable`. It needs `SOP.Generic` and `SOP.HasDatatypeInfo` for the type (and `generics-sop` in
+your `build-depends`), and takes effect only through the class method `Promptable.prompt`, not
+`Control.Monad.Prompt.Effect.prompt`. Derive the leaves flat and `Generically` only the composites.
+The module Haddock of `Control.Monad.Prompt.Generic` is the guide: what each call does, what it
+costs, how containers and recursive types behave.
+
 ## Prompt chaining
 
 `Eff` is a monad, so you can chain multiple prompts together. Each call to

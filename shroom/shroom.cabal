@@ -115,6 +115,7 @@ library test-utils
   exposed-modules:
     CelebrityTypes
     ConferenceTypes
+    GenericTypes
     TestUtils
     Types
     WebToolReport

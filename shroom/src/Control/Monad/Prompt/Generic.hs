@@ -1,14 +1,35 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-{- | Prompt a type field by field, after choosing its constructor if it has
-several: @deriving via 'Generically'@.
+{- | Prompt a type part by part, after choosing its constructor if it has
+several: @deriving via 'Generically'@. This module is the user's guide.
+
+== Opting in
+
+Three lines of setup, next to the instances you write anyway. In your @.cabal@
+file, @generics-sop@ among the @build-depends@ (next to @shroom@):
 
 @
+build-depends: shroom, generics-sop
+@
+
+and in the module (it needs @DerivingVia@, @StandaloneDeriving@, @DeriveAnyClass@,
+@DeriveGeneric@ and, for 'Control.Monad.Prompt.TH.deriveDescribable',
+@TemplateHaskell@):
+
+@
+import Generics.SOP qualified as SOP
+@
+
+Then a record, with a flat leaf type for each of its parts:
+
+@
+-- | A musician.
 data Musician = Musician
-  { name :: Text
-  , instrument :: Text
-  , bio :: Text
+  { name :: Name
+  -- ^ The musician's full name.
+  , city :: City
+  -- ^ The city the musician is from.
   }
   deriving stock (Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
@@ -18,33 +39,55 @@ data Musician = Musician
 instance Surveyable Musician
 
 deriving via Generically Musician instance Promptable Musician
+
+-- | The full name of a person.
+newtype Name = Name Text
+  deriving stock (Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+\$(deriveDescribable ''Name)
+
+instance Surveyable Name   -- or a custom Property, e.g. \"not empty\"
+
+instance Promptable Name   -- flat: one request
 @
 
-The type needs the same instances as for a flat 'Promptable' ('Surveyable',
-'ToSchema', 'FromJSON'), and besides them the @generics-sop@ classes
-@SOP.Generic@ and @SOP.HasDatatypeInfo@ (derivable with @deriving anyclass@, with
-@generics-sop@ among your @build-depends@), and a 'Promptable' instance for
-every field type. Only the class method
-'Control.Monad.Prompt.Promptable.prompt' takes the strategy: the flat
-'Control.Monad.Prompt.Effect.prompt' is unchanged, and so is
-'Control.Monad.Prompt.Effect.improve'.
+A sum is derived the same way: @data Fruit = FruitApple Apple | FruitBanana
+Banana@ with @deriving via Generically Fruit instance Promptable Fruit@ first
+asks for the constructor, then builds that constructor's fields.
 
-== The strategy
+The type needs the same instances as for a flat 'Promptable' ('Surveyable',
+'ToSchema', 'FromJSON'), besides them the @generics-sop@ classes @SOP.Generic@
+and @SOP.HasDatatypeInfo@ (derivable with @deriving anyclass@), and a
+'Promptable' instance for every field type.
+
+== Only the class method takes the strategy
+
+@deriving via Generically@ takes effect only through the class method
+'Control.Monad.Prompt.Promptable.prompt' (and so through any 'Promptable'
+instance that calls it, such as a field's). The flat
+'Control.Monad.Prompt.Effect.prompt' stays flat: it sends one request for the
+whole value, never calls the type's own @prompt@, and so never runs the strategy;
+'Control.Monad.Prompt.Effect.improve' is flat as well. A program that means to use
+the strategy must call @Promptable.prompt \@Musician@, qualified as in
+@import Control.Monad.Prompt.Promptable qualified as Promptable@.
+
+== The strategy, call by call
 
 'prompt' for @'Generically' a@ builds an @a@ in several requests, all inside one
 snapshot of the context:
 
-0. Only for a type with several constructors: a message tells the model it is
+1. Only for a type with several constructors: a message tells the model it is
    about to build a value of @a@, described by 'description', and asks which
    constructor to build it with. The model is asked for a 'ConstructorChoice', an
    enum of the constructor names. The reply stays in the context. A type with
    one constructor skips this step.
-1. A message tells the model it is about to build a value of @a@, described by
+2. A message tells the model it is about to build a value of @a@, described by
    'description', field by field (after a choice: that it chose this constructor),
    and the model is asked for a 'Cue': a short,
    specific steer that every field will follow. The reply stays in the context.
    A constructor without fields skips this step and the next.
-2. For each field in order, a message names the field (a record's field name,
+3. For each field in order, a message names the field (a record's field name,
    otherwise the constructor's name and the field's position, and for a type with
    several constructors always the constructor too), and the field
    type's __own__ 'Control.Monad.Prompt.Promptable.prompt' is called. Its
@@ -54,19 +97,55 @@ snapshot of the context:
    end in an 'AssistantMessage'. The strategy cannot tell whether a trailing
    'AssistantMessage' is really that field's answer, so an override that drops
    its answer yet appends some other 'AssistantMessage' last goes unnoticed.
-3. The fields are assembled into an @a@, a /draft/.
-4. The draft goes through 'Control.Monad.Prompt.Effect.improve', unconditionally. A
-   @fine@ verdict keeps the draft, an @improved@ one replaces it. A draft that
-   violates a property of @a@ is never kept on a @fine@ verdict: 'improve' retries
-   that.
-5. The context is restored to the snapshot, and one 'AssistantMessage' holding the
+4. The fields are assembled into an @a@, a /draft/.
+5. The draft goes through 'Control.Monad.Prompt.Effect.improve', unconditionally. A
+   @fine@ verdict keeps the draft, an @improved@ one replaces it.
+6. The context is restored to the snapshot, and one 'AssistantMessage' holding the
    final value's JSON is appended: the caller's context ends as after a flat
    'Control.Monad.Prompt.Promptable.prompt', that is, what it was plus the value.
 
-That is @n + 2@ requests for a record with @n@ fields (cue, fields, improve),
-@n + 3@ for a constructor with @n > 0@ fields of a type with several constructors
-(choice, cue, fields, improve) and 2 for a constructor without fields (choice,
-improve), more for a field that is itself generic, and one more for every retry.
+The /cue/ is there so that fields asked for one by one still read as one value:
+a tone or a setting that the first field's request would otherwise leave to
+chance, and the later ones inherit. 'improve' is there to catch what a
+field-by-field build cannot see: a pair of fields that do not fit together. It is
+checked against the type's own 'Property', the one 'Surveyable' gives it: the
+structural one (the properties of the fields) by default, and only the custom
+one if the type replaced it (see the @Either … ('Structural' X)@ pattern in
+'Surveyable'). A draft that violates a property is never kept on a @fine@ verdict:
+'improve' retries that.
+
+== Cost
+
+Per generic node: one choice (sums only), one cue, one request per field
+(recursively, for a field that is itself generic) and one 'improve'. That is
+@n + 2@ requests for a record with @n@ fields (cue, fields, improve), @n + 3@
+for a constructor with @n > 0@ fields of a type with several constructors (choice,
+cue, fields, improve) and 2 for a constructor without fields (choice, improve);
+and one more for every retry. Flat leaves cost one request each. So the example
+@Musician@ costs 4 requests, and a @Fruit@ 4 (choice, cue, the one field,
+improve), where a flat 'Control.Monad.Prompt.Effect.prompt' costs 1.
+
+== Leaves flat, composites generic
+
+Derive leaves and newtypes (@Name@, @City@, a unit-carrying @Double@) flat, with
+a bare @instance Promptable@: asking for them part by part would pay a cue and an
+@improve@ for one scalar. Reach for @Generically@ for the records and sums whose
+parts must cohere, such as a musician and the city they are from, or a fruit and
+its measurements, where the cue and the earlier fields steer the later ones.
+
+== Containers are prompted whole
+
+A field of type @[a]@, @'NonEmpty' a@ or @'Maybe' a@ is prompted whole, in one
+request for the container (issue #24), through its flat 'Promptable' instance;
+the strategy does not go element by element. The properties of the elements are
+therefore not checked, nor told to the model, as for any container field (issue
+#18, see "Data.Shroom.Class").
+
+== Recursive types fail against Claude
+
+Anthropic's structured outputs do not support recursive schemas. A type that
+mentions itself (a tree whose children are trees, say) therefore fails against
+Claude, in the generic strategy as in a flat request, which sends the same schema.
 
 == Which types
 

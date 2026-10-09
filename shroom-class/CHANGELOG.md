@@ -44,6 +44,8 @@
   `Describable`/`Surveyable` instances for `Text`, `Int`, `Integer`, `Natural`, `Double`, `Float`,
   `Bool`, `Char`, `UTCTime`, `Day`, `[a]`, `NonEmpty a` and `Maybe a`, so these can be fields of a
   surveyed type; `deriveDescribable` now describes a sum type's constructors.
+* New: `Describable` and `Surveyable` instances for `GHC.Generics.Generically a` (forwarding to `a`),
+  the superclass instances that `deriving via Generically X instance Promptable X` needs in `shroom`.
 * New dependencies: `generics-sop ^>=0.5.1` and `time ^>=1.14`.
 
 ## 0.1.0.0
