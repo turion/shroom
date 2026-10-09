@@ -19,6 +19,7 @@
       projectName = "shroom";
       localPackages = {
         shroom = ./shroom;
+        shroom-class = ./shroom-class;
         shroom-baikai = ./shroom-baikai;
       };
 

@@ -31,7 +31,9 @@ instance Promptable MyType
 
 == Pure\/effectful boundary
 
-This module is the effectful side of the line drawn against "Data.Shroom.Class":
+This module is the effectful side of the line drawn against "Data.Shroom.Class",
+and the package boundary coincides with it: "Data.Shroom.Class" lives in
+@shroom-class@, this module in @shroom@.
 'Promptable'\'s method is an 'Eff' program requiring the 'Prompt' effect, so
 anything that names 'Promptable' or 'DescriptionPrompt' depends on the
 program layer and must live under "Control.Monad.Prompt", never under

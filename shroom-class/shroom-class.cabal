@@ -1,0 +1,58 @@
+cabal-version: 3.0
+name: shroom-class
+version: 0.1.0.0
+synopsis: Type-description classes and Template Haskell for shroom
+description:
+  shroom-class holds shroom's type-description classes
+  ('Data.Shroom.Class.Describable' and 'Data.Shroom.Class.Surveyable') and
+  the Template Haskell that derives them from Haddock comments, without the
+  prompting runtime: it depends on no HTTP client and no effect system.
+
+license: BSD-3-Clause
+license-file: LICENSE
+author: Manuel Bärenz
+maintainer: programming@manuelbaerenz.de
+-- copyright:
+build-type: Simple
+extra-doc-files: CHANGELOG.md
+extra-source-files: test/golden/*.golden
+tested-with:
+  ghc ==9.12
+
+common opts
+  ghc-options:
+    -Wall
+    -haddock
+
+  build-depends:
+    aeson ^>=2.2,
+    base >=4.20 && <4.22,
+    containers >=0.6 && <0.8,
+    openapi3 ^>=3.2,
+    template-haskell >=2.22 && <2.25,
+    text >=2.1.2 && <2.2,
+    universe-base ^>=1.1,
+
+  default-extensions:
+    OverloadedStrings
+    TypeFamilies
+
+library
+  import: opts
+  exposed-modules:
+    Control.Monad.Prompt.TH
+    Data.Shroom.Class
+
+  hs-source-dirs: src
+  default-language: GHC2024
+
+test-suite shroom-class-test
+  import: opts
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Main.hs
+  default-language: GHC2024
+  build-depends:
+    shroom-class,
+    tasty >=1.4 && <1.6,
+    tasty-golden ^>=2.3,

@@ -56,6 +56,12 @@ type.
 * **Dependency changes**: `shroom` drops `claude`, `ollama-haskell`, `mtl` and `transformers`, and
   adds `effectful ^>=2.7`. `shroom-baikai` is new and depends on `baikai`, `baikai-claude` and
   `baikai-openai` (`>=0.7 && <0.8`) plus `baikai-effectful` (`>=0.4 && <0.5`).
+* **`shroom-class` split out**: `Data.Shroom.Class` (`Describable`, `Surveyable` and their helpers)
+  and `Control.Monad.Prompt.TH` (`deriveDescribable`) now live in the new `shroom-class` package,
+  under the same module names, and `shroom` re-exports both. Imports and `build-depends` that go
+  through `shroom` are unchanged. A `cabal.project` that lists shroom's packages by path, or a
+  `source-repository-package` with `subdir:`, must now also list `shroom-class`. `shroom`'s `text`
+  lower bound is now 2.1.2.
 
 ## 0.1.0.0 -- 2026-05-28
 
