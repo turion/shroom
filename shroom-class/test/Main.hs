@@ -38,7 +38,7 @@ import Test.Tasty (defaultMain, testGroup)
 import Test.Tasty.Golden (goldenVsString)
 
 -- tasty-hunit
-import Test.Tasty.HUnit (assertBool, testCase)
+import Test.Tasty.HUnit (assertBool, testCase, (@?=))
 
 -- shroom-class
 import Control.Monad.Prompt.TH (deriveDescribable)
@@ -122,7 +122,7 @@ instance Surveyable Fruit
 -- | A name.
 newtype Name = Name Text
   deriving stock (Eq, Ord, Show, Generic)
-  deriving anyclass (ToJSON)
+  deriving anyclass (ToJSON, ToSchema)
 
 -- | A property of a 'Name' that should hold; the second one is informal and undescribed.
 data NameProperty = NameNotEmpty | NameIsReal
@@ -138,7 +138,7 @@ instance Surveyable Name where
   describeProperties _ NameNotEmpty = Just "The name must not be empty."
   describeProperties _ NameIsReal = Nothing
 
--- | A hand-written product, surveyed structurally.
+-- | A hand-written product, surveyed structurally by the default.
 data Contact = Contact
   { contactName :: Name
   , contactEmail :: Email
@@ -149,12 +149,9 @@ data Contact = Contact
 instance Describable Contact where
   describeType _ = "A contact."
 
-instance Surveyable Contact where
-  type Property Contact = Structural Contact
-  propertyHolds = structuralHolds
-  describeProperties = describeStructural
+instance Surveyable Contact
 
--- | A hand-written product with positional fields.
+-- | A hand-written product with positional fields, surveyed with the structural property written out by hand.
 data Pair = Pair Name Email
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON, SOP.Generic, SOP.HasDatatypeInfo)
@@ -185,6 +182,28 @@ instance Surveyable Parcel where
   type Property Parcel = Structural Parcel
   propertyHolds = structuralHolds
   describeProperties = describeStructural
+
+-- | A registration, which combines a property of its own with those of its fields.
+data Registration = Registration
+  { registrationName :: Name
+  , registrationEmail :: Email
+  }
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+-- | A property of a whole 'Registration' that should hold.
+data RegistrationProperty = RegistrationEmailMentionsName
+  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+
+instance Describable Registration where
+  describeType _ = "A registration."
+
+instance Surveyable Registration where
+  type Property Registration = Either RegistrationProperty (Structural Registration)
+  propertyHolds (Registration (Name n) (Email e)) (Left RegistrationEmailMentionsName) = T.toLower n `T.isInfixOf` T.toLower e
+  propertyHolds r (Right p) = structuralHolds r p
+  describeProperties _ (Left RegistrationEmailMentionsName) = Just "The email address must contain the registrant's name."
+  describeProperties px (Right p) = describeStructural px p
 
 {- | Every structural property of a type, with its description, and for each
 given value whether each property holds.
@@ -238,8 +257,20 @@ main =
           , contains "Maybe Text" (description (Proxy @(Maybe Text))) "A piece of text."
           , contains "[Maybe Int]" (describeType (Proxy @[Maybe Int])) "A whole number."
           ]
+      , testGroup
+          "custom property combined with the structural one"
+          [ contains "own property" (description (Proxy @Registration)) "The email address must contain the registrant's name."
+          , contains "name field property" (description (Proxy @Registration)) "Field registrationName: The name must not be empty."
+          , contains "email field property" (description (Proxy @Registration)) "Field registrationEmail: The email address is not empty."
+          , violations "a valid value violates nothing" 0 (Registration (Name "Ada") (Email "ada@example.org"))
+          , violations "an own property violation is found" 1 (Registration (Name "Ada") (Email "bob@example.org"))
+          , violations "a field property violation is found" 1 (Registration (Name "") (Email "ada@example.org"))
+          ]
       ]
   where
+    violations name expected v =
+      testCase name $
+        length (filter (not . propertyHolds v) (universe @(Property Registration))) @?= expected
     contains name rendered needle =
       testCase name $
         assertBool ("expected " <> show needle <> " in " <> show rendered) (needle `T.isInfixOf` rendered)

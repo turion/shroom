@@ -97,7 +97,7 @@ shroom uses three typeclasses that form a hierarchy:
 
 ```
 Describable          — describeType: one sentence (auto-derived from Haddock)
-    └── Surveyable   — Property, propertyHolds, describeProperties, examples (user-filled)
+    └── Surveyable   — Property, propertyHolds, describeProperties, examples (by default the fields' properties)
             └── Promptable (+ ToSchema, FromJSON)  — prompt: the program that requests a value
 ```
 
@@ -105,9 +105,15 @@ Describable          — describeType: one sentence (auto-derived from Haddock)
   Use `$(deriveDescribable ''MyType)` from `Control.Monad.Prompt.TH` to derive
   `describeType` automatically from your Haddock comment.
 
-- **`Surveyable`** — the main user-filled class. Override what you need:
-  - `Property` — an enumeration of properties (default: none)
-  - `propertyHolds` / `describeProperties` — properties to validate after parsing
+- **`Surveyable`** — properties and examples of a type. A bare `instance Surveyable MyType`
+  already describes and checks the properties of `MyType`'s fields (its `Property` defaults to
+  `Structural MyType`), for which `MyType` derives the `generics-sop` classes
+  `SOP.Generic` and `SOP.HasDatatypeInfo`. Override what you need:
+  - `Property` — an enumeration of properties (default: the properties of the fields, `Structural a`;
+    `type Property MyType = Void` opts out, with no methods to write)
+  - `propertyHolds` / `describeProperties` — properties to validate after parsing; a custom
+    `Property` must define **both**. It replaces the fields' properties, unless you combine them as
+    `Either MyProperty (Structural MyType)`, see `Data.Shroom.Class`
   - `examples` — sample values to include in the prompt
 
 - **`Promptable`** — a single method, `prompt :: (Prompt :> es) => Eff es a`,
@@ -303,7 +309,7 @@ A package that only describes its types — for example one that is also built f
 depends on no shroom package other than `shroom-class`, and so not on `shroom`:
 
 ```
-build-depends: shroom-class, aeson, openapi3
+build-depends: shroom-class, aeson, openapi3, generics-sop
 ghc-options: -haddock
 ```
 
@@ -312,9 +318,26 @@ Next to the types it holds the `Describable` and `Surveyable` instances
 its fields' Haddock comments) **and** the `ToJSON`, `FromJSON` and `ToSchema` instances that
 `Promptable` needs. Those instances come from `aeson` and `openapi3`, so both are listed above.
 `openapi3` costs nothing extra, since it is already in `shroom-class`'s dependency closure, but it
-still has to be listed: cabal hides a package that is only a transitive dependency. A type that
-declares a `Property` for `Surveyable` also needs a `Universe` instance for it, which makes
-`universe-base` a further `build-depends` entry. Then only the one-line `instance Promptable T` has
+still has to be listed: cabal hides a package that is only a transitive dependency.
+
+A bare `instance Surveyable T` surveys the fields of `T`: their properties become properties of
+`T`. That needs the two `generics-sop` classes next to the others, which is why `generics-sop` is
+listed above (again, cabal hides it otherwise):
+
+```haskell
+import Generics.SOP qualified as SOP
+
+data T = T { ... }
+  deriving stock (Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+```
+
+A type that wants no properties from its fields says `type Property T = Void` in its `Surveyable`
+instance instead, and needs neither `generics-sop` class.
+
+A type that declares a `Property` for `Surveyable` also needs a `Universe` instance for it, which
+makes `universe-base` a further `build-depends` entry, and then has to write both `propertyHolds`
+and `describeProperties`. Then only the one-line `instance Promptable T` has
 to live where `shroom` is a dependency, typically the package that runs the prompts.
 
 ### Building from source

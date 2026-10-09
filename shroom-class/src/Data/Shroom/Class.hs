@@ -1,3 +1,4 @@
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 {- | The 'Describable' and 'Surveyable' typeclasses: attach a human-readable
@@ -9,29 +10,65 @@ model — can understand what it should produce.
 
 @
 Describable          — 'describeType': one sentence from Haddock (auto-derived)
-    └── Surveyable   — 'Property', 'propertyHolds', 'describeProperties', 'examples' (user-filled)
+    └── Surveyable   — 'Property', 'propertyHolds', 'describeProperties', 'examples'
+                       (by default the properties of the type's own fields, see below)
 @
 
 @Promptable@, which builds on 'Surveyable' to render a full prompt, lives on
 the far side of the pure\/effectful boundary — in the @shroom@ package, as
 @Control.Monad.Prompt.Promptable@ — see below.
 
-Typical usage:
+Typical usage. A bare 'Surveyable' instance surveys the type's fields: the
+properties of every field's own type become properties of the whole value (see
+'Structural'). It needs the @generics-sop@ classes @SOP.Generic@ and
+@SOP.HasDatatypeInfo@ (with @import qualified Generics.SOP as SOP@, and
+@generics-sop@ among the package's @build-depends@):
 
 @
 -- | A user with a name and an email address.
 data User = User { userName :: Text, userEmail :: Text }
-  deriving (Generic, ToJSON, FromJSON, ToSchema)
+  deriving stock (Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 \$(deriveDescribable ''User)   -- generates instance Describable User from Haddock
 
+instance Surveyable User      -- the properties of 'Text' fields: there are none
+
+instance Promptable User  -- from Control.Monad.Prompt.Promptable; uses the
+                          -- default description-based prompt rendering
+@
+
+A type that has properties of its own states them instead, and then needs both
+'propertyHolds' and 'describeProperties':
+
+@
 instance Surveyable User where
   type Property User = UserProperty
   propertyHolds u UserEmailNotEmpty = not (T.null (userEmail u))
   describeProperties _ UserEmailNotEmpty = Just "The email must not be empty."
+@
 
-instance Promptable User  -- from Control.Monad.Prompt.Promptable; uses the
-                          -- default description-based prompt rendering
+To keep the field properties alongside its own, combine the two with 'Either'
+(all four equations are needed). Writing this by hand is interim: a derived
+\"Combined\" property source is planned in
+<https://github.com/turion/shroom/issues/18 issue #18>. See the 'Surveyable'
+Haddock for details:
+
+@
+instance Surveyable User where
+  type Property User = Either UserProperty (Structural User)
+  propertyHolds u (Left p) = … -- the type's own properties
+  propertyHolds u (Right p) = structuralHolds u p
+  describeProperties pu (Left p) = …
+  describeProperties pu (Right p) = describeStructural pu p
+@
+
+A type that wants no properties at all, and no @generics-sop@ instances, opts out
+in one line, with no methods:
+
+@
+instance Surveyable User where
+  type Property User = Void
 @
 
 == Pure\/effectful boundary
@@ -54,7 +91,7 @@ import Data.Kind (Type)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (mapMaybe)
 import Data.Proxy (Proxy (..))
-import Data.Void (Void)
+import Data.Void (Void, absurd)
 import Numeric.Natural (Natural)
 
 -- containers
@@ -105,38 +142,128 @@ class (ToJSON a) => Describable a where
 
 {- | Attach properties and example values to a type.
 
-This is the main user-filled class. Override the methods you need;
-all have sensible defaults (no properties, no examples).
+This is the main user-filled class. A bare @instance Surveyable X@ needs no
+method at all: the type's properties are those of its fields, see below.
 
 Superclass: 'Describable'.
+
+== The default: the properties of the fields
+
+'Property' defaults to @'Structural' X@, and 'propertyHolds' and
+'describeProperties' default to 'structuralHolds' and 'describeStructural'. So
+in
+
+@
+data Booking = Booking { bookingGuest :: Guest, bookingNights :: Int }
+  deriving stock (Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Surveyable Booking
+@
+
+every property of @Guest@ is a property of @Booking@: it is described in the
+prompt (as @Field bookingGuest: …@) and checked on the parsed value. The
+default needs the @generics-sop@ classes @SOP.Generic@ and @SOP.HasDatatypeInfo@
+for the type, both derivable (@deriving anyclass@) from "GHC.Generics"'s
+@Generic@, and a @Surveyable@ instance for every field type; 'Text', the number
+types, 'Bool', 'Char', 'UTCTime' and 'Day' have them here.
+
+== Opting out: @type Property X = Void@
+
+A type that wants no properties — a base type, a type whose fields are not
+'Surveyable', or one that simply does not want the @generics-sop@ instances —
+writes
+
+@
+instance Surveyable X where
+  type Property X = Void
+@
+
+and nothing else: 'propertyHolds' and 'describeProperties' are then filled in
+(vacuously) as well.
+
+== A custom 'Property' replaces the default
+
+Naming a 'Property' type of your own, say @type Property X = XProperty@, replaces
+the default entirely: the properties of the fields are neither described nor
+checked any more. (A @Slot@ with a @Talk@ field and a property of its own
+loses the @Talk@'s properties this way.) A custom 'Property' also needs
+__both__ 'propertyHolds' and 'describeProperties' written out; leaving one out
+is a compile error (@No instance for ‘PropertyDefault XProperty X’ arising from a
+use of ‘Data.Shroom.Class.$dmdescribeProperties’@, see 'PropertyDefault'), not a
+silent default of 'True' or 'Nothing'.
+
+To keep the properties of the fields next to your own, combine the two with
+'Either' and hand the structural half to 'structuralHolds' and
+'describeStructural':
+
+@
+instance Surveyable X where
+  type Property X = Either XProperty (Structural X)
+  propertyHolds x (Left p) = … -- the type's own properties
+  propertyHolds x (Right p) = structuralHolds x p
+  describeProperties px (Left p) = …
+  describeProperties px (Right p) = describeStructural px p
+@
+
+All four equations are needed, or the instance is an incomplete pattern match.
+Writing this combination by hand is interim: a derived \"Combined\" property
+source, which adds a type's own properties to its structural ones, is planned in
+<https://github.com/turion/shroom/issues/18 issue #18>.
+
+== Container fields contribute no properties
+
+A field of type @[a]@, @'NonEmpty' a@ or @'Maybe' a@ has no properties of its
+own (its 'Property' is 'Void'), whatever @a@ has. So under a bare instance the
+properties of the elements of a @[Speaker]@ or of a @Maybe Name@ field stay
+unchecked, and not even told to the model, until container lifting (<https://github.com/turion/shroom/issues/18 issue #18>)
+is derivable. For now lift them by hand with 'everyHolds' and 'describeEvery' in
+a custom 'Property' combined with @'Structural' X@, as the @Speakers@ example under 'everyHolds' does.
+
+== A field of a type you do not own
+
+A bare instance fails with an @All2 Surveyable@ error if one of the fields has
+no 'Describable' and 'Surveyable' instance, as happens for a field of a
+third-party type. Either write the opt-out above on the enclosing type, or give
+the field type — or a @newtype@ around it, to avoid an orphan instance — its own
+instances.
 -}
 class (Describable a, Universe (Property a)) => Surveyable a where
   {- | The type of properties for @a@.  Must have a 'Universe'
-    instance.  Defaults to 'Void' (no properties).
+    instance.  Defaults to @'Structural' a@, the properties of @a@'s fields;
+    write @type Property a = Void@ for no properties at all.
   -}
   type Property a :: Type
 
-  type Property a = Void
+  type Property a = Structural a
 
   {- | Check whether the property holds.
 
    Returns 'True' if the property holds for the value, 'False' if it is
     violated.  Used for validation after parsing.
 
-    Defaults to 'True' (all values pass all properties).
+    Defaults to checking the 'Structural' properties of the fields if 'Property'
+    is its default, and to nothing at all if it is 'Void'. For any other
+    'Property' there is no default, and the method must be written.
 
     Hint: If you have an "informal" property (like "is an english name")
     that can't be easily checked with code,
     you can still include it in 'describeProperties' and return 'True' here.
   -}
   propertyHolds :: a -> Property a -> Bool
-  propertyHolds _ _ = True
+  default propertyHolds :: (PropertyDefault (Property a) a) => a -> Property a -> Bool
+  propertyHolds = defaultHolds
 
   {- | Human-readable description of a property, used in the prompt.
     May be 'Nothing' if you don't wish to describe it.
+
+    Defaults like 'propertyHolds': for the 'Structural' properties of the fields
+    if 'Property' is its default, for no property at all if it is 'Void', and
+    otherwise the method must be written.
   -}
   describeProperties :: Proxy a -> Property a -> Maybe Text
-  describeProperties _ _ = Nothing
+  default describeProperties :: (PropertyDefault (Property a) a) => Proxy a -> Property a -> Maybe Text
+  describeProperties = defaultDescribe
 
   {- | Representative example values.  Included in the prompt when non-empty.
     Defaults to the empty set.
@@ -326,6 +453,10 @@ instance Surveyable Person where
 (For this the type needs the @generics-sop@ classes 'Generic' and
 'HasDatatypeInfo', both derivable from "GHC.Generics"'s own @Generic@.)
 
+A bare @instance Surveyable Person@ now does exactly this by default, so the
+explicit form above is only needed when spelling it out, for example as the
+@Right@ half of an 'Either' (see 'Surveyable').
+
 It is a newtype, not a type family, so that naming it as a 'Property' needs
 no @UndecidableInstances@ in the user's module.
 
@@ -414,6 +545,37 @@ fieldNameAt i (Record _ fields) = case drop i (hcollapse (hmap (\(FieldInfo name
   name : _ -> Just name
   [] -> Nothing
 fieldNameAt _ _ = Nothing
+
+-- * Defaults of 'Surveyable''s methods
+
+{- | What 'propertyHolds' and 'describeProperties' do when an instance does not
+write them, chosen by the instance's 'Property' type @p@: nothing for 'Void',
+the structural properties of the fields for @'Structural' a@.
+
+This class is an implementation detail of 'Surveyable''s method defaults, and is
+exported only because its name shows up in a compile error. __If GHC complains
+that there is no instance of @PropertyDefault p a@, the instance of
+'Surveyable' for @a@ names a custom 'Property' @p@ and leaves 'propertyHolds' or
+'describeProperties' out: a custom 'Property' must define both
+'propertyHolds' and 'describeProperties'.__ Do not write instances of this
+class.
+-}
+class PropertyDefault p a where
+  -- | The default 'propertyHolds'.
+  defaultHolds :: a -> p -> Bool
+
+  -- | The default 'describeProperties'.
+  defaultDescribe :: Proxy a -> p -> Maybe Text
+
+-- | No properties: nothing to check, nothing to describe.
+instance PropertyDefault Void a where
+  defaultHolds _ = absurd
+  defaultDescribe _ = absurd
+
+-- | The properties of the fields, see 'Structural'.
+instance (Generic a, HasDatatypeInfo a, All2 Surveyable (Code a)) => PropertyDefault (Structural a) a where
+  defaultHolds = structuralHolds
+  defaultDescribe = describeStructural
 
 -- * description helper functions
 

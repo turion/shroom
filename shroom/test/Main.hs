@@ -223,6 +223,22 @@ instance Promptable Quexnorbs
 
 instance Toolable Quexnorbs
 
+-- * A bare instance over a field that carries properties
+
+{- | A guest: a label and a registered user. The bare 'Surveyable' instance below
+surveys the fields, so the 'User''s email properties are properties of the guest.
+-}
+data Guest = Guest
+  { guestLabel :: Text
+  , guestUser :: User
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Guest where describeType _ = "A guest with a label and a registered user."
+instance Surveyable Guest
+instance Promptable Guest
+
 {- | Run an action against a localhost TCP listener that accepts a connection
 and then never reads from it or writes to it. Binds port 0, so the OS picks a
 free one and parallel runs cannot collide; localhost only, no external
@@ -291,6 +307,11 @@ main =
               let d = description (Proxy @User)
               assertContains "The following properties MUST hold in your response:" d
               assertContains "The email address is not empty." d
+          , testCase "a bare instance describes the properties of its fields (Guest)" $ do
+              let d = description (Proxy @Guest)
+              assertContains "The following properties MUST hold in your response:" d
+              assertContains "- Field guestUser: The email address is not empty." d
+              assertContains "- Field guestUser: The email address must contain an '@' character." d
           ]
       , testGroup
           "structured-output schema (Control.Monad.Prompt.Schema.schemaWithDefs, via toolDefsRaw)"
@@ -545,6 +566,23 @@ main =
                   seen <- readIORef seenContexts
                   assertContains "The email address is not empty." (seen !! 1)
                   assertContains "Generate a new, corrected JSON response" (seen !! 1)
+              , testCase "a field's violated property is rejected and named in the correction (bare instance)" $ do
+                  responses <-
+                    newIORef
+                      [ "{\"guestLabel\":\"vip\",\"guestUser\":{\"userName\":\"Alice\",\"userEmail\":\"\"}}"
+                      , "{\"guestLabel\":\"vip\",\"guestUser\":{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}}"
+                      ]
+                  seenContexts <- newIORef ([] :: [Text])
+                  let cfg = SeqMockConfig responses seenContexts
+                  result <-
+                    Eff.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.prompt @Guest
+                  result @?= Right (Guest "vip" (User "Alice" "alice@example.com"))
+                  seen <- readIORef seenContexts
+                  length seen @?= 2
+                  assertNotContains "Violated properties" (seen !! 0)
+                  assertContains "Violated properties:" (seen !! 1)
+                  assertContains "- Field guestUser: The email address is not empty." (seen !! 1)
               , testCase "JSON decode error triggers retry — distinct wording from a property violation" $ do
                   responses <-
                     newIORef
