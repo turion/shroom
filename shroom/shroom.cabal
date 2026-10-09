@@ -82,6 +82,7 @@ library
     Control.Monad.Prompt.Backend
     Control.Monad.Prompt.Effect
     Control.Monad.Prompt.FileMock
+    Control.Monad.Prompt.Generic
     Control.Monad.Prompt.Promptable
     Control.Monad.Prompt.Tool
     Control.Monad.Prompt.Tool.Web

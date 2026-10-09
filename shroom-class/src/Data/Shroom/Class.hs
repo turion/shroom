@@ -92,6 +92,7 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (mapMaybe)
 import Data.Proxy (Proxy (..))
 import Data.Void (Void, absurd)
+import GHC.Generics (Generically (..))
 import Numeric.Natural (Natural)
 
 -- containers
@@ -378,6 +379,31 @@ instance (Describable a) => Describable (Maybe a) where
 
 instance (Describable a) => Surveyable (Maybe a) where
   type Property (Maybe a) = Void
+
+-- * Generically
+
+{- | Forwards to the wrapped type.
+
+These two instances (this one and the one for 'Surveyable') exist so that
+@deriving via 'Generically' X instance Promptable X@ (from the @shroom@ package)
+has superclasses to build on: a @deriving via@ coerces only the class's own
+method, and the superclass instances of @'Generically' X@ are what GHC then
+needs. At runtime the @X@ instances are the ones in use. Both live here, with
+the classes, so they are not orphans.
+
+'ToJSON' for @'Generically' a@ is @aeson@'s own, which is always the
+"GHC.Generics"-based encoding with default options, hence the extra context
+(satisfied wherever @a@ derives 'GHC.Generics.Generic').
+-}
+instance (Describable a, ToJSON (Generically a)) => Describable (Generically a) where
+  describeType _ = describeType (Proxy @a)
+
+-- | Forwards to the wrapped type, see the 'Describable' instance.
+instance (Surveyable a, ToJSON (Generically a)) => Surveyable (Generically a) where
+  type Property (Generically a) = Property a
+  propertyHolds (Generically x) = propertyHolds x
+  describeProperties _ = describeProperties (Proxy @a)
+  examples _ = S.mapMonotonic Generically (examples (Proxy @a))
 
 -- * Lifting element properties into containers
 

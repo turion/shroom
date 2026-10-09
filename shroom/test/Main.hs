@@ -24,7 +24,7 @@ import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
 
 -- GHC.Generics
-import GHC.Generics (Generic)
+import GHC.Generics (Generic, Generically (..))
 
 -- network
 import Network.Socket (
@@ -45,6 +45,9 @@ import Network.Socket (
 -- openapi3
 import Data.OpenApi (ToSchema)
 
+-- universe-base
+import Data.Universe.Class (Universe)
+
 -- sop-core
 import Data.SOP (NP (..))
 
@@ -59,12 +62,13 @@ import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 import Effectful (Eff, IOE, (:>))
 import Effectful.Concurrent.Async (Concurrent)
 import Effectful.Error.Static (Error)
-import Effectful.State.Static.Local (State)
+import Effectful.State.Static.Local (State, get)
 
 -- shroom
 import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..), ContextItem (..), ToolCall (..), ToolDef (..), renderContextItems)
 import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Effect qualified as Eff
+import Control.Monad.Prompt.Generic ()
 import Control.Monad.Prompt.Promptable (Promptable)
 import Control.Monad.Prompt.Promptable qualified as Promptable
 import Control.Monad.Prompt.Tool (Tool, ToolHandler (..), Toolable, runTool, toolBinding, toolDefsRaw, toolName)
@@ -256,6 +260,73 @@ instance Surveyable Metric
 instance Promptable Metric where
   prompt = Eff.withContext "Always prefer metric units." Eff.prompt
 
+-- * Types prompted field by field
+
+-- | A band: a name and a head count. Prompted field by field.
+data Band = Band
+  { bandName :: Text
+  , bandSize :: Int
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Band where describeType _ = "A band with a name and a head count."
+instance Surveyable Band
+deriving via Generically Band instance Promptable Band
+
+-- | A property of a 'Profile' that should hold.
+data ProfileProperty = ProfileEmailNotEmpty
+  deriving stock (Bounded, Enum, Eq, Show)
+  deriving anyclass (Universe)
+
+-- | A profile with a name and an email address, whose email must not be empty.
+data Profile = Profile
+  { profileName :: Text
+  , profileEmail :: Text
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Profile where describeType _ = "A profile with a name and an email address."
+instance Surveyable Profile where
+  type Property Profile = ProfileProperty
+  propertyHolds p ProfileEmailNotEmpty = not (T.null (profileEmail p))
+  describeProperties _ ProfileEmailNotEmpty = Just "The email address is not empty."
+deriving via Generically Profile instance Promptable Profile
+
+-- | A measurement whose length field has its own scoped 'prompt' (see 'Metric').
+data Measurement = Measurement
+  { measurementLength :: Metric
+  , measurementNote :: Text
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Measurement where describeType _ = "A measured length with a note."
+instance Surveyable Measurement
+deriving via Generically Measurement instance Promptable Measurement
+
+-- | A pair with positional fields.
+data Pair = Pair Text Int
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Pair where describeType _ = "A text and a number."
+instance Surveyable Pair
+deriving via Generically Pair instance Promptable Pair
+
+-- | A gig: a band, which is itself prompted field by field, and a venue.
+data Gig = Gig
+  { gigBand :: Band
+  , gigVenue :: Text
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Gig where describeType _ = "A gig at a venue."
+instance Surveyable Gig
+deriving via Generically Gig instance Promptable Gig
+
 {- | A mock 'Backend' that answers from a list in order (repeating the last
 reply once the list runs out, like 'seqMockBackend') and records, for every
 call, the rendered context, the type description and the schema it was sent —
@@ -269,6 +340,26 @@ recordingBackend responses seen =
       [] -> ([], Left (BackendTransportError "recordingBackend: no more responses"))
       [x] -> ([x], Right (BackendAnswer x))
       (x : rest) -> (rest, Right (BackendAnswer x))
+
+{- | Run a program against 'recordingBackend' with the given replies and retry
+budget, returning the result and every call's (context, type description,
+schema).
+-}
+runRecording :: [Text] -> Int -> Eff BaseEs a -> IO (Either Text a, [(Text, Text, Value)])
+runRecording replies retries program = do
+  responses <- newIORef replies
+  seen <- newIORef []
+  result <- Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = retries}) program
+  calls <- readIORef seen
+  pure (result, calls)
+
+-- | The rendered context of the n-th recorded call.
+callCtx :: [(Text, Text, Value)] -> Int -> Text
+callCtx calls n = case calls !! n of (ctx, _, _) -> ctx
+
+-- | The type description of the n-th recorded call.
+callDesc :: [(Text, Text, Value)] -> Int -> Text
+callDesc calls n = case calls !! n of (_, desc, _) -> desc
 
 {- | Run an action against a localhost TCP listener that accepts a connection
 and then never reads from it or writes to it. Binds port 0, so the OS picks a
@@ -658,6 +749,125 @@ main =
                   assertContains "Here is a value of the type described below" ctx0
                   assertNotContains "Here is a value of the type described below" ctx1
                   assertContains "[assistant] {\"verdict\":\"fine\"}" ctx1
+              ]
+          , testGroup
+              "Generically (products)"
+              [ testCase "a two-field record prompts cue, field 1, field 2, improve, each field seeing what came before" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["\"Keep it jazzy.\"", "\"The Quarks\"", "4", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Band)
+                  -- a fine verdict keeps the draft
+                  result @?= Right (Band "The Quarks" 4)
+                  length calls @?= 4
+                  let parent = description (Proxy @Band)
+                  assertContains "short, specific steer" (callDesc calls 0)
+                  assertContains "A piece of text." (callDesc calls 1)
+                  assertContains "A whole number." (callDesc calls 2)
+                  assertContains parent (callDesc calls 3)
+                  assertContains parent (callCtx calls 0)
+                  assertContains parent (callCtx calls 1)
+                  assertContains "[assistant] \"Keep it jazzy.\"" (callCtx calls 1)
+                  assertContains "the field bandName" (callCtx calls 1)
+                  assertNotContains "the field bandSize" (callCtx calls 1)
+                  assertContains parent (callCtx calls 2)
+                  assertContains "[assistant] \"Keep it jazzy.\"" (callCtx calls 2)
+                  assertContains "the field bandSize" (callCtx calls 2)
+                  assertContains "[assistant] \"The Quarks\"" (callCtx calls 2)
+                  assertContains "\"bandName\":\"The Quarks\"" (callCtx calls 3)
+                  assertContains "\"bandSize\":4" (callCtx calls 3)
+              , testCase "an improved verdict replaces the draft" $ do
+                  (result, calls) <-
+                    runRecording
+                      [ "\"Keep it jazzy.\""
+                      , "\"The Quarks\""
+                      , "4"
+                      , "{\"verdict\":\"improved\",\"value\":{\"bandName\":\"The Quarks\",\"bandSize\":5}}"
+                      ]
+                      2
+                      (Promptable.prompt @Band)
+                  result @?= Right (Band "The Quarks" 5)
+                  length calls @?= 4
+              , testCase "a violating draft is not returned on a fine verdict" $ do
+                  (result, calls) <-
+                    runRecording
+                      [ "\"Keep it formal.\""
+                      , "\"Alice\""
+                      , "\"\""
+                      , "{\"verdict\":\"fine\"}"
+                      , "{\"verdict\":\"improved\",\"value\":{\"profileName\":\"Alice\",\"profileEmail\":\"alice@example.com\"}}"
+                      ]
+                      2
+                      (Promptable.prompt @Profile)
+                  result @?= Right (Profile "Alice" "alice@example.com")
+                  length calls @?= 5
+                  assertContains "Violated properties:" (callCtx calls 4)
+                  case result of
+                    Right p -> propertyHolds p ProfileEmailNotEmpty @?= True
+                    Left err -> assertFailure ("expected a value, got " <> show err)
+              , testCase "the caller's context ends as what it was plus one AssistantMessage with the final value's JSON" $ do
+                  (result, _) <-
+                    runRecording
+                      ["\"Keep it jazzy.\"", "\"The Quarks\"", "4", "{\"verdict\":\"fine\"}"]
+                      2
+                      $ do
+                        Eff.context "Hello."
+                        band <- Promptable.prompt @Band
+                        (ctx :: [ContextItem]) <- get
+                        pure (band, ctx)
+                  result
+                    @?= Right
+                      ( Band "The Quarks" 4
+                      , [UserMessage "Hello.", AssistantMessage (TL.toStrict (encodeToLazyText (Band "The Quarks" 4)))]
+                      )
+              , testCase "the flat Effect.prompt stays flat for a type that derives Generically" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["{\"bandName\":\"The Quarks\",\"bandSize\":4}"]
+                      2
+                      (Eff.prompt @Band)
+                  result @?= Right (Band "The Quarks" 4)
+                  length calls @?= 1
+              , testCase "a field with its own prompt override is prompted through it, and its answer stays visible" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["\"Keep it short.\"", "{\"metricText\":\"3 km\"}", "\"a long road\"", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Measurement)
+                  result @?= Right (Measurement (Metric "3 km") "a long road")
+                  length calls @?= 4
+                  assertContains "Always prefer metric units." (callCtx calls 1)
+                  assertNotContains "Always prefer metric units." (callCtx calls 2)
+                  -- the override scoped its own answer away; the strategy put it back
+                  assertContains "[assistant] {\"metricText\":\"3 km\"}" (callCtx calls 2)
+              , testCase "a positional constructor's fields are named by constructor and position" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["\"Keep it short.\"", "\"x\"", "1", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Pair)
+                  result @?= Right (Pair "x" 1)
+                  assertContains "field 1 of constructor Pair" (callCtx calls 1)
+                  assertContains "field 2 of constructor Pair" (callCtx calls 2)
+              , testCase "a field that is itself generic is built the same way and leaves one message behind" $ do
+                  (result, calls) <-
+                    runRecording
+                      [ "\"loud\""
+                      , "\"quiet\""
+                      , "\"The Quarks\""
+                      , "4"
+                      , "{\"verdict\":\"fine\"}"
+                      , "\"The Pub\""
+                      , "{\"verdict\":\"fine\"}"
+                      ]
+                      2
+                      (Promptable.prompt @Gig)
+                  result @?= Right (Gig (Band "The Quarks" 4) "The Pub")
+                  length calls @?= 7
+                  -- the venue request sees the finished band as one message, not its parts
+                  assertContains "[assistant] {\"bandName\":\"The Quarks\",\"bandSize\":4}" (callCtx calls 5)
+                  assertNotContains "quiet" (callCtx calls 5)
               ]
           , testGroup
               "retry loop"

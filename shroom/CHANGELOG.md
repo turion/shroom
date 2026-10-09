@@ -93,6 +93,22 @@ type.
   is retried the same way, so `Nothing` is never returned for an invalid value. `improve` is flat:
   it never calls the type's own `Promptable.prompt`. Informal properties, which only the model can
   judge, are still #26.
+* **New: `deriving via Generically X instance Promptable X`** prompts a single-constructor record
+  field by field (#21). `Control.Monad.Prompt.Generic` (re-exported by `Control.Monad.Prompt`) gives
+  `GHC.Generics.Generically a` a `Promptable` instance that, inside one snapshot of the context,
+  asks the model for a short `Cue` (a steer every field follows), then prompts each field in order
+  through **its own type's** `Promptable.prompt`, told the parent's description, the cue and the
+  field's name, each later field seeing the earlier ones; assembles the draft with `generics-sop`;
+  runs `improve` on it, keeping the draft on a `fine` verdict; and finally restores the context and
+  appends the value's JSON as one `AssistantMessage`, as after a flat `prompt`. A record with `n`
+  fields costs `n + 2` requests, plus retries and the requests of any generic field. `X` needs
+  `SOP.Generic` and `SOP.HasDatatypeInfo` (so `generics-sop` in your `build-depends`) and a
+  `Promptable` instance for every field type; a type with several constructors is rejected at compile
+  time for now. It takes effect through the class method `Promptable.prompt`;
+  `Control.Monad.Prompt.Effect.prompt` stays flat. `Describable`/`Surveyable (Generically a)` are in
+  `Data.Shroom.Class`; `shroom` carries two orphan instances, `ToSchema (Generically a)` (which
+  `openapi3` lacks) and `Promptable (Generically a)` itself, so import `Control.Monad.Prompt` or
+  `Control.Monad.Prompt.Generic` for them to apply.
 
 ## 0.1.0.0 -- 2026-05-28
 
