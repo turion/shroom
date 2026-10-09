@@ -1,4 +1,7 @@
 
 Produce a value of the following type:
 How a message should be delivered.
+- Post: Send the message by post.
+- ByEmail: Send the message by email.
+- Hold: Do not send the message at all.
 

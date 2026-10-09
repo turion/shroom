@@ -1,0 +1,11 @@
+
+Produce a value of the following type:
+A piece of fruit.
+- FruitApple: An apple.
+  - appleVariety: The variety of the apple.
+  - appleSweetness: How sweet the apple is, from 1 to 10.
+- FruitBanana: A banana, with its length in centimetres.
+- FruitPear: A pear.
+  - pearRipe: Whether the pear is ripe.
+- FruitLemon
+

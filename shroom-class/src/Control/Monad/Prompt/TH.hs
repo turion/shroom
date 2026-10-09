@@ -66,6 +66,11 @@ instance Describable MyType where
   describeType = \$(deriveDescribableExp ''MyType)
 @
 
+For a type with several constructors, each constructor is listed as
+@- Constructor: doc@ (by name alone if undocumented), followed by its documented
+record fields indented beneath it.  For a single-constructor type, the documented
+record fields are listed directly.  Documentation of positional fields is not collected.
+
 Prefer 'deriveDescribable' for the common case where a full instance is needed.
 -}
 deriveDescribableExp :: Name -> Q Exp
@@ -82,28 +87,58 @@ deriveDescribableExp name = do
           <> "  2. Compile with the -haddock GHC flag (e.g. add 'ghc-options: -haddock' to your .cabal file).\n"
           <> "  3. Separate the type declaration from this splice with $(pure []) if they are in the same module."
     Just d -> pure d
-  fieldDocs <- getRecordFieldDocs name
+  constructorDocs <- getConstructorDocs name
   -- Build: \_ -> pack "<doc>"
   -- Haddock docs have a leading space, no trailing newline, and escape "/" as "\/"
   let unescapeHaddock [] = []
       unescapeHaddock ('\\' : '/' : rest) = '/' : unescapeHaddock rest
       unescapeHaddock (c : rest) = c : unescapeHaddock rest
       normalizeDoc = (++ "\n") . dropWhile (== ' ') . unescapeHaddock
-      fieldLines = concatMap (\(fn, fd) -> "- " <> fn <> ": " <> normalizeDoc fd) fieldDocs
-      fullDoc = normalizeDoc doc <> fieldLines
+      renderField indent (fn, fd) = indent <> "- " <> fn <> ": " <> normalizeDoc fd
+      -- A sum lists every constructor (by name alone if undocumented),
+      -- with its documented fields indented beneath it.
+      renderConstructor (cn, mcd, fields) =
+        "- "
+          <> cn
+          <> maybe "\n" ((": " <>) . normalizeDoc) mcd
+          <> concatMap (renderField "  ") fields
+      -- A single constructor is the type itself, so its fields are listed directly.
+      constructorLines = case constructorDocs of
+        [(_, _, fields)] -> concatMap (renderField "") fields
+        cons -> concatMap renderConstructor cons
+      fullDoc = normalizeDoc doc <> constructorLines
       docLit = litE (stringL fullDoc)
   [|\_ -> pack $docLit|]
 
--- | Collect (fieldName, doc) pairs for all record fields of a type.
-getRecordFieldDocs :: Name -> Q [(String, String)]
-getRecordFieldDocs name = do
+{- | Collect, for each constructor of a type, its name, its Haddock (if any), and
+the (fieldName, doc) pairs of its documented record fields.  Positional fields'
+docs are not collected.
+-}
+getConstructorDocs :: Name -> Q [(String, Maybe String, [(String, String)])]
+getConstructorDocs name = do
   info <- reify name
-  let fieldNames = case info of
-        TyConI (DataD _ _ _ _ cons _) -> concatMap recFields cons
-        TyConI (NewtypeD _ _ _ _ con _) -> recFields con
+  let cons = case info of
+        TyConI (DataD _ _ _ _ cs _) -> cs
+        TyConI (NewtypeD _ _ _ _ c _) -> [c]
         _ -> []
-  pairs <- mapM (\fn -> (nameBase fn,) <$> getDoc (DeclDoc fn)) fieldNames
-  pure [(fn, d) | (fn, Just d) <- pairs]
+  mapM collect cons
   where
+    collect con = do
+      let cn = conName con
+      cdoc <- getDoc (DeclDoc cn)
+      pairs <- mapM (\fn -> (nameBase fn,) <$> getDoc (DeclDoc fn)) (recFields con)
+      pure (nameBase cn, cdoc, [(fn, d) | (fn, Just d) <- pairs])
+
+    conName (NormalC n _) = n
+    conName (RecC n _) = n
+    conName (InfixC _ n _) = n
+    conName (ForallC _ _ c) = conName c
+    conName (GadtC (n : _) _ _) = n
+    conName (GadtC [] _ _) = mkName ""
+    conName (RecGadtC (n : _) _ _) = n
+    conName (RecGadtC [] _ _) = mkName ""
+
     recFields (RecC _ fields) = [fn | (fn, _, _) <- fields]
+    recFields (ForallC _ _ c) = recFields c
+    recFields (RecGadtC _ fields _) = [fn | (fn, _, _) <- fields]
     recFields _ = []

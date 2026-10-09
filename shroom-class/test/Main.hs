@@ -67,6 +67,25 @@ data Delivery
     Hold
   deriving (Eq, Ord, Show, Generic, ToJSON, ToSchema)
 
+-- | A piece of fruit.
+data Fruit
+  = -- | An apple.
+    FruitApple
+      { appleVariety :: Text
+      -- ^ The variety of the apple.
+      , appleSweetness :: Int
+      -- ^ How sweet the apple is, from 1 to 10.
+      }
+  | -- | A banana, with its length in centimetres.
+    FruitBanana Int
+  | -- | A pear.
+    FruitPear
+      { pearRipe :: Bool
+      -- ^ Whether the pear is ripe.
+      }
+  | FruitLemon
+  deriving (Eq, Ord, Show, Generic, ToJSON, ToSchema)
+
 $(deriveDescribable ''Person)
 
 instance Surveyable Person
@@ -85,6 +104,10 @@ $(deriveDescribable ''Delivery)
 
 instance Surveyable Delivery
 
+$(deriveDescribable ''Fruit)
+
+instance Surveyable Fruit
+
 main :: IO ()
 main =
   defaultMain $
@@ -93,6 +116,7 @@ main =
       [ golden "Person" $ description (Proxy @Person)
       , golden "Email" $ description (Proxy @Email)
       , golden "Delivery" $ description (Proxy @Delivery)
+      , golden "Fruit" $ description (Proxy @Fruit)
       ]
   where
     golden name rendered =
