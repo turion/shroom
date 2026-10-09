@@ -5,6 +5,7 @@
 module Main (main) where
 
 -- base
+import Data.Maybe (fromMaybe)
 import Data.Proxy (Proxy (..))
 import GHC.Generics (Generic)
 
@@ -24,7 +25,10 @@ import Data.Aeson (ToJSON)
 import Data.OpenApi (ToSchema)
 
 -- universe-base
-import Data.Universe.Class (Universe)
+import Data.Universe.Class (Universe, universe)
+
+-- generics-sop
+import Generics.SOP qualified as SOP
 
 -- tasty
 import Test.Tasty (defaultMain, testGroup)
@@ -108,6 +112,96 @@ $(deriveDescribable ''Fruit)
 
 instance Surveyable Fruit
 
+-- | A name.
+newtype Name = Name Text
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON)
+
+-- | A property of a 'Name' that should hold; the second one is informal and undescribed.
+data NameProperty = NameNotEmpty | NameIsReal
+  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+
+instance Describable Name where
+  describeType _ = "A name."
+
+instance Surveyable Name where
+  type Property Name = NameProperty
+  propertyHolds (Name n) NameNotEmpty = not (T.null n)
+  propertyHolds _ NameIsReal = True
+  describeProperties _ NameNotEmpty = Just "The name must not be empty."
+  describeProperties _ NameIsReal = Nothing
+
+-- | A hand-written product, surveyed structurally.
+data Contact = Contact
+  { contactName :: Name
+  , contactEmail :: Email
+  }
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Contact where
+  describeType _ = "A contact."
+
+instance Surveyable Contact where
+  type Property Contact = Structural Contact
+  propertyHolds = structuralHolds
+  describeProperties = describeStructural
+
+-- | A hand-written product with positional fields.
+data Pair = Pair Name Email
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Pair where
+  describeType _ = "A pair."
+
+instance Surveyable Pair where
+  type Property Pair = Structural Pair
+  propertyHolds = structuralHolds
+  describeProperties = describeStructural
+
+-- | A hand-written sum: a record, a positional constructor and one without fields.
+data Parcel
+  = Letter
+      { letterTo :: Email
+      , letterFrom :: Name
+      }
+  | Crate Name
+  | Blank
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Parcel where
+  describeType _ = "A parcel."
+
+instance Surveyable Parcel where
+  type Property Parcel = Structural Parcel
+  propertyHolds = structuralHolds
+  describeProperties = describeStructural
+
+{- | Every structural property of a type, with its description, and for each
+given value whether each property holds.
+-}
+structuralReport ::
+  forall a.
+  (Show a, Show (Structural a), SOP.Generic a, SOP.HasDatatypeInfo a, SOP.All2 Surveyable (SOP.Code a)) =>
+  Proxy a ->
+  [a] ->
+  Text
+structuralReport p values =
+  T.unlines $
+    ["universe:"]
+      <> [ "  " <> T.pack (show prop) <> " | " <> fromMaybe "(undescribed)" (describeStructural p prop)
+         | prop <- universe @(Structural a)
+         ]
+      <> concat
+        [ ("value " <> T.pack (show v) <> ":")
+            : [ "  " <> T.pack (show prop) <> ": " <> if structuralHolds v prop then "holds" else "violated"
+              | prop <- universe @(Structural a)
+              ]
+        | v <- values
+        ]
+
 main :: IO ()
 main =
   defaultMain $
@@ -117,6 +211,18 @@ main =
       , golden "Email" $ description (Proxy @Email)
       , golden "Delivery" $ description (Proxy @Delivery)
       , golden "Fruit" $ description (Proxy @Fruit)
+      , golden "StructuralContact" $
+          structuralReport
+            (Proxy @Contact)
+            [Contact (Name "Ada") (Email "ada@example.org"), Contact (Name "") (Email "ada@example.org"), Contact (Name "Ada") (Email "")]
+      , golden "StructuralPair" $
+          structuralReport
+            (Proxy @Pair)
+            [Pair (Name "") (Email "no-at-sign"), Pair (Name "Ada") (Email "ada@example.org")]
+      , golden "StructuralParcel" $
+          structuralReport
+            (Proxy @Parcel)
+            [Letter (Email "") (Name "Ada"), Crate (Name ""), Crate (Name "Ada"), Blank]
       ]
   where
     golden name rendered =

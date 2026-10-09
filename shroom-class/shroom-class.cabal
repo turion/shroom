@@ -28,6 +28,7 @@ common opts
     aeson ^>=2.2,
     base >=4.20 && <4.22,
     containers >=0.6 && <0.8,
+    generics-sop ^>=0.5.1,
     openapi3 ^>=3.2,
     template-haskell >=2.22 && <2.25,
     text >=2.1.2 && <2.2,

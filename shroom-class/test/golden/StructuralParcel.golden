@@ -1,0 +1,35 @@
+universe:
+  Structural (Z (Z (PropertyOf EmailNotEmpty))) | Constructor Letter, field letterTo: The email address is not empty.
+  Structural (Z (Z (PropertyOf EmailHasAtSign))) | Constructor Letter, field letterTo: The email address must contain an '@' character.
+  Structural (Z (S (Z (PropertyOf NameNotEmpty)))) | Constructor Letter, field letterFrom: The name must not be empty.
+  Structural (Z (S (Z (PropertyOf NameIsReal)))) | (undescribed)
+  Structural (S (Z (Z (PropertyOf NameNotEmpty)))) | Constructor Crate, field 1: The name must not be empty.
+  Structural (S (Z (Z (PropertyOf NameIsReal)))) | (undescribed)
+value Letter {letterTo = Email {emailAddress = ""}, letterFrom = Name "Ada"}:
+  Structural (Z (Z (PropertyOf EmailNotEmpty))): violated
+  Structural (Z (Z (PropertyOf EmailHasAtSign))): violated
+  Structural (Z (S (Z (PropertyOf NameNotEmpty)))): holds
+  Structural (Z (S (Z (PropertyOf NameIsReal)))): holds
+  Structural (S (Z (Z (PropertyOf NameNotEmpty)))): holds
+  Structural (S (Z (Z (PropertyOf NameIsReal)))): holds
+value Crate (Name ""):
+  Structural (Z (Z (PropertyOf EmailNotEmpty))): holds
+  Structural (Z (Z (PropertyOf EmailHasAtSign))): holds
+  Structural (Z (S (Z (PropertyOf NameNotEmpty)))): holds
+  Structural (Z (S (Z (PropertyOf NameIsReal)))): holds
+  Structural (S (Z (Z (PropertyOf NameNotEmpty)))): violated
+  Structural (S (Z (Z (PropertyOf NameIsReal)))): holds
+value Crate (Name "Ada"):
+  Structural (Z (Z (PropertyOf EmailNotEmpty))): holds
+  Structural (Z (Z (PropertyOf EmailHasAtSign))): holds
+  Structural (Z (S (Z (PropertyOf NameNotEmpty)))): holds
+  Structural (Z (S (Z (PropertyOf NameIsReal)))): holds
+  Structural (S (Z (Z (PropertyOf NameNotEmpty)))): holds
+  Structural (S (Z (Z (PropertyOf NameIsReal)))): holds
+value Blank:
+  Structural (Z (Z (PropertyOf EmailNotEmpty))): holds
+  Structural (Z (Z (PropertyOf EmailHasAtSign))): holds
+  Structural (Z (S (Z (PropertyOf NameNotEmpty)))): holds
+  Structural (Z (S (Z (PropertyOf NameIsReal)))): holds
+  Structural (S (Z (Z (PropertyOf NameNotEmpty)))): holds
+  Structural (S (Z (Z (PropertyOf NameIsReal)))): holds
