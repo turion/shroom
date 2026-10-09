@@ -20,7 +20,10 @@ tested-with:
   ghc ==9.12
 
 common opts
-  ghc-options: -Wall
+  ghc-options:
+    -Wall
+    -haddock
+
   build-depends:
     aeson ^>=2.2,
     base >=4.20 && <4.22,
@@ -49,7 +52,6 @@ test-suite shroom-class-test
   hs-source-dirs: test
   main-is: Main.hs
   default-language: GHC2024
-  ghc-options: -haddock
   build-depends:
     shroom-class,
     tasty >=1.4 && <1.6,

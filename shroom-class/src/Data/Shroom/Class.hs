@@ -28,7 +28,7 @@ instance Surveyable User where
   propertyHolds u UserEmailNotEmpty = not (T.null (userEmail u))
   describeProperties _ UserEmailNotEmpty = Just "The email must not be empty."
 
-instance Promptable User  -- from "Control.Monad.Prompt.Promptable"; uses the
+instance Promptable User  -- from Control.Monad.Prompt.Promptable; uses the
                           -- default description-based prompt rendering
 @
 
@@ -38,10 +38,10 @@ This module is pure, and the package boundary coincides with that line: it
 lives in @shroom-class@, which has no program layer, while everything effectful
 lives in @shroom@. It depends only on @aeson@, @text@, @containers@,
 @openapi3@ and @universe-base@, and nothing under @Data.Shroom.@ may import
-"Control.Monad.Prompt" or any of its submodules. That is deliberate, not
+@Control.Monad.Prompt@ or any of its submodules. That is deliberate, not
 incidental — a later arc (shroom-shikumi, "C3") needs exactly this pure half,
 with no program layer attached, to feed shikumi's own instruction and
-validation machinery. Keep it that way: an import of "Control.Monad.Prompt"
+validation machinery. Keep it that way: an import of @Control.Monad.Prompt@
 here would put the program layer back in C3's way.
 -}
 module Data.Shroom.Class (module Data.Shroom.Class) where
@@ -154,7 +154,7 @@ writing @Property Speaker@ in the instance head: GHC rejects the latter without
 @UndecidableInstances@, as a type family application is no smaller than the
 instance's own left-hand side.
 
-'Control.Monad.Prompt.Effect.runPrompt' only checks the properties of the
+@runPrompt@ (from the @shroom@ package) only checks the properties of the
 top-level value, and 'description' only lists those, so without this lift a
 property of the elements is neither told to the model nor checked.
 This is a hand-written helper; a derivable version is tracked in
@@ -187,8 +187,8 @@ This is what gets sent to the LLM alongside the JSON schema.
 Field descriptions are annotated with their JSON types from the OpenAPI
 schema (e.g. @- name (string): The user's full name.@).
 
-This is what 'Control.Monad.Prompt.Effect.runPrompt' sends as the prompt text
-for a 'Control.Monad.Prompt.Effect.RequestPrompt'.
+This is what @runPrompt@ (from the @shroom@ package) sends as the prompt text
+for a @RequestPrompt@.
 -}
 description :: (Surveyable a, ToSchema a) => Proxy a -> Text
 description p =
