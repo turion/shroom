@@ -71,8 +71,6 @@ import Data.Text qualified as T
 
 -- aeson
 import Data.Aeson (FromJSON (..), Value, eitherDecodeStrictText, object, withObject, (.:), (.=))
-import Data.Aeson.Text (encodeToLazyText)
-import Data.Text.Lazy (toStrict)
 
 -- openapi3
 import Data.OpenApi (ToSchema)
@@ -96,7 +94,7 @@ import Control.Monad.Prompt.Backend (
   ToolCall (..),
   ToolResult (..),
  )
-import Control.Monad.Prompt.Schema (ToolDef, ToolDispatcher, schemaWithDefs)
+import Control.Monad.Prompt.Schema (ToolDef, ToolDispatcher, encodeJson, schemaWithDefs)
 import Control.Monad.Prompt.Tool (ToolBinding (..), dispatchBindings)
 import Data.Shroom.Class (Surveyable, describeProperties, description, propertyHolds)
 
@@ -349,7 +347,7 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
     runImprove original = do
       ctx <- get
       let prx = Proxy @b
-          shown = toStrict (encodeToLazyText original)
+          shown = encodeJson original
           ask =
             UserMessage $
               "Here is a value of the type described below, as JSON:\n"
@@ -547,7 +545,7 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
               tagged <-
                 traverse
                   ( \tc -> do
-                      logDebug $ ">>> TOOL CALL: " <> tc.toolCallName <> " " <> toStrict (encodeToLazyText tc.toolCallArguments)
+                      logDebug $ ">>> TOOL CALL: " <> tc.toolCallName <> " " <> encodeJson tc.toolCallArguments
                       r <- dispatch tc.toolCallName tc.toolCallArguments
                       logDebug $ "<<< TOOL RESULT: " <> tc.toolCallName <> " " <> either ("ERROR: " <>) ("OK: " <>) r
                       pure (tc, r)

@@ -183,11 +183,9 @@ import GHC.Generics (Generically (..))
 -- text
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Text.Lazy (toStrict)
 
 -- aeson
 import Data.Aeson (FromJSON (..), ToJSON (..), Value (String), withText)
-import Data.Aeson.Text (encodeToLazyText)
 
 -- openapi3
 import Data.OpenApi (NamedSchema (..), OpenApiType (..), Schema (..), ToSchema (..))
@@ -205,6 +203,7 @@ import Control.Monad.Prompt.Backend (ContextItem (..))
 import Control.Monad.Prompt.Effect (Prompt, addContextItem, improve)
 import Control.Monad.Prompt.Promptable (Promptable)
 import Control.Monad.Prompt.Promptable qualified as Promptable
+import Control.Monad.Prompt.Schema (encodeJson)
 import Data.Shroom.Class
 
 -- * The cue
@@ -419,9 +418,6 @@ fieldLabel chosen constructor i = case fieldNameAt i constructor of
   Nothing -> "field " <> T.pack (show (i + 1)) <> " of constructor " <> conName
   where
     conName = T.pack (constructorName constructor)
-
-encodeJson :: (ToJSON v) => v -> Text
-encodeJson = toStrict . encodeToLazyText
 
 -- * The instances
 

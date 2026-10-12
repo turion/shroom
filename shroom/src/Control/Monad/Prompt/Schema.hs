@@ -1,7 +1,7 @@
 {- | Internal schema utilities shared by 'Control.Monad.Prompt' and
 'Control.Monad.Prompt.Tool'.  Not part of the public API.
 -}
-module Control.Monad.Prompt.Schema (schemaWithDefs, normalizeSchemaForStructuredOutput, inlineSchema, ToolDef (..), ToolDispatcher) where
+module Control.Monad.Prompt.Schema (encodeJson, schemaWithDefs, normalizeSchemaForStructuredOutput, inlineSchema, ToolDef (..), ToolDispatcher) where
 
 -- base
 import Data.Foldable (toList)
@@ -10,11 +10,13 @@ import Data.Proxy (Proxy)
 -- text
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Lazy (toStrict)
 
 -- aeson
-import Data.Aeson (Value (..), toJSON)
+import Data.Aeson (ToJSON, Value (..), toJSON)
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KM
+import Data.Aeson.Text (encodeToLazyText)
 
 -- vector
 import Data.Vector qualified as V
@@ -22,6 +24,10 @@ import Data.Vector qualified as V
 -- openapi3
 import Data.OpenApi (Referenced (..), ToSchema, declareSchemaRef, getReference)
 import Data.OpenApi.Declare (runDeclare)
+
+-- | Encode a value as compact JSON text.
+encodeJson :: (ToJSON v) => v -> Text
+encodeJson = toStrict . encodeToLazyText
 
 -- | A backend-agnostic tool definition passed to LLM backends.
 data ToolDef = ToolDef
