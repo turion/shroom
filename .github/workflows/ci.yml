@@ -57,7 +57,7 @@ jobs:
           ghc-version: ${{ matrix.ghc }}
       - name: Configure the build
         run: |
-          cabal configure --enable-tests --enable-benchmarks --disable-documentation -f-anthropic -f-ollama
+          cabal configure --enable-tests --enable-benchmarks --disable-documentation -f-anthropic -f-anthropic-proxy -f-ollama
           cabal build all --dry-run
         # The last step generates dist-newstyle/cache/plan.json for the cache key.
       - name: Restore cached dependencies
@@ -72,7 +72,7 @@ jobs:
       - name: Install dependencies
         # If we had an exact cache hit, the dependencies will be up to date.
         if: steps.cache.outputs.cache-hit != 'true'
-        run: cabal build all --enable-tests --enable-benchmarks --only-dependencies -f-anthropic -f-ollama
+        run: cabal build all --enable-tests --enable-benchmarks --only-dependencies -f-anthropic -f-anthropic-proxy -f-ollama
       # Cache dependencies already here, so that we do not have to rebuild them should the subsequent steps fail.
       - name: Save cached dependencies
         uses: actions/cache/save@v6
@@ -83,9 +83,9 @@ jobs:
           key: ${{ steps.cache.outputs.cache-primary-key }}
 
       - name: Cabal build packages
-        run: cabal build all --enable-tests --enable-benchmarks -f-anthropic -f-ollama
+        run: cabal build all --enable-tests --enable-benchmarks -f-anthropic -f-anthropic-proxy -f-ollama
       - name: Cabal test
-        run: cabal test all --enable-tests --test-show-details=Always -f-anthropic -f-ollama
+        run: cabal test all --enable-tests --test-show-details=Always -f-anthropic -f-anthropic-proxy -f-ollama
 
   generate-flake-ghc-matrix:
     name: Generate GHC versions for nix flake build matrix
@@ -142,7 +142,7 @@ jobs:
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
       - run: nix build .#${{ matrix.version }}.shroom-all --accept-flake-config
       - run: nix develop .#${{ matrix.version }} --accept-flake-config -c cabal update
-      - run: nix develop .#${{ matrix.version }} --accept-flake-config -c cabal test all -f-anthropic -f-ollama
+      - run: nix develop .#${{ matrix.version }} --accept-flake-config -c cabal test all -f-anthropic -f-anthropic-proxy -f-ollama
 
   ollama-ci:
     name: "Ollama integration, via SSH tunnel to the maintainer's server"
@@ -180,7 +180,7 @@ jobs:
         # pinned down. Two candidates: cabal refusing to solve at all without a package index on
         # a fresh runner, and a test-only dependency escaping `shellFor`. Until one is confirmed,
         # keep this line; it is cheap on a warm cache and the failure it prevents is obscure.
-        run: nix develop .#ghc912 --accept-flake-config -c cabal update -f-anthropic
+        run: nix develop .#ghc912 --accept-flake-config -c cabal update -f-anthropic -f-anthropic-proxy
       - name: Open the SSH tunnel to the maintainer's Ollama
         # See research/remote-ollama-ci.md in the plan directory for the mechanism and the
         # threat model. The server-side ACL (permitopen + command="") is enforced by sshd via
@@ -212,9 +212,10 @@ jobs:
           curl -sS http://127.0.0.1:11434/api/ps || true
           echo
       - name: Cabal test against the tunnelled Ollama
-        # Bare host:port, no scheme and no /v1 — Ollama's own convention. -f-anthropic is
-        # todo 2's "everything but Anthropic" invocation; the ollama flag stays at its
-        # default (on). OLLAMA_MODEL must match services.ollama.shroom.model on the server
+        # Bare host:port, no scheme and no /v1 — Ollama's own convention. -f-anthropic and
+        # -f-anthropic-proxy are todo 2's "everything but Anthropic" invocation (the latter
+        # suite needs a proxy this tunnel cannot reach, and dies loudly without one); the
+        # ollama flag stays at its default (on). OLLAMA_MODEL must match services.ollama.shroom.model on the server
         # (nix/ollama-shroom.nix, default "llama3.2:1b" — the server is 2 cores / 12 GB,
         # no GPU, and an 8B model there runs at roughly 1-2 tokens/second). The suite's own
         # fallback (shroom-baikai/test/Integration/Ollama.hs, used only if OLLAMA_MODEL were
@@ -225,7 +226,7 @@ jobs:
         # The conferenceChain cases test model capability, which a 1b model on 2 CPU cores cannot
         # do inside that cap; CI asserts plumbing, so they are skipped here and run locally. The
         # tasty pattern is its own --test-option pair: cabal word-splits --test-options.
-        run: nix develop .#ghc912 --accept-flake-config -c cabal test shroom-test-integration-ollama --enable-tests -f-anthropic --test-show-details=streaming --test-options=--timeout=10m --test-option=-p --test-option='!/conferenceChain/'
+        run: nix develop .#ghc912 --accept-flake-config -c cabal test shroom-test-integration-ollama --enable-tests -f-anthropic -f-anthropic-proxy --test-show-details=streaming --test-options=--timeout=10m --test-option=-p --test-option='!/conferenceChain/'
         env:
           OLLAMA_HOST: 127.0.0.1:11434
           OLLAMA_MODEL: llama3.2:1b
