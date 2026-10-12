@@ -323,7 +323,7 @@ runPrompt ::
   Eff es a
 runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) b) -> case request of
   -- No tools for 'RequestPrompt' (unchanged from before todo 10).
-  RequestPrompt -> runRequest [] (\_ _ -> pure (Left "no tools")) (Just 0)
+  RequestPrompt -> let (toolDefs, dispatch, maxSteps) = noTools in runRequest toolDefs dispatch maxSteps
   -- 'RequestPromptTools': build the dispatcher out of the bindings by
   -- unlifting each binding's call — which runs in the request's own local
   -- effect stack ('localEs') — into this interpreter's 'es'.
@@ -334,6 +334,12 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
       (maxToolSteps promptCfg)
   RequestImprove original -> runImprove original
   where
+    -- The tool setup of a flat request: no tool definitions, a dispatcher
+    -- that refuses every call, and zero tool steps. Shared by 'RequestPrompt'
+    -- and 'RequestImprove'.
+    noTools :: ([ToolDef], ToolDispatcher (Eff es), Maybe Int)
+    noTools = ([], \_ _ -> pure (Left "no tools"), Just 0)
+
     -- 'RequestImprove': a flat request, no tools, whose reply is a 'Verdict'.
     -- The scoped 'UserMessage' showing the value goes onto the context the
     -- backend sees but not the one left behind; only the raw reply is kept.
@@ -361,8 +367,9 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
               <> "or {\"verdict\": \"improved\", \"value\": <the corrected whole value>}.\n"
           check VerdictFine = violatedProperties original
           check (VerdictImproved v) = violatedProperties v
+      let (toolDefs, dispatch, maxSteps) = noTools
       (verdict, rawTxt) <-
-        attemptLoop [] (\_ _ -> pure (Left "no tools")) (Just 0) (ctx <> [ask]) typeDesc (improveSchema prx) check (maxRetries promptCfg) (maxRetries promptCfg)
+        attemptLoop toolDefs dispatch maxSteps (ctx <> [ask]) typeDesc (improveSchema prx) check (maxRetries promptCfg) (maxRetries promptCfg)
       put (ctx <> [AssistantMessage rawTxt])
       pure $ case verdict of
         VerdictFine -> Nothing
