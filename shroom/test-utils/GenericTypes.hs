@@ -79,7 +79,7 @@ data Fruit
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 -- | An apple, counted by its kernels.
-data Apple = Apple
+newtype Apple = Apple
   { kernels :: Int
   -- ^ The number of kernels in the apple.
   }
@@ -92,7 +92,7 @@ The field is called @lengthCm@ rather than @length@: the unit belongs in the
 name, as the model sees it, and a field @length@ would clash with
 'Prelude.length' in every module that imports this one unqualified.
 -}
-data Banana = Banana
+newtype Banana = Banana
   { lengthCm :: Double
   -- ^ The length of the banana, in centimetres.
   }

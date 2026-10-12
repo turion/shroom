@@ -711,7 +711,7 @@ main =
                     Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
                       Eff.improve (User "Alice" "alice@example.com")
                   result @?= Right Nothing
-                  length <$> readIORef seen >>= (@?= 1)
+                  readIORef seen >>= (@?= 1) . length
               , testCase "a fine reply's value is ignored, even when it differs from the original and violates properties" $ do
                   responses <-
                     newIORef
@@ -721,7 +721,7 @@ main =
                     Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
                       Eff.improve (User "Alice" "alice@example.com")
                   result @?= Right Nothing
-                  length <$> readIORef seen >>= (@?= 1)
+                  readIORef seen >>= (@?= 1) . length
               , testCase "an improved reply yields Just the parsed value" $ do
                   responses <-
                     newIORef
@@ -731,7 +731,7 @@ main =
                     Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
                       Eff.improve (User "Alice" "alice@example.com")
                   result @?= Right (Just (User "Alicia" "alice@example.com"))
-                  length <$> readIORef seen >>= (@?= 1)
+                  readIORef seen >>= (@?= 1) . length
               , testCase "an improved value violating a property is retried with a correction naming it" $ do
                   responses <-
                     newIORef
@@ -779,7 +779,7 @@ main =
                   case result of
                     Left err -> assertContains "The email address is not empty." err
                     Right r -> assertFailure ("expected a failure, got " <> show r)
-                  length <$> readIORef seen >>= (@?= 2)
+                  readIORef seen >>= (@?= 2) . length
               , testCase "the scoped message is not persisted; the raw reply is" $ do
                   responses <-
                     newIORef
@@ -1095,14 +1095,14 @@ main =
                     Eff.runPromptResultEff (seqMockBackend (SeqMockConfig textResponses textSeen)) (defaultPromptConfig {maxRetries = 0}) $
                       Promptable.prompt @Text
                   textResult @?= Right "hello"
-                  length <$> readIORef textSeen >>= (@?= 1)
+                  readIORef textSeen >>= (@?= 1) . length
                   intsResponses <- newIORef ["[1,2,3]"]
                   intsSeen <- newIORef ([] :: [Text])
                   intsResult <-
                     Eff.runPromptResultEff (seqMockBackend (SeqMockConfig intsResponses intsSeen)) (defaultPromptConfig {maxRetries = 0}) $
                       Promptable.prompt @[Int]
                   intsResult @?= Right [1, 2, 3 :: Int]
-                  length <$> readIORef intsSeen >>= (@?= 1)
+                  readIORef intsSeen >>= (@?= 1) . length
               , testCase "a prompt override scopes its context to its own request" $ do
                   responses <- newIORef ["{\"metricText\":\"3 km\"}", "{\"metricText\":\"4 km\"}"]
                   seenContexts <- newIORef ([] :: [Text])
