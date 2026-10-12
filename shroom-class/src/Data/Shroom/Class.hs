@@ -221,6 +221,20 @@ unchecked, and not even told to the model, until container lifting (<https://git
 is derivable. For now lift them by hand with 'everyHolds' and 'describeEvery' in
 a custom 'Property' combined with @'Structural' X@, as the @Speakers@ example under 'everyHolds' does.
 
+== A recursive type with a bare instance hangs
+
+A type that is directly or mutually recursive must not use the structural
+default. \"Directly recursive\" means a field of its own type that is not under a
+list, 'NonEmpty' or 'Maybe', like the @Neg Expr@ in @data Expr = Lit Int | Neg
+Expr@; \"mutually recursive\" means the same through another type's bare
+instance. Enumerating the structural 'Property' (its 'Universe') of such a type
+never ends, and 'description' and @violatedProperties@ (in @shroom@) enumerate
+it, so with a bare @instance Surveyable Expr@ they run forever, in @shroom@
+before any request is sent and on every backend. (Under the former @Void@
+default this worked.) Opt out on the recursive type with
+@type Property Expr = Void@, as above, or give it a custom 'Property' that does
+not contain @'Structural' Expr@.
+
 == A field of a type you do not own
 
 A bare instance fails with an @All2 Surveyable@ error if one of the fields has

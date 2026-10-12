@@ -17,6 +17,21 @@
     Use this for a field of a type you do not own, which has no `Describable`/`Surveyable`
     instance (a bare instance fails with an `All2 Surveyable` error), or when you do not want the
     `generics-sop` instances. Or give that field type, or a newtype around it, its own instances.
+* **Breaking: a directly or mutually recursive type with a bare `instance Surveyable X` hangs.**
+  With the structural default, `universe @(Structural X)` never ends for a type with a field of its
+  own type that is not under a list, `NonEmpty` or `Maybe` (`data Expr = Lit Int | Neg Expr`), or
+  that reaches itself through another type's bare instance. `description` and the checks that
+  enumerate the properties (`violatedProperties` in `shroom`) then run forever, in `shroom` before
+  any request is sent and on every backend; under the old `Void` default such a type worked. Opt out
+  on the recursive type with `instance Surveyable X where type Property X = Void`, or give it a
+  custom `Property` that does not contain `Structural X`. No attempt is made to make `Universe`
+  terminate.
+* **Breaking: the new base-type instances can overlap yours.** `Describable` and `Surveyable`
+  instances now exist for `Text`, `Int`, `Integer`, `Natural`, `Double`, `Float`, `Bool`, `Char`,
+  `UTCTime`, `Day`, `[a]`, `NonEmpty a` and `Maybe a`. A downstream package that already defines one
+  of them, say `instance Describable [Foo]` or `instance Surveyable Text`, now gets a
+  duplicate-instance or overlapping-instances error; delete its instance, or wrap the type in a
+  `newtype` of your own.
 * **Breaking: a custom `Property` now needs both `propertyHolds` and `describeProperties`.** They used
   to default to `True` and `Nothing`; now they default only for `Void` (nothing) and `Structural a`
   (the fields), so an instance with `type Property X = XProperty` that leaves one out fails to

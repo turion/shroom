@@ -69,6 +69,18 @@ type.
   `build-depends`) or the one-line opt-out `type Property X = Void`, and a custom `Property` must now
   write both `propertyHolds` and `describeProperties`. `shroom-class`'s changelog has the migration
   note, the compile error to search for, and what container fields do (nothing yet).
+* **Breaking: a directly or mutually recursive type with a bare `instance Surveyable X` hangs**
+  before any request is sent, on every backend, because the structural default enumerates its
+  properties forever (e.g. `data Expr = Lit Int | Neg Expr`). Opt out with
+  `type Property X = Void` or a custom `Property`; `shroom-class`'s changelog has the details. (A
+  recursive schema is in any case rejected by Claude.)
+* **Breaking: the new base-type `Promptable` instances can overlap yours.** `Promptable` now has
+  instances for `Text`, `Int`, `Integer`, `Natural`, `Double`, `Float`, `Bool`, `Char`, `UTCTime`,
+  `Day`, `[a]`, `NonEmpty a` and `Maybe a` (listed under "New" below), and `shroom-class` gives the
+  same types `Describable` and `Surveyable` instances. A downstream package that already defines one
+  of them, say `instance Promptable Text` or `instance Describable [Foo]`, now gets a
+  duplicate-instance or overlapping-instances error; delete its instance, or wrap the type in a
+  `newtype` of your own.
 * **Breaking: `Promptable`'s method `prompt` now also needs `State [ContextItem] :> es`**, so an
   override can scope context with `withContext` around the default request. This breaks more than
   overrides: any polymorphic user function `(Prompt :> es) => … ` that calls the class method

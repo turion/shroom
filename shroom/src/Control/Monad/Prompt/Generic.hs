@@ -141,11 +141,20 @@ the strategy does not go element by element. The properties of the elements are
 therefore not checked, nor told to the model, as for any container field (issue
 #18, see "Data.Shroom.Class").
 
-== Recursive types fail against Claude
+== Recursive types hang, and fail against Claude
 
-Anthropic's structured outputs do not support recursive schemas. A type that
-mentions itself (a tree whose children are trees, say) therefore fails against
-Claude, in the generic strategy as in a flat request, which sends the same schema.
+A directly or mutually recursive type (@data Expr = Lit Int | Neg Expr@: a field
+of its own type that is not under a list, 'NonEmpty' or 'Maybe', or one that
+reaches itself through another type's bare instance) with a bare
+@instance Surveyable@ hangs under the structural default, on every backend and
+before any request is sent: enumerating its structural 'Property' never ends.
+Such a type must opt out of the default with @type Property X = Void@ (or a custom
+'Property'), see 'Surveyable'.
+
+Independently of that, Anthropic's structured outputs do not support recursive
+schemas. A type that mentions itself (a tree whose children are trees, say)
+therefore fails against Claude even with the opt-out, in the generic strategy as
+in a flat request, which sends the same schema.
 
 == Which types
 
