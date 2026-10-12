@@ -11,7 +11,8 @@
 # neither the PR's nixos test nor an updater), and the argument list is for `callPackage`.
 #
 # **When PR 521236 merges, delete this file and the `bifrost` entry in flake.nix in favour of
-# `pkgs.bifrost`.** Nothing else in this repository should need to change.
+# `pkgs.bifrost`, and point the `anthropicProxy.package` default in nix/ollama-shroom.nix at
+# `pkgs.bifrost` too.** Nothing else in this repository should need to change.
 #
 # **Name collision:** nixpkgs PR 548274 is also titled "bifrost: init", but it packages an
 # unrelated Gradle/Java project. It is not this Bifrost and has nothing to do with this file.

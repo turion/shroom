@@ -69,6 +69,40 @@
 #   - Even when the model fits, llama.cpp's fit step keeps a fixed 1024 MiB of VRAM free, so a
 #     small card ends up half-used (30 of 37 layers here). `gpuLayers` overrides that.
 #
+# ## An Anthropic Messages API in front of it (development and testing)
+#
+# One more line gives the same machine Bifrost, speaking the Anthropic Messages API and
+# forwarding to this module's own Ollama:
+#
+#   services.ollama.shroom.anthropicProxy.enable = true;
+#
+# A shroom program then reaches it with:
+#
+#   anthropicCompatBackend "http://127.0.0.1:8787/anthropic" "ollama/llama3.2:1b" "unused"
+#
+#   - The base URL has NO trailing `/v1` (baikai strips one and appends its own) but DOES end in
+#     `/anthropic`, Bifrost's Anthropic route. The model id carries the `ollama/` provider prefix.
+#   - The port is `anthropicProxy.port` (default 8787). It is loopback-only, never opened in the
+#     firewall, and meant for development and testing, not for serving anyone else.
+#   - The credential is a placeholder, not a secret. The module generates a `config.json` in the
+#     Nix store (world-readable) whose one provider is `ollama`, with an upstream key named
+#     `ollama-shroom` whose value is `unused`: Bifrost insists on a key entry, Ollama checks none.
+#     Bifrost verifies no credential on its inference routes, so a client may send any non-empty
+#     `x-api-key` (baikai refuses to dispatch with none); `unused` is the conventional one.
+#   - A `preStart` step installs that file as `config.json` in the unit's `StateDirectory=`
+#     (`/var/lib/shroom-anthropic-proxy`), which is also Bifrost's `-app-dir`, after deleting
+#     Bifrost's sqlite `config.db` there, so `config.json` is the only source of truth and an
+#     old `services.ollama.host`/`port` can never survive in a stale database. `logs.db` is kept.
+#   - A tool loop does not work through this stack: Ollama applies the request's JSON schema as
+#     a grammar to the whole reply, so with a tool and a schema in the same request no
+#     `tool_use` is ever emitted. Use it for single-shot structured output only.
+#
+# **An importer's nixpkgs must provide `go_1_27`** (Bifrost 2.x declares `go 1.27`), or set
+# `services.ollama.shroom.anthropicProxy.package` to a Bifrost it builds itself. Otherwise
+# enabling the proxy is an evaluation error; with the proxy disabled (the default) the package
+# option is not even forced. The default package is the derivation vendored in `nix/bifrost.nix`,
+# which also says what retires it.
+#
 # ## The one coupling that breaks CI if ignored
 #
 # `services.ollama.shroom.model` here and `OLLAMA_MODEL` in `.github/workflows/ci.yml` must
@@ -103,6 +137,26 @@ let
     "no-X11-forwarding"
     ''permitopen="127.0.0.1:${toString config.services.ollama.port}"''
   ];
+
+  proxy = cfg.anthropicProxy;
+  proxyName = "shroom-anthropic-proxy";
+
+  # The placeholder credential: Bifrost wants a key entry for the provider, Ollama checks none.
+  # It lands in the Nix store, so it must stay a dummy.
+  placeholderKey = "unused";
+
+  # `models = [ "*" ]`: Bifrost denies every model to a key that lists none.
+  proxyConfigFile = (pkgs.formats.json { }).generate "bifrost-config.json" {
+    providers.ollama.keys = [
+      {
+        name = "ollama-shroom";
+        value = placeholderKey;
+        models = [ "*" ];
+        weight = 1;
+        ollama_key_config.url = "http://${config.services.ollama.host}:${toString config.services.ollama.port}";
+      }
+    ];
+  };
 in
 {
   options.services.ollama.shroom = {
@@ -212,6 +266,45 @@ in
         secret needs to live on the server at all.
       '';
     };
+
+    anthropicProxy.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      example = true;
+      description = ''
+        Also run Bifrost in front of this module's Ollama, speaking the Anthropic
+        Messages API, for development and testing of Anthropic-API clients (shroom's
+        `anthropicCompatBackend`) without an Anthropic account. Loopback-only; the API
+        key is a placeholder (`unused`), not a secret. A tool loop does not work through
+        it (Ollama grammar-constrains the whole reply). Defaults to `false`.
+
+        An importing configuration's nixpkgs must provide `go_1_27`, or set
+        `anthropicProxy.package` to a Bifrost it builds itself; otherwise enabling this
+        is an evaluation error. The URL, model id and the rest are in the header of
+        `nix/ollama-shroom.nix`.
+      '';
+    };
+
+    anthropicProxy.port = lib.mkOption {
+      type = lib.types.port;
+      default = 8787;
+      description = ''
+        TCP port Bifrost listens on when `anthropicProxy.enable` is set. Loopback-only,
+        never opened in the firewall, for development and testing. How a client
+        reaches it is in the header of `nix/ollama-shroom.nix`.
+      '';
+    };
+
+    anthropicProxy.package = lib.mkOption {
+      type = lib.types.package;
+      default = pkgs.callPackage ./bifrost.nix { };
+      defaultText = lib.literalExpression "pkgs.callPackage ./bifrost.nix { }";
+      description = ''
+        The Bifrost to run. Defaults to the derivation vendored in `nix/bifrost.nix`
+        (see there for where it comes from and what retires it), which needs a nixpkgs
+        with `go_1_27`; set this to supply your own otherwise.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -268,6 +361,76 @@ in
           echo "${cfg.model} still not available after 5 minutes" >&2
           exit 1
         '';
+    };
+
+    # Bifrost in front of this module's Ollama, speaking the Anthropic Messages API. Modelled
+    # on nixpkgs PR 521236's `nixos/modules/services/misc/bifrost.nix` (same hardening, same
+    # `StateDirectory=` + `-app-dir` shape), but fixed to this one use: loopback, one provider.
+    systemd.services.${proxyName} = lib.mkIf proxy.enable {
+      description = "Bifrost, an Anthropic Messages API in front of shroom's test Ollama";
+      wantedBy = [ "multi-user.target" "ollama.service" ];
+      # The upstream is this module's own Ollama.
+      requires = [ "ollama.service" ];
+      bindsTo = [ "ollama.service" ];
+      # Bifrost fetches its pricing datasheets over HTTPS at startup and exits when that fails
+      # with nothing cached (PR 521236), so wait for a working network, not a merely configured one.
+      wants = [ "network-online.target" ];
+      after = [ "network-online.target" "ollama.service" ];
+
+      # `config.db` and its WAL sidecars (sqlite WAL mode leaves them after an unclean stop) are
+      # dropped so `config.json` stays authoritative; this module is fully declarative, so the
+      # database holds nothing worth keeping. `logs.db*` stays.
+      preStart = ''
+        rm -f "$STATE_DIRECTORY"/config.db "$STATE_DIRECTORY"/config.db-wal "$STATE_DIRECTORY"/config.db-shm
+        install -Dm600 '${proxyConfigFile}' "$STATE_DIRECTORY/config.json"
+      '';
+
+      startLimitIntervalSec = 300;
+      startLimitBurst = 5;
+
+      serviceConfig = {
+        Restart = "on-failure";
+        RestartSec = 10;
+
+        # `-host` is explicit and not left to Bifrost's own default.
+        ExecStart = lib.concatStringsSep " " [
+          (lib.getExe proxy.package)
+          "-host"
+          "127.0.0.1"
+          "-port"
+          (toString proxy.port)
+          "-app-dir"
+          "%S/${proxyName}"
+          "-log-level"
+          "info"
+          "-log-style"
+          "json"
+        ];
+
+        # `config.db` and `logs.db` (sqlite) land in `-app-dir`, so it has to be writable by
+        # the dynamic user: /var/lib/${proxyName}.
+        StateDirectory = proxyName;
+        WorkingDirectory = "%S/${proxyName}";
+
+        DynamicUser = true;
+        DevicePolicy = "closed";
+        LockPersonality = true;
+        PrivateTmp = true;
+        PrivateUsers = true;
+        ProtectClock = true;
+        ProtectControlGroups = true;
+        ProtectHome = true;
+        ProtectHostname = true;
+        ProtectKernelLogs = true;
+        ProtectKernelModules = true;
+        ProtectKernelTunables = true;
+        ProtectProc = "invisible";
+        RestrictAddressFamilies = [ "AF_INET" "AF_INET6" "AF_UNIX" ];
+        RestrictNamespaces = true;
+        RestrictRealtime = true;
+        SystemCallArchitectures = "native";
+        UMask = "0077";
+      };
     };
 
     users.users = lib.mkIf (cfg.auth.mode == "ssh-tunnel") {
