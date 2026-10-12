@@ -677,7 +677,9 @@ main =
           [ testGroup
               "improve"
               [ testCase "a fine reply about a valid value yields Nothing, and the request carries the value, the description and a flat verdict schema" $ do
-                  responses <- newIORef (["{\"verdict\":\"fine\"}"] :: [Text])
+                  responses <-
+                    newIORef
+                      (["{\"verdict\":\"fine\",\"value\":{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}}"] :: [Text])
                   seen <- newIORef ([] :: [(Text, Text, Value)])
                   result <-
                     Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
@@ -694,12 +696,32 @@ main =
                       KM.lookup "type" root @?= Just (String "object")
                       assertBool "no oneOf at the root" (not (KM.member "oneOf" root))
                       assertBool "no $ref at the root" (not (KM.member "$ref" root))
+                      -- strict structured-output modes need every property required
+                      KM.lookup "required" root @?= Just (toJSON (["verdict", "value"] :: [Text]))
                       case KM.lookup "properties" root of
                         Just (Object props) -> do
                           assertBool "verdict property" (KM.member "verdict" props)
                           assertBool "value property" (KM.member "value" props)
                         other -> assertFailure ("expected a properties object, got " <> show other)
                     other -> assertFailure ("expected an object schema root, got " <> show other)
+              , testCase "a fine reply without a value is still accepted for a valid original" $ do
+                  responses <- newIORef (["{\"verdict\":\"fine\"}"] :: [Text])
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.improve (User "Alice" "alice@example.com")
+                  result @?= Right Nothing
+                  length <$> readIORef seen >>= (@?= 1)
+              , testCase "a fine reply's value is ignored, even when it differs from the original and violates properties" $ do
+                  responses <-
+                    newIORef
+                      (["{\"verdict\":\"fine\",\"value\":{\"userName\":\"Someone else\",\"userEmail\":\"\"}}"] :: [Text])
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.improve (User "Alice" "alice@example.com")
+                  result @?= Right Nothing
+                  length <$> readIORef seen >>= (@?= 1)
               , testCase "an improved reply yields Just the parsed value" $ do
                   responses <-
                     newIORef
@@ -731,7 +753,7 @@ main =
               , testCase "a fine reply about a violating value is retried until the result satisfies the property" $ do
                   responses <-
                     newIORef
-                      ( [ "{\"verdict\":\"fine\"}"
+                      ( [ "{\"verdict\":\"fine\",\"value\":{\"userName\":\"Alice\",\"userEmail\":\"\"}}"
                         , "{\"verdict\":\"improved\",\"value\":{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}}"
                         ] ::
                           [Text]

@@ -146,8 +146,10 @@ content with it, @'Just' v'@ means the model returned a corrected whole value
 The request scopes one 'UserMessage' onto the current context, showing the
 value as JSON and asking whether it is a good value of the type and satisfies
 every listed property, and the reply is one verdict object,
-@{"verdict": "fine" | "improved", "value": <a>}@, with @value@ present only for
-@improved@. The type's description (see 'description') goes with it, as for
+@{"verdict": "fine" | "improved", "value": <a>}@, with @value@ always present:
+the corrected value for @improved@, the given value unchanged for @fine@ (where
+it is ignored; a @fine@ reply that omits it is still accepted). The type's
+description (see 'description') goes with it, as for
 'prompt'. The scoped message is not kept; the raw reply is appended to the
 context as an 'AssistantMessage', as for 'prompt'.
 
@@ -176,6 +178,10 @@ Internal; the wire form is one object, see 'improveSchema'.
 -}
 data Verdict a = VerdictFine | VerdictImproved a
 
+{- | A @fine@ verdict ignores @value@ (present on the wire, see 'improveSchema',
+but never parsed, so a @fine@ reply without one is accepted too); an
+@improved@ one requires it.
+-}
 instance (FromJSON a) => FromJSON (Verdict a) where
   parseJSON = withObject "Verdict" $ \o -> do
     verdict <- o .: "verdict"
@@ -187,9 +193,13 @@ instance (FromJSON a) => FromJSON (Verdict a) where
 {- | The wire schema of a 'Verdict' over @a@: a single object whose root is
 built by hand, so that it is not an openapi3-derived sum (which would emit a
 @oneOf@ at the root, which structured-output schemas handle unevenly).
-@value@ is the (already flattened) schema of @a@ itself and is required only
-in the sense of the description: JSON Schema cannot make it conditional on
-the verdict without @if@\/@oneOf@.
+@value@ is the (already flattened) schema of @a@ itself. Both @verdict@ and
+@value@ are listed in @required@: strict structured-output modes (OpenAI's
+@json_schema@ with @strict@) reject an object whose @properties@ are not all
+required, and JSON Schema cannot make @value@ conditional on the verdict
+without @if@\/@oneOf@. So the model always sends a @value@, and for @fine@ the
+parser ignores it (see the 'FromJSON' instance of 'Verdict', which still accepts
+a @fine@ reply without one, for backends that do not enforce @required@).
 -}
 improveSchema :: forall a. (ToSchema a) => Proxy a -> Value
 improveSchema prx =
@@ -201,11 +211,11 @@ improveSchema prx =
               .= object
                 [ "type" .= ("string" :: Text)
                 , "enum" .= (["fine", "improved"] :: [Text])
-                , "description" .= ("\"fine\" if the given value is already good, \"improved\" if a corrected value follows in \"value\"." :: Text)
+                , "description" .= ("\"fine\" if the given value is already good (then repeat it unchanged in \"value\"), \"improved\" if a corrected value follows in \"value\"." :: Text)
                 ]
           , "value" .= schemaWithDefs prx
           ]
-    , "required" .= (["verdict"] :: [Text])
+    , "required" .= (["verdict", "value"] :: [Text])
     , "additionalProperties" .= False
     ]
 
@@ -359,11 +369,11 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
               "Here is a value of the type described below, as JSON:\n"
                 <> shown
                 <> "\n\nIs it a good value of that type, and does it satisfy every listed property? "
-                <> "If it does, answer with verdict \"fine\". "
+                <> "If it does, answer with verdict \"fine\" and return the value unchanged in \"value\". "
                 <> "If it does not, answer with verdict \"improved\" and put a corrected whole value in \"value\"."
           typeDesc =
             description prx
-              <> "\nAnswer with a single JSON object: {\"verdict\": \"fine\"} for a good value as it stands, "
+              <> "\nAnswer with a single JSON object: {\"verdict\": \"fine\", \"value\": <the given value, unchanged>} for a good value as it stands, "
               <> "or {\"verdict\": \"improved\", \"value\": <the corrected whole value>}.\n"
           check VerdictFine = violatedProperties original
           check (VerdictImproved v) = violatedProperties v

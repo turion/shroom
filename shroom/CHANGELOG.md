@@ -100,7 +100,10 @@ type.
   request (`RequestImprove`) beside `prompt`/`promptWith`/`promptTools`. It shows the model an
   existing value as JSON and gets back one verdict object, `{"verdict": "fine" | "improved",
   "value": <a>}`: `Nothing` means the value is valid and the model is content with it, `Just v`
-  is a corrected whole value. An `improved` value that fails to parse or violates a property is
+  is a corrected whole value. Both `verdict` and `value` are `required` in the wire schema (OpenAI's
+  strict `json_schema` mode rejects a schema with optional properties): the model returns the
+  value unchanged with `fine`, which the parser ignores, and a `fine` reply without `value` is
+  still accepted. An `improved` value that fails to parse or violates a property is
   re-prompted like any request, and a `fine` verdict about a value that itself violates a property
   is retried the same way, so `Nothing` is never returned for an invalid value. `improve` is flat:
   it never calls the type's own `Promptable.prompt`. Informal properties, which only the model can
