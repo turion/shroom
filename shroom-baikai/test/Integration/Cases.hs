@@ -13,7 +13,14 @@ Covers at least the union of what "Integration.Claude" and
 "Integration.Ollama" each covered before this module existed: a typed value
 comes back ('User', 'Counter'), a property-validated chain runs end to end
 ('conferenceChain'), and a tool actually gets dispatched and its result read
-back in ('conferenceChainWithTools'). Each suite keeps whatever
+back in ('conferenceChainWithTools'). Three further cases run
+@deriving via Generically@ end to end, always through the class method
+'Control.Monad.Prompt.Promptable.prompt', since the flat
+'Control.Monad.Prompt.Effect.prompt' would pass without running the strategy:
+a bare 'Text', 'Int' and 'Double' (the non-object schema roots the strategy
+sends for its fields and for the constructor choice, so a provider that
+rejects one fails there first), then the record 'Musician' and the sum
+'Fruit' from "GenericTypes". Each suite keeps whatever
 provider-specific cases do not fit this shape (web-search-tool smoke tests
 and failure reporting in "Integration.Claude"; 'celebrityChain' and the
 non-object top-level response types in "Integration.Ollama") alongside a
@@ -66,11 +73,13 @@ import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 import Control.Monad.Prompt.Backend (Backend, ContextItem)
 import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Effect qualified as Effect
+import Control.Monad.Prompt.Promptable qualified as Promptable
 import Control.Monad.Prompt.Tool (ToolHandler (..), runTool, runToolHandler, toolBinding)
 import Control.Monad.Prompt.Tool.Web (DuckDuckGoSearch, duckDuckGoSearchHandler)
 
 -- test
 import ConferenceTypes
+import GenericTypes (Fruit, Musician, allPropertiesHold)
 import Types
 
 {- | Generous enough for the weakest provider exercised here (a small local
@@ -92,7 +101,39 @@ backendIntegrationTests :: Backend BackendEs -> TestTree
 backendIntegrationTests backend =
   testGroup
     "backend integration cases"
-    [ testCase "prompt returns a User" $ do
+    [ testCase "Promptable.prompt returns a bare Text, Int and Double" $ do
+        -- Scalar roots, through the class method: the generic strategy sends
+        -- them as fields and as the constructor-choice enum, so a provider
+        -- that refuses one should fail here rather than inside 'Fruit'.
+        result <- Effect.runPromptResultEff backend sharedPromptConfig $ do
+          Effect.context "Give the name of one fruit."
+          fruitName <- Promptable.prompt @Text
+          Effect.context "Give the number of seeds in one apple."
+          seeds <- Promptable.prompt @Int
+          Effect.context "Give the weight of one apple, in grams."
+          grams <- Promptable.prompt @Double
+          pure (fruitName, seeds, grams)
+        case result of
+          Left err -> assertFailure (show err)
+          -- Any 'Int' and 'Double' prove the scalar roots round-tripped.
+          Right (fruitName, _, _) -> assertBool "text is non-empty" (not (T.null fruitName))
+    , testCase "Promptable.prompt returns a Musician, field by field" $ do
+        -- The class method, not 'Effect.prompt': that one sends a flat request
+        -- and would pass without running the generic strategy.
+        result <- Effect.runPromptResultEff backend sharedPromptConfig $ do
+          Effect.context "Make up a classical composer."
+          Promptable.prompt @Musician
+        case result of
+          Left err -> assertFailure (show err)
+          Right musician -> assertBool "the properties of the musician hold" (allPropertiesHold musician)
+    , testCase "Promptable.prompt returns a Fruit, constructor first" $ do
+        result <- Effect.runPromptResultEff backend sharedPromptConfig $ do
+          Effect.context "Make up a fruit that a classical composer would eat for breakfast."
+          Promptable.prompt @Fruit
+        case result of
+          Left err -> assertFailure (show err)
+          Right fruit -> assertBool "the properties of the fruit hold" (allPropertiesHold fruit)
+    , testCase "prompt returns a User" $ do
         result <- Effect.runPromptResultEff backend sharedPromptConfig $ do
           Effect.context "Return a JSON object for a user named Alice with email alice@example.com"
           Effect.prompt @User

@@ -10,7 +10,7 @@ interpret with @'runTool' mySearchHandler@:
 @
 -- | A web search query.
 data MySearch = MySearch { query :: Text }
-  deriving (Generic, ToJSON, FromJSON, ToSchema)
+  deriving (Generic, ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 \$(deriveDescribable ''MySearch)
 instance Surveyable MySearch

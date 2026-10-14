@@ -1,23 +1,33 @@
 {- | Internal schema utilities shared by 'Control.Monad.Prompt' and
 'Control.Monad.Prompt.Tool'.  Not part of the public API.
 -}
-module Control.Monad.Prompt.Schema (schemaWithDefs, normalizeSchemaForStructuredOutput, inlineSchema, ToolDef (..), ToolDispatcher) where
+module Control.Monad.Prompt.Schema (encodeJson, schemaWithDefs, normalizeSchemaForStructuredOutput, inlineSchema, ToolDef (..), ToolDispatcher) where
 
 -- base
+import Data.Foldable (toList)
 import Data.Proxy (Proxy)
 
 -- text
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Lazy (toStrict)
 
 -- aeson
-import Data.Aeson (Value (..), toJSON)
+import Data.Aeson (ToJSON, Value (..), toJSON)
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KM
+import Data.Aeson.Text (encodeToLazyText)
+
+-- vector
+import Data.Vector qualified as V
 
 -- openapi3
 import Data.OpenApi (Referenced (..), ToSchema, declareSchemaRef, getReference)
 import Data.OpenApi.Declare (runDeclare)
+
+-- | Encode a value as compact JSON text.
+encodeJson :: (ToJSON v) => v -> Text
+encodeJson = toStrict . encodeToLazyText
 
 -- | A backend-agnostic tool definition passed to LLM backends.
 data ToolDef = ToolDef
@@ -82,6 +92,13 @@ strict tool) schema:
   here accepts, but the official SDKs move them into the description so the
   model still hears the constraint; this does the same rather than silently
   discarding it.
+* Rewrites @"oneOf"@ to @"anyOf"@. @openapi3@ renders a sum type with a
+  non-nullary constructor as @oneOf@, which Anthropic's structured outputs
+  do not list as supported (they list @anyOf@ and @allOf@). The alternatives
+  @openapi3@ generates for a sum are told apart by their tag, so \"at least
+  one\" accepts what \"exactly one\" did. A node that already has an @anyOf@
+  keeps it, and its @oneOf@ moves into an extra @allOf@ entry so that both
+  constraints still apply.
 
 String @"format"@ is left alone: Anthropic's structured outputs accept
 @date-time@, @date@, @time@, @duration@, @email@, @hostname@, @uri@,
@@ -113,7 +130,17 @@ normalizeSchemaForStructuredOutput (Object km) =
   let km1 = case KM.lookup "$ref" km of
         Just (String ref) -> KM.insert "$ref" (String (T.replace "#/components/schemas/" "#/$defs/" ref)) km
         _ -> km
-      km' = KM.map normalizeSchemaForStructuredOutput km1
+      km2 = KM.map normalizeSchemaForStructuredOutput km1
+      km' = case KM.lookup "oneOf" km2 of
+        -- Only an array is the keyword; an object under that key is a property named @oneOf@.
+        Just alternatives@(Array _) -> case KM.lookup "anyOf" km2 of
+          Nothing -> KM.insert "anyOf" alternatives (KM.delete "oneOf" km2)
+          Just _ ->
+            let existing = case KM.lookup "allOf" km2 of
+                  Just (Array vs) -> toList vs
+                  _ -> []
+             in KM.insert "allOf" (Array (V.fromList (existing <> [Object (KM.singleton "anyOf" alternatives)]))) (KM.delete "oneOf" km2)
+        _ -> km2
    in Object $ case KM.lookup "type" km' of
         Just (String "object") -> KM.insert "additionalProperties" (Bool False) km'
         Just (String "integer") -> foldBoundsIntoDescription km'

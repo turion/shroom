@@ -1,0 +1,15 @@
+universe:
+  Structural (Z (Z (PropertyOf NameNotEmpty))) | Field 1 of Pair: The name must not be empty.
+  Structural (Z (Z (PropertyOf NameIsReal))) | (undescribed)
+  Structural (Z (S (Z (PropertyOf EmailNotEmpty)))) | Field 2 of Pair: The email address is not empty.
+  Structural (Z (S (Z (PropertyOf EmailHasAtSign)))) | Field 2 of Pair: The email address must contain an '@' character.
+value Pair (Name "") (Email {emailAddress = "no-at-sign"}):
+  Structural (Z (Z (PropertyOf NameNotEmpty))): violated
+  Structural (Z (Z (PropertyOf NameIsReal))): holds
+  Structural (Z (S (Z (PropertyOf EmailNotEmpty)))): holds
+  Structural (Z (S (Z (PropertyOf EmailHasAtSign)))): violated
+value Pair (Name "Ada") (Email {emailAddress = "ada@example.org"}):
+  Structural (Z (Z (PropertyOf NameNotEmpty))): holds
+  Structural (Z (Z (PropertyOf NameIsReal))): holds
+  Structural (Z (S (Z (PropertyOf EmailNotEmpty)))): holds
+  Structural (Z (S (Z (PropertyOf EmailHasAtSign)))): holds

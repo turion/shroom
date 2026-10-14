@@ -39,6 +39,7 @@ module Control.Monad.Prompt.Effect (
   prompt,
   promptWith,
   promptTools,
+  improve,
   promptPar,
   promptsParallel,
   runPrompt,
@@ -69,9 +70,7 @@ import Data.Text (Text, pack)
 import Data.Text qualified as T
 
 -- aeson
-import Data.Aeson (FromJSON, Value, eitherDecodeStrictText)
-import Data.Aeson.Text (encodeToLazyText)
-import Data.Text.Lazy (toStrict)
+import Data.Aeson (FromJSON (..), Value, eitherDecodeStrictText, object, withObject, (.:), (.=))
 
 -- openapi3
 import Data.OpenApi (ToSchema)
@@ -95,7 +94,7 @@ import Control.Monad.Prompt.Backend (
   ToolCall (..),
   ToolResult (..),
  )
-import Control.Monad.Prompt.Schema (ToolDef, ToolDispatcher, schemaWithDefs)
+import Control.Monad.Prompt.Schema (ToolDef, ToolDispatcher, encodeJson, schemaWithDefs)
 import Control.Monad.Prompt.Tool (ToolBinding (..), dispatchBindings)
 import Data.Shroom.Class (Surveyable, describeProperties, description, propertyHolds)
 
@@ -110,6 +109,7 @@ data Prompt :: Effect where
     (Surveyable a, ToSchema a, FromJSON a) =>
     [ToolBinding m] ->
     Prompt m a
+  RequestImprove :: (Surveyable a, ToSchema a, FromJSON a) => a -> Prompt m (Maybe a)
 
 type instance DispatchOf Prompt = Dynamic
 
@@ -137,6 +137,96 @@ promptTools ::
   [ToolBinding (Eff es)] ->
   Eff es a
 promptTools bindings = send (RequestPromptTools bindings)
+
+{- | Ask the model to improve a value it (or anyone) has already produced:
+'Nothing' means the given value is a good value of its type and the model is
+content with it, @'Just' v'@ means the model returned a corrected whole value
+@v'@.
+
+The request scopes one 'UserMessage' onto the current context, showing the
+value as JSON and asking whether it is a good value of the type and satisfies
+every listed property, and the reply is one verdict object,
+@{"verdict": "fine" | "improved", "value": <a>}@, with @value@ always present:
+the corrected value for @improved@, the given value unchanged for @fine@ (where
+it is ignored; a @fine@ reply that omits it is still accepted). The type's
+description (see 'description') goes with it, as for
+'prompt'. The scoped message is not kept; the raw reply is appended to the
+context as an 'AssistantMessage', as for 'prompt'.
+
+The reply goes through the same retry path as any request: an @improved@ value
+that fails to parse or violates a property is re-prompted. A @fine@ verdict
+is accepted only if the value passed in satisfies every 'Data.Shroom.Class.Property'
+of @a@; otherwise it is retried in just the same way, the correction message naming
+the violated properties. So 'Nothing' always means \"the original value is valid
+and the model is content with it\".
+
+'improve' is flat by construction: it never calls the type's own
+'Control.Monad.Prompt.Promptable.prompt', so a prompt strategy may call it
+without recursing into itself. Only the properties 'Surveyable' can check in
+code are enforced; informal ones, which only the model can judge, are
+tracked as #26.
+-}
+improve ::
+  forall a es.
+  (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) =>
+  a ->
+  Eff es (Maybe a)
+improve = send . RequestImprove
+
+{- | The reply to an 'improve' request: the model's verdict on the value shown.
+Internal; the wire form is one object, see 'improveSchema'.
+-}
+data Verdict a = VerdictFine | VerdictImproved a
+
+{- | A @fine@ verdict ignores @value@ (present on the wire, see 'improveSchema',
+but never parsed, so a @fine@ reply without one is accepted too); an
+@improved@ one requires it.
+-}
+instance (FromJSON a) => FromJSON (Verdict a) where
+  parseJSON = withObject "Verdict" $ \o -> do
+    verdict <- o .: "verdict"
+    case (verdict :: Text) of
+      "fine" -> pure VerdictFine
+      "improved" -> VerdictImproved <$> o .: "value"
+      other -> fail ("verdict must be \"fine\" or \"improved\", not " <> show other)
+
+{- | The wire schema of a 'Verdict' over @a@: a single object whose root is
+built by hand, so that it is not an openapi3-derived sum (which would emit a
+@oneOf@ at the root, which structured-output schemas handle unevenly).
+@value@ is the (already flattened) schema of @a@ itself. Both @verdict@ and
+@value@ are listed in @required@: strict structured-output modes (OpenAI's
+@json_schema@ with @strict@) reject an object whose @properties@ are not all
+required, and JSON Schema cannot make @value@ conditional on the verdict
+without @if@\/@oneOf@. So the model always sends a @value@, and for @fine@ the
+parser ignores it (see the 'FromJSON' instance of 'Verdict', which still accepts
+a @fine@ reply without one, for backends that do not enforce @required@).
+-}
+improveSchema :: forall a. (ToSchema a) => Proxy a -> Value
+improveSchema prx =
+  object
+    [ "type" .= ("object" :: Text)
+    , "properties"
+        .= object
+          [ "verdict"
+              .= object
+                [ "type" .= ("string" :: Text)
+                , "enum" .= (["fine", "improved"] :: [Text])
+                , "description" .= ("\"fine\" if the given value is already good (then repeat it unchanged in \"value\"), \"improved\" if a corrected value follows in \"value\"." :: Text)
+                ]
+          , "value" .= schemaWithDefs prx
+          ]
+    , "required" .= (["verdict", "value"] :: [Text])
+    , "additionalProperties" .= False
+    ]
+
+-- | The descriptions of the properties of @a@ that a value does not satisfy.
+violatedProperties :: forall a. (Surveyable a) => a -> [Text]
+violatedProperties v =
+  [ desc
+  | p <- universe
+  , not (propertyHolds v p)
+  , Just desc <- [describeProperties (Proxy @a) p]
+  ]
 
 {- | Run two programs concurrently via "Effectful.Concurrent.Async", returning
 both results. Parallelism is an explicit call here, rather than hiding
@@ -231,7 +321,8 @@ same OK \/ PARSE FAIL \/ VALIDATION FAIL \/ ERROR outcomes as before.
 'RequestPrompt' passes no tools. 'RequestPromptTools' turns its
 @['ToolBinding']@ into the @['ToolDef']@ \/ dispatcher pair 'toolLoop'
 drives — via 'localSeqUnlift', since a binding's call runs in the caller's
-local effect stack.
+local effect stack. 'RequestImprove' (see 'improve') passes no tools either,
+and goes through the same retry path with a verdict schema of its own.
 -}
 runPrompt ::
   forall es a.
@@ -242,7 +333,7 @@ runPrompt ::
   Eff es a
 runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) b) -> case request of
   -- No tools for 'RequestPrompt' (unchanged from before todo 10).
-  RequestPrompt -> runRequest [] (\_ _ -> pure (Left "no tools")) (Just 0)
+  RequestPrompt -> let (toolDefs, dispatch, maxSteps) = noTools in runRequest toolDefs dispatch maxSteps
   -- 'RequestPromptTools': build the dispatcher out of the bindings by
   -- unlifting each binding's call — which runs in the request's own local
   -- effect stack ('localEs') — into this interpreter's 'es'.
@@ -251,7 +342,49 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
       (fmap toolBindingDef bindings)
       (\name v -> localSeqUnlift env (\unlift -> unlift (dispatchBindings bindings name v)))
       (maxToolSteps promptCfg)
+  RequestImprove original -> runImprove original
   where
+    -- The tool setup of a flat request: no tool definitions, a dispatcher
+    -- that refuses every call, and zero tool steps. Shared by 'RequestPrompt'
+    -- and 'RequestImprove'.
+    noTools :: ([ToolDef], ToolDispatcher (Eff es), Maybe Int)
+    noTools = ([], \_ _ -> pure (Left "no tools"), Just 0)
+
+    -- 'RequestImprove': a flat request, no tools, whose reply is a 'Verdict'.
+    -- The scoped 'UserMessage' showing the value goes onto the context the
+    -- backend sees but not the one left behind; only the raw reply is kept.
+    -- A @fine@ verdict is judged by the properties of the value passed in,
+    -- an @improved@ one by the properties of the value it carries.
+    runImprove ::
+      forall b.
+      (Surveyable b, ToSchema b, FromJSON b) =>
+      b ->
+      Eff es (Maybe b)
+    runImprove original = do
+      ctx <- get
+      let prx = Proxy @b
+          shown = encodeJson original
+          ask =
+            UserMessage $
+              "Here is a value of the type described below, as JSON:\n"
+                <> shown
+                <> "\n\nIs it a good value of that type, and does it satisfy every listed property? "
+                <> "If it does, answer with verdict \"fine\" and return the value unchanged in \"value\". "
+                <> "If it does not, answer with verdict \"improved\" and put a corrected whole value in \"value\"."
+          typeDesc =
+            description prx
+              <> "\nAnswer with a single JSON object: {\"verdict\": \"fine\", \"value\": <the given value, unchanged>} for a good value as it stands, "
+              <> "or {\"verdict\": \"improved\", \"value\": <the corrected whole value>}.\n"
+          check VerdictFine = violatedProperties original
+          check (VerdictImproved v) = violatedProperties v
+      let (toolDefs, dispatch, maxSteps) = noTools
+      (verdict, rawTxt) <-
+        attemptLoop toolDefs dispatch maxSteps (ctx <> [ask]) typeDesc (improveSchema prx) check (maxRetries promptCfg) (maxRetries promptCfg)
+      put (ctx <> [AssistantMessage rawTxt])
+      pure $ case verdict of
+        VerdictFine -> Nothing
+        VerdictImproved v -> Just v
+
     runRequest ::
       forall b.
       (Surveyable b, ToSchema b, FromJSON b) =>
@@ -264,12 +397,7 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
       let prx = Proxy @b
           typeDesc = description prx
           schema = schemaWithDefs prx
-          checkProps v =
-            [ desc
-            | p <- universe
-            , not (propertyHolds v p)
-            , Just desc <- [describeProperties prx p]
-            ]
+          checkProps = violatedProperties @b
       (a, rawTxt) <- attemptLoop toolDefs dispatch maxSteps ctx typeDesc schema checkProps (maxRetries promptCfg) (maxRetries promptCfg)
       put (ctx <> [AssistantMessage rawTxt])
       pure a
@@ -434,7 +562,7 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
               tagged <-
                 traverse
                   ( \tc -> do
-                      logDebug $ ">>> TOOL CALL: " <> tc.toolCallName <> " " <> toStrict (encodeToLazyText tc.toolCallArguments)
+                      logDebug $ ">>> TOOL CALL: " <> tc.toolCallName <> " " <> encodeJson tc.toolCallArguments
                       r <- dispatch tc.toolCallName tc.toolCallArguments
                       logDebug $ "<<< TOOL RESULT: " <> tc.toolCallName <> " " <> either ("ERROR: " <>) ("OK: " <>) r
                       pure (tc, r)

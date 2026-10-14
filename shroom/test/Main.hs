@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Main (main) where
 
@@ -15,6 +16,7 @@ import System.Timeout (timeout)
 
 -- aeson
 import Data.Aeson (FromJSON, ToJSON, Value (..), toJSON)
+import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.Text (encodeToLazyText)
 
 -- text
@@ -23,7 +25,7 @@ import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
 
 -- GHC.Generics
-import GHC.Generics (Generic)
+import GHC.Generics (Generic, Generically (..))
 
 -- network
 import Network.Socket (
@@ -42,10 +44,16 @@ import Network.Socket (
  )
 
 -- openapi3
-import Data.OpenApi (ToSchema)
+import Data.OpenApi (ToSchema, toSchema)
+
+-- universe-base
+import Data.Universe.Class (Universe)
 
 -- sop-core
 import Data.SOP (NP (..))
+
+-- generics-sop
+import Generics.SOP qualified as SOP
 
 -- tasty
 import Test.Tasty (defaultMain, testGroup)
@@ -55,13 +63,16 @@ import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 import Effectful (Eff, IOE, (:>))
 import Effectful.Concurrent.Async (Concurrent)
 import Effectful.Error.Static (Error)
-import Effectful.State.Static.Local (State)
+import Effectful.State.Static.Local (State, get)
 
 -- shroom
-import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..), ContextItem (..), ToolCall (..), ToolDef (..), renderContextItems)
+import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..), ContextItem (..), ToolCall (..), ToolDef (..), renderContextItems, schemaWithDefs)
 import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Effect qualified as Eff
+import Control.Monad.Prompt.Generic ()
 import Control.Monad.Prompt.Promptable (Promptable)
+import Control.Monad.Prompt.Promptable qualified as Promptable
+import Control.Monad.Prompt.TH (deriveDescribable)
 import Control.Monad.Prompt.Tool (Tool, ToolHandler (..), Toolable, runTool, toolBinding, toolDefsRaw, toolName)
 import Control.Monad.Prompt.Tool.Web
 import Data.Shroom.Class (Describable (..), Surveyable (..), description)
@@ -186,7 +197,7 @@ data Zblorf = Zblorf
   , zblorfSnorklast :: Text
   }
   deriving stock (Eq, Show, Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 -- | A record containing 'Zblorf' — one named-schema hop further in.
 data Quexnorb = Quexnorb
@@ -194,7 +205,7 @@ data Quexnorb = Quexnorb
   , quexnorbLabel :: Text
   }
   deriving stock (Eq, Show, Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 {- | The actual type under test: an array of 'Quexnorb', itself referencing
 'Zblorf'. This is what 'ConferenceTypes.Speakers' looks like structurally
@@ -204,7 +215,7 @@ live-model integration one.
 -}
 newtype Quexnorbs = Quexnorbs {quexnorbs :: [Quexnorb]}
   deriving stock (Eq, Show, Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 instance Describable Zblorf where describeType _ = "A record with two unguessable-name fields."
 instance Surveyable Zblorf
@@ -219,6 +230,162 @@ instance Surveyable Quexnorbs
 instance Promptable Quexnorbs
 
 instance Toolable Quexnorbs
+
+-- * A bare instance over a field that carries properties
+
+{- | A guest: a label and a registered user. The bare 'Surveyable' instance below
+surveys the fields, so the 'User''s email properties are properties of the guest.
+-}
+data Guest = Guest
+  { guestLabel :: Text
+  , guestUser :: User
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Guest where describeType _ = "A guest with a label and a registered user."
+instance Surveyable Guest
+instance Promptable Guest
+
+-- * An override that scopes context
+
+{- | A value whose 'Promptable' instance overrides 'prompt' to scope a piece of
+context around the default request, which the class method's @State
+[ContextItem]@ constraint makes possible.
+-}
+newtype Metric = Metric {metricText :: Text}
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Metric where describeType _ = "A measurement written out in text."
+instance Surveyable Metric
+instance Promptable Metric where
+  prompt = Eff.withContext "Always prefer metric units." Eff.prompt
+
+-- * Types prompted field by field
+
+-- | A band: a name and a head count. Prompted field by field.
+data Band = Band
+  { bandName :: Text
+  , bandSize :: Int
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Band where describeType _ = "A band with a name and a head count."
+instance Surveyable Band
+deriving via Generically Band instance Promptable Band
+
+-- | A property of a 'Profile' that should hold.
+data ProfileProperty = ProfileEmailNotEmpty
+  deriving stock (Bounded, Enum, Eq, Show)
+  deriving anyclass (Universe)
+
+-- | A profile with a name and an email address, whose email must not be empty.
+data Profile = Profile
+  { profileName :: Text
+  , profileEmail :: Text
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Profile where describeType _ = "A profile with a name and an email address."
+instance Surveyable Profile where
+  type Property Profile = ProfileProperty
+  propertyHolds p ProfileEmailNotEmpty = not (T.null (profileEmail p))
+  describeProperties _ ProfileEmailNotEmpty = Just "The email address is not empty."
+deriving via Generically Profile instance Promptable Profile
+
+-- | A measurement whose length field has its own scoped 'prompt' (see 'Metric').
+data Measurement = Measurement
+  { measurementLength :: Metric
+  , measurementNote :: Text
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Measurement where describeType _ = "A measured length with a note."
+instance Surveyable Measurement
+deriving via Generically Measurement instance Promptable Measurement
+
+-- | A pair with positional fields.
+data Pair = Pair Text Int
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Pair where describeType _ = "A text and a number."
+instance Surveyable Pair
+deriving via Generically Pair instance Promptable Pair
+
+-- | A gig: a band, which is itself prompted field by field, and a venue.
+data Gig = Gig
+  { gigBand :: Band
+  , gigVenue :: Text
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Gig where describeType _ = "A gig at a venue."
+instance Surveyable Gig
+deriving via Generically Gig instance Promptable Gig
+
+-- | A treat on offer.
+data Treat
+  = -- | A cake, in a given flavour.
+    Cake
+      { cakeFlavour :: Text
+      -- ^ What the cake tastes of.
+      }
+  | -- | A biscuit, with a kind and a count.
+    Biscuit Text Int
+  | -- | No treat at all.
+    NoTreat
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+-- The constructors' Haddock comes from the splice, so the description is not written by hand.
+$(deriveDescribable ''Treat)
+
+instance Surveyable Treat
+deriving via Generically Treat instance Promptable Treat
+
+{- | A mock 'Backend' that answers from a list in order (repeating the last
+reply once the list runs out, like 'seqMockBackend') and records, for every
+call, the rendered context, the type description and the schema it was sent —
+which 'seqMockBackend' does not keep.
+-}
+recordingBackend :: (MonadIO m) => IORef [Text] -> IORef [(Text, Text, Value)] -> Backend m
+recordingBackend responses seen =
+  Backend $ \ctx typeDesc schema _toolDefs -> liftIO $ do
+    atomicModifyIORef' seen (\xs -> (xs <> [(renderContextItems ctx, typeDesc, schema)], ()))
+    atomicModifyIORef' responses $ \case
+      [] -> ([], Left (BackendTransportError "recordingBackend: no more responses"))
+      [x] -> ([x], Right (BackendAnswer x))
+      (x : rest) -> (rest, Right (BackendAnswer x))
+
+{- | Run a program against 'recordingBackend' with the given replies and retry
+budget, returning the result and every call's (context, type description,
+schema).
+-}
+runRecording :: [Text] -> Int -> Eff BaseEs a -> IO (Either Text a, [(Text, Text, Value)])
+runRecording replies retries program = do
+  responses <- newIORef replies
+  seen <- newIORef []
+  result <- Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = retries}) program
+  calls <- readIORef seen
+  pure (result, calls)
+
+-- | The rendered context of the n-th recorded call.
+callCtx :: [(Text, Text, Value)] -> Int -> Text
+callCtx calls n = case calls !! n of (ctx, _, _) -> ctx
+
+-- | The type description of the n-th recorded call.
+callDesc :: [(Text, Text, Value)] -> Int -> Text
+callDesc calls n = case calls !! n of (_, desc, _) -> desc
+
+-- | The schema sent with the n-th recorded call.
+callSchema :: [(Text, Text, Value)] -> Int -> Value
+callSchema calls n = case calls !! n of (_, _, schema) -> schema
 
 {- | Run an action against a localhost TCP listener that accepts a connection
 and then never reads from it or writes to it. Binds port 0, so the OS picks a
@@ -288,6 +455,11 @@ main =
               let d = description (Proxy @User)
               assertContains "The following properties MUST hold in your response:" d
               assertContains "The email address is not empty." d
+          , testCase "a bare instance describes the properties of its fields (Guest)" $ do
+              let d = description (Proxy @Guest)
+              assertContains "The following properties MUST hold in your response:" d
+              assertContains "- Field guestUser: The email address is not empty." d
+              assertContains "- Field guestUser: The email address must contain an '@' character." d
           ]
       , testGroup
           "structured-output schema (Control.Monad.Prompt.Schema.schemaWithDefs, via toolDefsRaw)"
@@ -503,6 +675,363 @@ main =
       , testGroup
           "Prompt effect (effectful)"
           [ testGroup
+              "improve"
+              [ testCase "a fine reply about a valid value yields Nothing, and the request carries the value, the description and a flat verdict schema" $ do
+                  responses <-
+                    newIORef
+                      (["{\"verdict\":\"fine\",\"value\":{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}}"] :: [Text])
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.improve (User "Alice" "alice@example.com")
+                  result @?= Right Nothing
+                  calls <- readIORef seen
+                  length calls @?= 1
+                  let (ctxTxt, typeDesc, schema) = calls !! 0
+                  assertContains "\"userName\":\"Alice\"" ctxTxt
+                  assertContains "\"userEmail\":\"alice@example.com\"" ctxTxt
+                  assertContains (description (Proxy @User)) typeDesc
+                  case schema of
+                    Object root -> do
+                      KM.lookup "type" root @?= Just (String "object")
+                      assertBool "no oneOf at the root" (not (KM.member "oneOf" root))
+                      assertBool "no $ref at the root" (not (KM.member "$ref" root))
+                      -- strict structured-output modes need every property required
+                      KM.lookup "required" root @?= Just (toJSON (["verdict", "value"] :: [Text]))
+                      case KM.lookup "properties" root of
+                        Just (Object props) -> do
+                          assertBool "verdict property" (KM.member "verdict" props)
+                          assertBool "value property" (KM.member "value" props)
+                        other -> assertFailure ("expected a properties object, got " <> show other)
+                    other -> assertFailure ("expected an object schema root, got " <> show other)
+              , testCase "a fine reply without a value is still accepted for a valid original" $ do
+                  responses <- newIORef (["{\"verdict\":\"fine\"}"] :: [Text])
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.improve (User "Alice" "alice@example.com")
+                  result @?= Right Nothing
+                  readIORef seen >>= (@?= 1) . length
+              , testCase "a fine reply's value is ignored, even when it differs from the original and violates properties" $ do
+                  responses <-
+                    newIORef
+                      (["{\"verdict\":\"fine\",\"value\":{\"userName\":\"Someone else\",\"userEmail\":\"\"}}"] :: [Text])
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.improve (User "Alice" "alice@example.com")
+                  result @?= Right Nothing
+                  readIORef seen >>= (@?= 1) . length
+              , testCase "an improved reply yields Just the parsed value" $ do
+                  responses <-
+                    newIORef
+                      (["{\"verdict\":\"improved\",\"value\":{\"userName\":\"Alicia\",\"userEmail\":\"alice@example.com\"}}"] :: [Text])
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.improve (User "Alice" "alice@example.com")
+                  result @?= Right (Just (User "Alicia" "alice@example.com"))
+                  readIORef seen >>= (@?= 1) . length
+              , testCase "an improved value violating a property is retried with a correction naming it" $ do
+                  responses <-
+                    newIORef
+                      ( [ "{\"verdict\":\"improved\",\"value\":{\"userName\":\"Alicia\",\"userEmail\":\"\"}}"
+                        , "{\"verdict\":\"improved\",\"value\":{\"userName\":\"Alicia\",\"userEmail\":\"alicia@example.com\"}}"
+                        ] ::
+                          [Text]
+                      )
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.improve (User "Alice" "alice@example.com")
+                  result @?= Right (Just (User "Alicia" "alicia@example.com"))
+                  calls <- readIORef seen
+                  length calls @?= 2
+                  let (ctx1, _, _) = calls !! 1
+                  assertContains "Violated properties:" ctx1
+                  assertContains "The email address is not empty." ctx1
+              , testCase "a fine reply about a violating value is retried until the result satisfies the property" $ do
+                  responses <-
+                    newIORef
+                      ( [ "{\"verdict\":\"fine\",\"value\":{\"userName\":\"Alice\",\"userEmail\":\"\"}}"
+                        , "{\"verdict\":\"improved\",\"value\":{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}}"
+                        ] ::
+                          [Text]
+                      )
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.improve (User "Alice" "")
+                  result @?= Right (Just (User "Alice" "alice@example.com"))
+                  calls <- readIORef seen
+                  length calls @?= 2
+                  let (ctx0, _, _) = calls !! 0
+                      (ctx1, _, _) = calls !! 1
+                  assertNotContains "Violated properties" ctx0
+                  assertContains "Violated properties:" ctx1
+                  assertContains "The email address is not empty." ctx1
+              , testCase "a fine reply about a violating value is an error once retries run out" $ do
+                  responses <- newIORef (["{\"verdict\":\"fine\"}"] :: [Text])
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 1}) $
+                      Eff.improve (User "Alice" "")
+                  case result of
+                    Left err -> assertContains "The email address is not empty." err
+                    Right r -> assertFailure ("expected a failure, got " <> show r)
+                  readIORef seen >>= (@?= 2) . length
+              , testCase "the scoped message is not persisted; the raw reply is" $ do
+                  responses <-
+                    newIORef
+                      (["{\"verdict\":\"fine\"}", "{\"userName\":\"Bob\",\"userEmail\":\"bob@example.com\"}"] :: [Text])
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) defaultPromptConfig $ do
+                      _ <- Eff.improve (User "Alice" "alice@example.com")
+                      Eff.prompt @User
+                  result @?= Right (User "Bob" "bob@example.com")
+                  calls <- readIORef seen
+                  length calls @?= 2
+                  let (ctx0, _, _) = calls !! 0
+                      (ctx1, _, _) = calls !! 1
+                  assertContains "Here is a value of the type described below" ctx0
+                  assertNotContains "Here is a value of the type described below" ctx1
+                  assertContains "[assistant] {\"verdict\":\"fine\"}" ctx1
+              ]
+          , testGroup
+              "Generically (products)"
+              [ testCase "a two-field record prompts cue, field 1, field 2, improve, each field seeing what came before" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["\"Keep it jazzy.\"", "\"The Quarks\"", "4", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Band)
+                  -- a fine verdict keeps the draft
+                  result @?= Right (Band "The Quarks" 4)
+                  length calls @?= 4
+                  let parent = description (Proxy @Band)
+                  assertContains "short, specific steer" (callDesc calls 0)
+                  assertContains "A piece of text." (callDesc calls 1)
+                  assertContains "A whole number." (callDesc calls 2)
+                  assertContains parent (callDesc calls 3)
+                  assertContains parent (callCtx calls 0)
+                  assertContains parent (callCtx calls 1)
+                  assertContains "[assistant] \"Keep it jazzy.\"" (callCtx calls 1)
+                  assertContains "the field bandName" (callCtx calls 1)
+                  assertNotContains "the field bandSize" (callCtx calls 1)
+                  assertContains parent (callCtx calls 2)
+                  assertContains "[assistant] \"Keep it jazzy.\"" (callCtx calls 2)
+                  assertContains "the field bandSize" (callCtx calls 2)
+                  assertContains "[assistant] \"The Quarks\"" (callCtx calls 2)
+                  assertContains "\"bandName\":\"The Quarks\"" (callCtx calls 3)
+                  assertContains "\"bandSize\":4" (callCtx calls 3)
+              , testCase "an improved verdict replaces the draft" $ do
+                  (result, calls) <-
+                    runRecording
+                      [ "\"Keep it jazzy.\""
+                      , "\"The Quarks\""
+                      , "4"
+                      , "{\"verdict\":\"improved\",\"value\":{\"bandName\":\"The Quarks\",\"bandSize\":5}}"
+                      ]
+                      2
+                      (Promptable.prompt @Band)
+                  result @?= Right (Band "The Quarks" 5)
+                  length calls @?= 4
+              , testCase "a violating draft is not returned on a fine verdict" $ do
+                  (result, calls) <-
+                    runRecording
+                      [ "\"Keep it formal.\""
+                      , "\"Alice\""
+                      , "\"\""
+                      , "{\"verdict\":\"fine\"}"
+                      , "{\"verdict\":\"improved\",\"value\":{\"profileName\":\"Alice\",\"profileEmail\":\"alice@example.com\"}}"
+                      ]
+                      2
+                      (Promptable.prompt @Profile)
+                  result @?= Right (Profile "Alice" "alice@example.com")
+                  length calls @?= 5
+                  assertContains "Violated properties:" (callCtx calls 4)
+                  case result of
+                    Right p -> propertyHolds p ProfileEmailNotEmpty @?= True
+                    Left err -> assertFailure ("expected a value, got " <> show err)
+              , testCase "the caller's context ends as what it was plus one AssistantMessage with the final value's JSON" $ do
+                  (result, _) <-
+                    runRecording
+                      ["\"Keep it jazzy.\"", "\"The Quarks\"", "4", "{\"verdict\":\"fine\"}"]
+                      2
+                      $ do
+                        Eff.context "Hello."
+                        band <- Promptable.prompt @Band
+                        (ctx :: [ContextItem]) <- get
+                        pure (band, ctx)
+                  result
+                    @?= Right
+                      ( Band "The Quarks" 4
+                      , [UserMessage "Hello.", AssistantMessage (TL.toStrict (encodeToLazyText (Band "The Quarks" 4)))]
+                      )
+              , testCase "the flat Effect.prompt stays flat for a type that derives Generically" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["{\"bandName\":\"The Quarks\",\"bandSize\":4}"]
+                      2
+                      (Eff.prompt @Band)
+                  result @?= Right (Band "The Quarks" 4)
+                  length calls @?= 1
+              , testCase "a field with its own prompt override is prompted through it, and its answer stays visible" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["\"Keep it short.\"", "{\"metricText\":\"3 km\"}", "\"a long road\"", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Measurement)
+                  result @?= Right (Measurement (Metric "3 km") "a long road")
+                  length calls @?= 4
+                  assertContains "Always prefer metric units." (callCtx calls 1)
+                  assertNotContains "Always prefer metric units." (callCtx calls 2)
+                  -- the override scoped its own answer away; the strategy put it back
+                  assertContains "[assistant] {\"metricText\":\"3 km\"}" (callCtx calls 2)
+              , testCase "a positional constructor's fields are named by constructor and position" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["\"Keep it short.\"", "\"x\"", "1", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Pair)
+                  result @?= Right (Pair "x" 1)
+                  assertContains "field 1 of constructor Pair" (callCtx calls 1)
+                  assertContains "field 2 of constructor Pair" (callCtx calls 2)
+              , testCase "a field that is itself generic is built the same way and leaves one message behind" $ do
+                  (result, calls) <-
+                    runRecording
+                      [ "\"loud\""
+                      , "\"quiet\""
+                      , "\"The Quarks\""
+                      , "4"
+                      , "{\"verdict\":\"fine\"}"
+                      , "\"The Pub\""
+                      , "{\"verdict\":\"fine\"}"
+                      ]
+                      2
+                      (Promptable.prompt @Gig)
+                  result @?= Right (Gig (Band "The Quarks" 4) "The Pub")
+                  length calls @?= 7
+                  -- the venue request sees the finished band as one message, not its parts
+                  assertContains "[assistant] {\"bandName\":\"The Quarks\",\"bandSize\":4}" (callCtx calls 5)
+                  assertNotContains "quiet" (callCtx calls 5)
+              ]
+          , testGroup
+              "Generically (sums)"
+              [ testCase "a record constructor prompts choice, cue, its fields, improve" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["\"Cake\"", "\"Keep it sweet.\"", "\"lemon\"", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Treat)
+                  result @?= Right (Cake "lemon")
+                  length calls @?= 4
+                  let parent = description (Proxy @Treat)
+                  -- the choice: asked about the type, with the parent in its context
+                  assertContains "which kind of the type described below" (callDesc calls 0)
+                  assertContains parent (callCtx calls 0)
+                  assertContains "First choose which of its constructors" (callCtx calls 0)
+                  -- the cue: names the chosen constructor, sees the choice's reply
+                  assertContains "short, specific steer" (callDesc calls 1)
+                  assertContains "You chose the constructor Cake" (callCtx calls 1)
+                  assertContains "[assistant] \"Cake\"" (callCtx calls 1)
+                  -- the field: names the constructor, sees the cue and the choice
+                  assertContains "A piece of text." (callDesc calls 2)
+                  assertContains "the field cakeFlavour of constructor Cake" (callCtx calls 2)
+                  assertContains "[assistant] \"Cake\"" (callCtx calls 2)
+                  assertContains "[assistant] \"Keep it sweet.\"" (callCtx calls 2)
+                  -- the improve request is about the whole value
+                  assertContains parent (callDesc calls 3)
+                  assertContains "\"cakeFlavour\":\"lemon\"" (callCtx calls 3)
+              , testCase "a positional constructor's fields are named by constructor and position" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["\"Biscuit\"", "\"Be traditional.\"", "\"digestive\"", "12", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Treat)
+                  result @?= Right (Biscuit "digestive" 12)
+                  length calls @?= 5
+                  assertContains "You chose the constructor Biscuit" (callCtx calls 1)
+                  assertContains "field 1 of constructor Biscuit" (callCtx calls 2)
+                  assertContains "field 2 of constructor Biscuit" (callCtx calls 3)
+                  assertContains "[assistant] \"digestive\"" (callCtx calls 3)
+              , testCase "a constructor without fields is assembled without cue or field prompts, then improved" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["\"NoTreat\"", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Treat)
+                  result @?= Right NoTreat
+                  length calls @?= 2
+                  assertContains "[assistant] \"NoTreat\"" (callCtx calls 1)
+                  assertNotContains "Next, produce" (callCtx calls 1)
+                  assertNotContains "short, specific steer" (callCtx calls 1)
+                  assertContains "\"verdict\"" (callDesc calls 1)
+              , testCase "an improved verdict replaces the draft" $ do
+                  (result, calls) <-
+                    runRecording
+                      [ "\"Cake\""
+                      , "\"Keep it sweet.\""
+                      , "\"lemon\""
+                      , "{\"verdict\":\"improved\",\"value\":{\"tag\":\"Cake\",\"cakeFlavour\":\"chocolate\"}}"
+                      ]
+                      2
+                      (Promptable.prompt @Treat)
+                  result @?= Right (Cake "chocolate")
+                  length calls @?= 4
+                  -- the improve request's own schema carries the sum, as anyOf
+                  let improveSchema = TL.toStrict (encodeToLazyText (callSchema calls 3))
+                  assertContains "anyOf" improveSchema
+                  assertNotContains "oneOf" improveSchema
+              , testCase "the constructor choice's schema is an enum of exactly the constructor names, and its description has their Haddock" $ do
+                  (_, calls) <-
+                    runRecording
+                      ["\"NoTreat\"", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Treat)
+                  case callSchema calls 0 of
+                    Object schema -> do
+                      KM.lookup "type" schema @?= Just (String "string")
+                      KM.lookup "enum" schema @?= Just (toJSON (["Cake", "Biscuit", "NoTreat"] :: [Text]))
+                    other -> assertFailure ("expected a schema object, got " <> show other)
+                  assertContains "A treat on offer." (callDesc calls 0)
+                  assertContains "A cake, in a given flavour." (callDesc calls 0)
+                  assertContains "A biscuit, with a kind and a count." (callDesc calls 0)
+                  assertContains "No treat at all." (callDesc calls 0)
+              , testCase "a name that is not a constructor is rejected and retried" $ do
+                  (result, calls) <-
+                    runRecording
+                      ["\"Pancake\"", "\"NoTreat\"", "{\"verdict\":\"fine\"}"]
+                      2
+                      (Promptable.prompt @Treat)
+                  result @?= Right NoTreat
+                  length calls @?= 3
+                  assertContains "not the name of a constructor: Pancake" (callCtx calls 1)
+              , testCase "the caller's context ends as what it was plus one AssistantMessage with the final value's JSON" $ do
+                  (result, _) <-
+                    runRecording
+                      ["\"Cake\"", "\"Keep it sweet.\"", "\"lemon\"", "{\"verdict\":\"fine\"}"]
+                      2
+                      $ do
+                        Eff.context "Hello."
+                        treat <- Promptable.prompt @Treat
+                        (ctx :: [ContextItem]) <- get
+                        pure (treat, ctx)
+                  result
+                    @?= Right
+                      ( Cake "lemon"
+                      , [UserMessage "Hello.", AssistantMessage (TL.toStrict (encodeToLazyText (Cake "lemon")))]
+                      )
+              , testCase "a sum type's wire schema says anyOf where openapi3 says oneOf" $ do
+                  let rendered :: (ToJSON v) => v -> Text
+                      rendered = TL.toStrict . encodeToLazyText
+                  -- the premise: openapi3 itself renders this sum as a oneOf
+                  assertContains "oneOf" (rendered (toSchema (Proxy @Treat)))
+                  assertNotContains "oneOf" (rendered (schemaWithDefs (Proxy @Treat)))
+                  assertContains "anyOf" (rendered (schemaWithDefs (Proxy @Treat)))
+              ]
+          , testGroup
               "retry loop"
               [ testCase "validation passes immediately — no retry" $ do
                   responses <- newIORef ["{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}"]
@@ -542,6 +1071,52 @@ main =
                   seen <- readIORef seenContexts
                   assertContains "The email address is not empty." (seen !! 1)
                   assertContains "Generate a new, corrected JSON response" (seen !! 1)
+              , testCase "a field's violated property is rejected and named in the correction (bare instance)" $ do
+                  responses <-
+                    newIORef
+                      [ "{\"guestLabel\":\"vip\",\"guestUser\":{\"userName\":\"Alice\",\"userEmail\":\"\"}}"
+                      , "{\"guestLabel\":\"vip\",\"guestUser\":{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}}"
+                      ]
+                  seenContexts <- newIORef ([] :: [Text])
+                  let cfg = SeqMockConfig responses seenContexts
+                  result <-
+                    Eff.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.prompt @Guest
+                  result @?= Right (Guest "vip" (User "Alice" "alice@example.com"))
+                  seen <- readIORef seenContexts
+                  length seen @?= 2
+                  assertNotContains "Violated properties" (seen !! 0)
+                  assertContains "Violated properties:" (seen !! 1)
+                  assertContains "- Field guestUser: The email address is not empty." (seen !! 1)
+              , testCase "the class method prompts a bare Text and a [Int]" $ do
+                  textResponses <- newIORef ["\"hello\""]
+                  textSeen <- newIORef ([] :: [Text])
+                  textResult <-
+                    Eff.runPromptResultEff (seqMockBackend (SeqMockConfig textResponses textSeen)) (defaultPromptConfig {maxRetries = 0}) $
+                      Promptable.prompt @Text
+                  textResult @?= Right "hello"
+                  readIORef textSeen >>= (@?= 1) . length
+                  intsResponses <- newIORef ["[1,2,3]"]
+                  intsSeen <- newIORef ([] :: [Text])
+                  intsResult <-
+                    Eff.runPromptResultEff (seqMockBackend (SeqMockConfig intsResponses intsSeen)) (defaultPromptConfig {maxRetries = 0}) $
+                      Promptable.prompt @[Int]
+                  intsResult @?= Right [1, 2, 3 :: Int]
+                  readIORef intsSeen >>= (@?= 1) . length
+              , testCase "a prompt override scopes its context to its own request" $ do
+                  responses <- newIORef ["{\"metricText\":\"3 km\"}", "{\"metricText\":\"4 km\"}"]
+                  seenContexts <- newIORef ([] :: [Text])
+                  let cfg = SeqMockConfig responses seenContexts
+                  result <-
+                    Eff.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 0}) $ do
+                      m <- Promptable.prompt @Metric
+                      _ <- Eff.prompt @Metric
+                      pure m
+                  result @?= Right (Metric "3 km")
+                  seen <- readIORef seenContexts
+                  length seen @?= 2
+                  assertContains "Always prefer metric units." (seen !! 0)
+                  assertNotContains "Always prefer metric units." (seen !! 1)
               , testCase "JSON decode error triggers retry — distinct wording from a property violation" $ do
                   responses <-
                     newIORef

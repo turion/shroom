@@ -26,6 +26,9 @@ import GHC.Generics (Generic)
 -- text
 import Data.Text (Text)
 
+-- generics-sop
+import Generics.SOP qualified as SOP
+
 -- aeson
 import Data.Aeson (FromJSON, ToJSON)
 
@@ -39,7 +42,7 @@ import Data.Shroom.Class (Describable (..), Surveyable)
 -- | A bare top-level integer response.
 newtype ScalarInt = ScalarInt Int
   deriving stock (Eq, Show, Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 instance Describable ScalarInt where
   describeType _ = "An integer."
@@ -51,7 +54,7 @@ instance Promptable ScalarInt
 -- | A bare top-level string response.
 newtype ScalarText = ScalarText Text
   deriving stock (Eq, Show, Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 instance Describable ScalarText where
   describeType _ = "A short string."
@@ -63,7 +66,7 @@ instance Promptable ScalarText
 -- | A bare top-level array-of-integers response.
 newtype ScalarIntList = ScalarIntList [Int]
   deriving stock (Eq, Show, Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 instance Describable ScalarIntList where
   describeType _ = "A JSON array of integers."

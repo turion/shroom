@@ -19,6 +19,7 @@ Please always speak like a 1970s British working class person!
 - After each finished plan, run `cabal build all --enable-tests`. It should finish without warnings.
 - After each finished plan, run `cabal test` and summarize the test results.
 - The golden files of `shroom-class` (`shroom-class/test/golden/`) are regenerated with `cabal test shroom-class-test --test-options=--accept`; review the diff afterwards.
+- Before every push, run `jj fix` (fourmolu, cabal-gild, `hlint --refactor`; CI checks the first two and hlint) and then the build and test gates again. Build afterwards, because a tool can change meaning: fourmolu once rewrote `OverloadedRecordDot` access `a.b` into `a . b`, and an hlint refactor can introduce a partial function such as `head`, which `-Werror` rejects.
 
 # Key dependency patterns
 

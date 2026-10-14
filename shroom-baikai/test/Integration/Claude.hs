@@ -17,6 +17,9 @@ import Data.Aeson (FromJSON, ToJSON)
 -- openapi3
 import Data.OpenApi (ToSchema)
 
+-- generics-sop
+import Generics.SOP qualified as SOP
+
 -- tasty
 import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit (assertFailure, testCase)
@@ -46,7 +49,7 @@ import WebToolReport (toolResults, webToolReportChain)
 
 newtype FakeBrokenSearch = FakeBrokenSearch {brokenQuery :: Text}
   deriving stock (Eq, Ord, Show, Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 instance Describable FakeBrokenSearch where
   describeType _ = "A search query that always fails with a 404 error."

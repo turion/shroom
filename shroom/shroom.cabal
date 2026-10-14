@@ -53,6 +53,7 @@ common opts
     directory ^>=1.3,
     effectful ^>=2.7,
     filepath ^>=1.5,
+    generics-sop ^>=0.5.1,
     http-client ^>=0.7,
     modern-uri ^>=0.3,
     openapi3 ^>=3.2,
@@ -81,6 +82,7 @@ library
     Control.Monad.Prompt.Backend
     Control.Monad.Prompt.Effect
     Control.Monad.Prompt.FileMock
+    Control.Monad.Prompt.Generic
     Control.Monad.Prompt.Promptable
     Control.Monad.Prompt.Tool
     Control.Monad.Prompt.Tool.Web
@@ -113,6 +115,7 @@ library test-utils
   exposed-modules:
     CelebrityTypes
     ConferenceTypes
+    GenericTypes
     TestUtils
     Types
     WebToolReport

@@ -15,7 +15,10 @@ result <- 'Control.Monad.Prompt.Effect.runPromptResultEff' backend 'Control.Mona
   prompt \@User
 @
 -}
-module Control.Monad.Prompt (module Control.Monad.Prompt.Promptable) where
+module Control.Monad.Prompt (module Control.Monad.Prompt.Promptable, module Control.Monad.Prompt.Generic) where
 
 -- shroom
+
+-- Imported for its instances, which make @deriving via Generically X instance Promptable X@ work.
+import Control.Monad.Prompt.Generic
 import Control.Monad.Prompt.Promptable

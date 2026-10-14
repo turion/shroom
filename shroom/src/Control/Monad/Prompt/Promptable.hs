@@ -3,7 +3,7 @@ a type from an LLM backend.
 
 @
 class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
-  prompt :: forall es. (Prompt :> es) => Eff es a
+  prompt :: forall es. (Prompt :> es, State [ContextItem] :> es) => Eff es a
   prompt = Effect.prompt
 @
 
@@ -12,7 +12,8 @@ effect, which uses 'description' to build the prompt text from the type's
 'Surveyable' metadata.
 
 Override 'prompt' to add type-specific context, fallback logic, or any other
-custom program:
+custom program. The method has @State [ContextItem]@ in scope, so an override
+can scope context with 'Control.Monad.Prompt.Effect.withContext':
 
 @
 instance Promptable MyType where
@@ -42,7 +43,9 @@ program layer and must live under "Control.Monad.Prompt", never under
 module Control.Monad.Prompt.Promptable (module Control.Monad.Prompt.Promptable) where
 
 -- base
+import Data.List.NonEmpty (NonEmpty)
 import Data.Proxy (Proxy (..))
+import Numeric.Natural (Natural)
 
 -- aeson
 import Data.Aeson (FromJSON, ToJSON)
@@ -50,11 +53,19 @@ import Data.Aeson (FromJSON, ToJSON)
 -- openapi3
 import Data.OpenApi (ToSchema)
 
+-- text
+import Data.Text (Text)
+
+-- time
+import Data.Time (Day, UTCTime)
+
 -- effectful
 import Effectful (Eff, (:>))
+import Effectful.State.Static.Local (State)
 
 -- shroom
 
+import Control.Monad.Prompt.Backend (ContextItem)
 import Control.Monad.Prompt.Effect (Prompt)
 import Control.Monad.Prompt.Effect qualified as Effect
 import Data.Shroom.Class
@@ -75,9 +86,13 @@ class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
   {- | An 'Eff' program that requests a value of type @a@ from the LLM.
 
   Override to add type-specific context, fallback logic, parallel sub-prompts,
-  or any other custom behaviour.
+  or any other custom behaviour. The @State [ContextItem]@ constraint is what
+  lets an override scope context with 'Control.Monad.Prompt.Effect.withContext'
+  or 'Control.Monad.Prompt.Effect.withContextItem'; it is the same state
+  'Control.Monad.Prompt.Effect.context' adds to, so a caller that already
+  chains prompts has it.
   -}
-  prompt :: forall es. (Prompt :> es) => Eff es a
+  prompt :: forall es. (Prompt :> es, State [ContextItem] :> es) => Eff es a
   prompt = Effect.prompt
 
 {- | Helper newtype for using the default description-based prompting strategy
@@ -108,3 +123,49 @@ instance (Surveyable a) => Surveyable (DescriptionPrompt a) where
 
 -- | Uses the default 'prompt' = 'PromptSingle'.
 instance (Surveyable a, ToSchema a, FromJSON a) => Promptable (DescriptionPrompt a)
+
+-- * Base types
+
+{- | Flat 'Promptable' instances for the base types that "Data.Shroom.Class"
+gives 'Surveyable' instances: 'Text', 'Int', 'Integer', 'Natural', 'Double',
+'Float', 'Bool', 'Char', 'UTCTime', 'Day', and the containers @[a]@,
+@'NonEmpty' a@ and @'Maybe' a@. Each uses the default 'prompt', so a bare value
+is requested like any other type, from its 'description'.
+
+They live in this module, next to the class, so they are not orphans.
+
+__Schema keywords Anthropic rejects.__ @openapi3@ renders some of these types
+with JSON Schema keywords that Anthropic's structured outputs answer with a
+400, and that @normalizeSchemaForStructuredOutput@
+does not strip: 'Char' carries @minLength@ and @maxLength@, 'Natural' carries
+@exclusiveMinimum@, and 'Double' and 'Float' carry a numeric @format@ (not
+confirmed against the API). A field of one of these types, or a bare
+'prompt' of it, may therefore fail against Claude until the normaliser strips
+those keywords. The container instances pass the element's schema through
+unchanged, so they inherit the same limitation.
+-}
+instance Promptable Text
+
+instance Promptable Int
+
+instance Promptable Integer
+
+instance Promptable Natural
+
+instance Promptable Double
+
+instance Promptable Float
+
+instance Promptable Bool
+
+instance Promptable Char
+
+instance Promptable UTCTime
+
+instance Promptable Day
+
+instance (Describable a, ToSchema a, FromJSON a) => Promptable [a]
+
+instance (Describable a, ToSchema a, FromJSON a) => Promptable (NonEmpty a)
+
+instance (Describable a, ToSchema a, FromJSON a) => Promptable (Maybe a)
