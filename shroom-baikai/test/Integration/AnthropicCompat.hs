@@ -120,9 +120,13 @@ sensible timeout. Measured on 2026-10-12 through this proxy, both of them
 fail or time out on @llama3.2:1b@ and on @qwen3:4b-instruct-2507-q4_K_M@,
 while every other case passes.
 
-Because the flag defaults to on, every cabal invocation in
-@.github\/workflows\/ci.yml@ that carries a flag set subtracts it
-(@-f-anthropic-proxy@). No CI job runs this suite.
+The @ollama-ci@ job in @.github\/workflows\/ci.yml@ runs this suite, after the
+Ollama one, against the server's own proxy unit (the NixOS module above, with
+@anthropicProxy.enable@) through the same SSH tunnel, with the three variables
+set as in step 2 and the @conferenceChain@ cases excluded as above. It leaves
+this flag on and subtracts only @-f-anthropic@, at every cabal invocation in
+that job. @build-cabal@ and @build-flake@, whose runners have no server,
+subtract @-f-anthropic-proxy@ (and the other two) instead.
 -}
 module Main (main) where
 

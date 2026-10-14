@@ -145,6 +145,11 @@ jobs:
       - run: nix develop .#${{ matrix.version }} --accept-flake-config -c cabal test all -f-anthropic -f-anthropic-proxy -f-ollama
 
   ollama-ci:
+    # Runs two suites, one after the other, against the maintainer's one server:
+    # shroom-test-integration-ollama (straight to Ollama) and
+    # shroom-test-integration-anthropic-proxy (through the server's own Bifrost unit,
+    # services.ollama.shroom.anthropicProxy). Both sit in this one job, so they serialise by
+    # construction and never drive the 2-core box at once: no `concurrency:` group is needed.
     name: "Ollama integration, via SSH tunnel to the maintainer's server"
     runs-on: ubuntu-latest
     # Fork PRs get no secrets under plain `pull_request` (this workflow never uses
@@ -163,10 +168,14 @@ jobs:
     #
     # Deliberately no `needs: build-flake`: if that job went red, this one would be skipped
     # and never observed. The tunnel opens right before the test step, so a slow cold build
-    # only makes this job slow and cannot kill the tunnel. What can still blow the 45 minutes
-    # is a cold build (a flake.lock bump, or possibly cache eviction) and the suite's own
-    # runtime on the 2-core server, which is unobserved even on a warm cache.
-    timeout-minutes: 45
+    # only makes this job slow and cannot kill the tunnel. What can still blow the 60 minutes
+    # is a cold build (a flake.lock bump, or possibly cache eviction) and the suites' own
+    # runtime on the 2-core server, which is unobserved even on a warm cache. 60 is the old 45
+    # (cold build plus the Ollama suite) plus 15 for the proxy suite: a similar handful of cases
+    # (the conferenceChain ones excluded) on the same 1b model, through one extra local hop; the
+    # build of that second test suite is small, as it shares the Ollama suite's closure. Each
+    # case is separately capped at 10m below, so a hung case cannot eat this by itself.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
@@ -180,8 +189,8 @@ jobs:
         # pinned down. Two candidates: cabal refusing to solve at all without a package index on
         # a fresh runner, and a test-only dependency escaping `shellFor`. Until one is confirmed,
         # keep this line; it is cheap on a warm cache and the failure it prevents is obscure.
-        run: nix develop .#ghc912 --accept-flake-config -c cabal update -f-anthropic -f-anthropic-proxy
-      - name: Open the SSH tunnel to the maintainer's Ollama
+        run: nix develop .#ghc912 --accept-flake-config -c cabal update -f-anthropic
+      - name: Open the SSH tunnel to the maintainer's Ollama and Anthropic proxy
         # See research/remote-ollama-ci.md in the plan directory for the mechanism and the
         # threat model. The server-side ACL (permitopen + command="") is enforced by sshd via
         # nix/ollama-shroom.nix; this step only has to reach it. ssh-keyscan pins the host key
@@ -198,8 +207,16 @@ jobs:
           ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
           ssh-keyscan -H "${{ vars.OLLAMA_SERVER_HOST }}" >> ~/.ssh/known_hosts
           # Keepalives prevent tunnel drop on idle; ExitOnForwardFailure fails the step if the forward setup fails.
-          ssh -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o ExitOnForwardFailure=yes -f -N -L 11434:127.0.0.1:11434 "ci-ollama@${{ vars.OLLAMA_SERVER_HOST }}"
-      - name: Check the tunnel actually came up
+          # Two forwards: Ollama (11434) and the server's Anthropic proxy (8787, the
+          # anthropicProxy.port default). `ssh -L` succeeds even where the server's permitopen
+          # denies the target — the denial shows only on the first connection — so each
+          # port is checked with a real request in the steps below.
+          ssh -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o ExitOnForwardFailure=yes -f -N -L 11434:127.0.0.1:11434 -L 8787:127.0.0.1:8787 "ci-ollama@${{ vars.OLLAMA_SERVER_HOST }}"
+      - name: Check the Ollama forward actually came up
+        # Only the Ollama forward is checked here, on purpose: the Ollama suite below must not
+        # depend on the proxy, which the maintainer has to enable on the server first. The
+        # proxy's forward is checked in its own, later step.
+        #
         # The /api/ps line is a meter, not a gate: it records in every run's log whether a
         # model was resident when the suite started. Empty `models` = nothing resident, so
         # this run pays the full cold load; an `expires_at` a few minutes out = keepAlive is
@@ -212,24 +229,54 @@ jobs:
           curl -sS http://127.0.0.1:11434/api/ps || true
           echo
       - name: Cabal test against the tunnelled Ollama
-        # Bare host:port, no scheme and no /v1 — Ollama's own convention. -f-anthropic and
-        # -f-anthropic-proxy are todo 2's "everything but Anthropic" invocation (the latter
-        # suite needs a proxy this tunnel cannot reach, and dies loudly without one); the
-        # ollama flag stays at its default (on). OLLAMA_MODEL must match services.ollama.shroom.model on the server
+        id: ollama-suite
+        # Bare host:port, no scheme and no /v1 — Ollama's own convention. -f-anthropic is the
+        # job's only flag subtraction, at every cabal invocation in it: the ollama and
+        # anthropic-proxy flags stay at their defaults (on), and the real-Anthropic suite is
+        # the one this job has no key for. OLLAMA_MODEL must match services.ollama.shroom.model on the server
         # (nix/ollama-shroom.nix, default "llama3.2:1b" — the server is 2 cores / 12 GB,
         # no GPU, and an 8B model there runs at roughly 1-2 tokens/second). The suite's own
         # fallback (shroom-baikai/test/Integration/Ollama.hs, used only if OLLAMA_MODEL were
         # unset here) already agrees with that module default — llama3.2:1b both places — and
         # the two must be kept in step by hand; a mismatch fails with not_found_error rather
         # than testing anything about shroom.
-        # Each case reports as it finishes; one slow case fails on 10m cap instead of eating the job's 45 minutes.
+        # Each case reports as it finishes; one slow case fails on 10m cap instead of eating the job's 60 minutes.
         # The conferenceChain cases test model capability, which a 1b model on 2 CPU cores cannot
         # do inside that cap; CI asserts plumbing, so they are skipped here and run locally. The
         # tasty pattern is its own --test-option pair: cabal word-splits --test-options.
-        run: nix develop .#ghc912 --accept-flake-config -c cabal test shroom-test-integration-ollama --enable-tests -f-anthropic -f-anthropic-proxy --test-show-details=streaming --test-options=--timeout=10m --test-option=-p --test-option='!/conferenceChain/'
+        run: nix develop .#ghc912 --accept-flake-config -c cabal test shroom-test-integration-ollama --enable-tests -f-anthropic --test-show-details=streaming --test-options=--timeout=10m --test-option=-p --test-option='!/conferenceChain/'
         env:
           OLLAMA_HOST: 127.0.0.1:11434
           OLLAMA_MODEL: llama3.2:1b
+      - name: Check the Anthropic proxy forward actually came up
+        id: proxy-check
+        # A real request through the 8787 forward, not merely the forward's existence: `ssh -L`
+        # succeeds even when the server's permitopen denies the target, and the denial shows only
+        # on the first connection. Bifrost answers 200 on /health once it is ready. Red here,
+        # with the Ollama step above still green, means the server has not yet been rebuilt with
+        # services.ollama.shroom.anthropicProxy.enable (and the permitopen entry that comes with
+        # it) — the maintainer's step, not a shroom bug.
+        #
+        # This and the next step run after the Ollama suite and only if the tunnel and the
+        # Ollama suite's step were reached at all (an earlier setup step failing skips them);
+        # they do not depend on the Ollama suite passing, so each suite is observed on its own.
+        # Sequential, never concurrent: the server is driven by one suite at a time.
+        if: ${{ !cancelled() && steps.ollama-suite.conclusion != 'skipped' }}
+        run: curl --fail -sS --max-time 30 http://127.0.0.1:8787/health
+      - name: Cabal test against the tunnelled Anthropic proxy
+        # The server's own anthropicProxy unit (Bifrost in front of its Ollama), not something
+        # started on the runner. Same flag set as every other cabal invocation in this job, so
+        # the build plan is shared. ANTHROPIC_PROXY_MODEL is `ollama/` plus the OLLAMA_MODEL tag
+        # above (Bifrost's provider prefix); the URL has no /v1 but ends in Bifrost's
+        # /anthropic route; the key is a placeholder (Bifrost checks none, baikai wants some
+        # text). Same per-case cap and the same conferenceChain exclusion as the Ollama step
+        # above, for the same reasons.
+        if: ${{ !cancelled() && steps.proxy-check.conclusion == 'success' }}
+        run: nix develop .#ghc912 --accept-flake-config -c cabal test shroom-test-integration-anthropic-proxy --enable-tests -f-anthropic --test-show-details=streaming --test-options=--timeout=10m --test-option=-p --test-option='!/conferenceChain/'
+        env:
+          ANTHROPIC_PROXY_URL: http://127.0.0.1:8787/anthropic
+          ANTHROPIC_PROXY_MODEL: ollama/llama3.2:1b
+          ANTHROPIC_PROXY_KEY: unused
 
   success:
     name: Successfully build and test on all systems

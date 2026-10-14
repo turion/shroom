@@ -23,6 +23,7 @@
 #     # keepAlive = "-1";                   # redundant: auth.mode = "ssh-tunnel" already defaults it to "-1" (resident, never reloaded between runs); set it only to override
 #     auth.mode = "ssh-tunnel";
 #     auth.sshTunnel.publicKey = "ssh-ed25519 AAAA... ci";  # public half only; the private half is a GitHub secret, see below
+#     anthropicProxy.enable = true;         # CI's ollama-ci job also runs the Anthropic-proxy suite; see "An Anthropic Messages API" below
 #   };
 #
 # ## A pasteable laptop example (no GPU: CPU-only)
@@ -84,6 +85,11 @@
 #     `/anthropic`, Bifrost's Anthropic route. The model id carries the `ollama/` provider prefix.
 #   - The port is `anthropicProxy.port` (default 8787). It is loopback-only, never opened in the
 #     firewall, and meant for development and testing, not for serving anyone else.
+#   - With `auth.mode = "ssh-tunnel"` and the proxy enabled, the CI key's `permitopen` gains a
+#     second entry for this port, beside Ollama's: CI's `ollama-ci` job forwards both and runs
+#     `shroom-test-integration-ollama` and `shroom-test-integration-anthropic-proxy` against
+#     them (`ANTHROPIC_PROXY_MODEL` there is `ollama/` plus the `OLLAMA_MODEL` tag below). The
+#     entry exists only while the proxy is enabled, so no port is opened with nothing behind it.
 #   - The credential is a placeholder, not a secret. The module generates a `config.json` in the
 #     Nix store (world-readable) whose one provider is `ollama`, with an upstream key named
 #     `ollama-shroom` whose value is `unused`: Bifrost insists on a key entry, Ollama checks none.
@@ -106,7 +112,8 @@
 # ## The one coupling that breaks CI if ignored
 #
 # `services.ollama.shroom.model` here and `OLLAMA_MODEL` in `.github/workflows/ci.yml` must
-# name the exact same tag. A mismatch doesn't fail loudly — CI's suite falls back to a
+# name the exact same tag (and `ANTHROPIC_PROXY_MODEL` there, the same tag behind an `ollama/`
+# prefix). A mismatch doesn't fail loudly — CI's suite falls back to a
 # model the server never pulled and fails with `not_found_error`, which reads as a shroom
 # bug rather than a configuration one.
 #
@@ -126,19 +133,24 @@
 # above.
 let
   cfg = config.services.ollama.shroom;
+  proxy = cfg.anthropicProxy;
 
   # `command=""` denies a shell; `permitopen` is the whole access-control story and it
   # is enforced by sshd, not by anything shroom or Ollama do. See
   # research/remote-ollama-ci.md in the plan directory for the mechanism and threat model.
-  authorizedKeyOptions = lib.concatStringsSep "," [
+  # The key may forward to Ollama's port, and, only while the proxy is enabled, to the proxy's
+  # port too (the `ollama-ci` job runs the Anthropic-proxy suite through it). Both are
+  # needed: the Ollama suite talks to Ollama directly. The second entry is a deliberate
+  # widening of what a key stored in a public repository's secrets can reach, by the
+  # maintainer's decision of 2026-10-14; the proxy is loopback-only and checks no credential.
+  authorizedKeyOptions = lib.concatStringsSep "," ([
     ''command=""''
     "no-pty"
     "no-agent-forwarding"
     "no-X11-forwarding"
     ''permitopen="127.0.0.1:${toString config.services.ollama.port}"''
-  ];
+  ] ++ lib.optional proxy.enable ''permitopen="127.0.0.1:${toString proxy.port}"'');
 
-  proxy = cfg.anthropicProxy;
   proxyName = "shroom-anthropic-proxy";
 
   # The placeholder credential: Bifrost wants a key entry for the provider, Ollama checks none.
@@ -251,8 +263,9 @@ in
         `"local"`: nothing beyond Ollama itself, bound to `127.0.0.1` — the laptop case.
 
         `"ssh-tunnel"`: additionally creates a dedicated, unprivileged user whose sole
-        authorised key may forward to Ollama's port and do nothing else. Intended for
-        the maintainer's server, reached by CI through an SSH tunnel.
+        authorised key may forward to Ollama's port, and to the Anthropic proxy's port
+        when `anthropicProxy.enable` is set, and do nothing else. Intended for the
+        maintainer's server, reached by CI through an SSH tunnel.
       '';
     };
 
