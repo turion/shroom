@@ -184,7 +184,9 @@ requireEnv name what =
 integrationTests :: Text -> Text -> Text -> IO TestTree
 integrationTests baseUrl model key = do
   backend <- anthropicCompatBackend baseUrl model key
-  -- A second one, run in 'IO' directly: 'toolRoundTrip' calls 'runBackendChat' by hand.
+  -- A second one, because the types force it: 'backendIntegrationTests' wants a
+  -- @Backend BackendEs@ while 'toolRoundTrip' calls 'runBackendChat' by hand and
+  -- needs a @Backend IO@, and one binding is monomorphic.
   ioBackend <- anthropicCompatBackend baseUrl model key
   pure $
     testGroup
@@ -218,8 +220,8 @@ data Probe = Probe
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
-{- | The outer object, so that 'Probe' sits one object deep and the schema has a
-@$ref@ hop to follow rather than a flat list of fields.
+{- | The outer object, so that 'Probe' sits one object deep and the schema has
+one object of inline nesting to follow rather than a flat list of fields.
 -}
 newtype Specimen = Specimen {probe :: Probe}
   deriving stock (Eq, Show, Generic)

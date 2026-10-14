@@ -181,9 +181,9 @@ response silently read as a successful empty answer.
 A 'ContentFiltered' category is what baikai gives "content the provider
 refused or filtered" — a refusal — so it becomes 'BackendRefusal',
 carrying whatever 'refusalCategory' baikai populated (only ever non-'Nothing'
-on Anthropic's streaming path, per 'BackendError'\'s own Haddock — this
-adapter uses baikai's non-streaming 'complete', so it is 'Nothing' in
-practice, but the field is threaded through regardless). Any other
+on Anthropic's streaming path, per 'BackendError'\'s own Haddock — and this
+adapter does stream, so the category arrives whenever the provider sends one
+and is 'Nothing' otherwise). Any other
 category (auth, rate limit, decode failure, ...) is exactly what
 a retry is for, so it becomes 'BackendTransportError'. A 'Length' stop (not
 an error to baikai) is a reply cut off by the token or context limit, so it
