@@ -159,8 +159,6 @@
 
           packages = {
             default = allGHCs;
-            # Vendored from nixpkgs PR 521236; see nix/bifrost.nix for what retires it.
-            bifrost = pkgs.callPackage ./nix/bifrost.nix { };
           };
 
           devShells = mapAttrs

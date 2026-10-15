@@ -34,16 +34,6 @@ flag ollama
   default: True
   manual: True
 
-flag anthropic-proxy
-  description:
-    Build shroom-test-integration-anthropic-proxy, which drives
-    anthropicCompatBackend against an Anthropic-compatible proxy (Bifrost in
-    front of Ollama) and needs ANTHROPIC_PROXY_URL, ANTHROPIC_PROXY_MODEL and
-    ANTHROPIC_PROXY_KEY.
-
-  default: True
-  manual: True
-
 flag online
   description:
     Master switch for the test suites that need network or an external
@@ -118,18 +108,6 @@ test-suite shroom-test-integration-ollama
     ScalarTypes
 
   if !(flag(ollama) && flag(online))
-    buildable: False
-
-test-suite shroom-test-integration-anthropic-proxy
-  import: opts, test-opts
-  default-language: GHC2024
-  type: exitcode-stdio-1.0
-  hs-source-dirs: test
-  main-is: Integration/AnthropicCompat.hs
-  other-modules:
-    Integration.Cases
-
-  if !(flag(anthropic-proxy) && flag(online))
     buildable: False
 
 executable shroom-conference-claude

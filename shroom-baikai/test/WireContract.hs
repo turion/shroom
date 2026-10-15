@@ -686,8 +686,8 @@ block that was served: compared as decoded text, and again as the bytes
 hide a difference.
 
 Why this is asserted here and nowhere else: a live host that does not check
-a @tool_result@'s id against a preceding @tool_use@'s (a local Ollama, or
-the Bifrost gateway in front of it; the arc plan's claim, not measured here)
+a @tool_result@'s id against a preceding @tool_use@'s (a local Ollama, say;
+the arc plan's claim, not measured here)
 accepts a wrong id, so a mangled one
 round-trips green through every live suite and fails only against
 Anthropic. The two ids are adjacent 'Text' fields of
