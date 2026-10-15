@@ -125,11 +125,37 @@ test-suite shroom-test-baikai-offline
   import: opts
   default-language: GHC2024
   type: exitcode-stdio-1.0
-  hs-source-dirs: test/Offline
-  main-is: Main.hs
+  hs-source-dirs: test
+  main-is: Offline/Main.hs
+  other-modules:
+    Loopback
+
   build-depends:
     bytestring >=0.12 && <0.13,
     network ^>=3.2,
+    shroom-baikai,
+    tasty >=1.4 && <1.6,
+    tasty-hunit ^>=0.10,
+
+-- Offline: the request bytes shroom-baikai sends to an Anthropic-compatible
+-- host, captured by a listener on 127.0.0.1 that the test itself runs. Not
+-- behind the @online@ flag, and the offline test gate runs it.
+test-suite shroom-test-baikai-wire
+  import: opts
+  default-language: GHC2024
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: WireContract.hs
+  other-modules:
+    Loopback
+    SchemaCheck
+
+  build-depends:
+    bytestring >=0.12 && <0.13,
+    generics-sop ^>=0.5.1,
+    network ^>=3.2,
+    openapi3 ^>=3.2,
+    shroom,
     shroom-baikai,
     tasty >=1.4 && <1.6,
     tasty-hunit ^>=0.10,
