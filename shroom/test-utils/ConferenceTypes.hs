@@ -63,7 +63,7 @@ import Effectful.State.Static.Local (State)
 -- shroom
 import Control.Monad.Prompt
 import Control.Monad.Prompt.Backend (ContextItem)
-import Control.Monad.Prompt.Effect (Prompt, context, orElse, promptWith, withContext)
+import Control.Monad.Prompt.Effect (Prompt, context, orElse, promptSingleWith, withContext)
 import Control.Monad.Prompt.Effect qualified as Effect
 import Control.Monad.Prompt.TH (deriveDescribable)
 import Control.Monad.Prompt.Tool (ToolBinding, ToolHandler (..), Toolable (..))
@@ -208,6 +208,8 @@ instance Surveyable Speakers where
 
 instance Promptable Speakers
 
+$(deriveDescribable ''GhcExtension)
+
 $(deriveDescribable ''Talk)
 
 instance Surveyable Talk where
@@ -294,7 +296,7 @@ conferenceChain = do
   talks <-
     mapM
       ( \speaker -> do
-          promptWith @Talk $
+          promptSingleWith @Talk $
             "The talk must be presented by "
               <> firstName (speakerName speaker)
               <> " "
@@ -323,9 +325,9 @@ conferenceChain = do
   -- Try a short prompt first (cheap); if the model can't satisfy the type properties
   -- after retries, fall back to the detailed prompt that explicitly spells them out.
   schedule <-
-    promptWith @ConferenceSchedule
+    promptSingleWith @ConferenceSchedule
       "Create a schedule for Friday 11 June 2027 with one slot per talk. Include every talk."
-      `orElse` promptWith @ConferenceSchedule
+      `orElse` promptSingleWith @ConferenceSchedule
         ( "Create a schedule for Friday 11 June 2027 as an ordered list of timetable slots, one per talk. "
             <> "Each slot must have a start time and end time in ISO 8601 UTC format (e.g. \"2027-06-11T07:00:00Z\", \"2027-06-11T07:45:00Z\"), and slots must be contiguous. "
             <> "The first slot must start at 07:00:00 UTC (09:00 Zurich local time). "
@@ -404,8 +406,8 @@ conferenceChainWithTools bindings = do
     "The talks are: "
       <> T.intercalate ", " (fmap talkTitle talks)
   schedule <-
-    promptWith @ConferenceSchedule
+    promptSingleWith @ConferenceSchedule
       "Create a schedule for Friday 11 June 2027 with one slot per talk. Include every talk."
-      `orElse` promptWith @ConferenceSchedule
+      `orElse` promptSingleWith @ConferenceSchedule
         "Create a schedule for Friday 11 June 2027. First slot starts at 07:00:00 UTC. Slots must be contiguous."
   pure (allSpeakers, talks, schedule)

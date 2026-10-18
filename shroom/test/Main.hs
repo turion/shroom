@@ -10,9 +10,15 @@ import Control.Exception (bracket)
 import Control.Monad (forM_, void)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.IORef
+import Data.Int (Int64)
 import Data.Proxy (Proxy (..))
+import Data.Void (Void)
 import GHC.Clock (getMonotonicTime)
 import System.Timeout (timeout)
+
+-- containers
+import Data.Set (Set)
+import Data.Set qualified as Set
 
 -- aeson
 import Data.Aeson (FromJSON, ToJSON, Value (..), toJSON)
@@ -75,11 +81,12 @@ import Control.Monad.Prompt.Promptable qualified as Promptable
 import Control.Monad.Prompt.TH (deriveDescribable)
 import Control.Monad.Prompt.Tool (Tool, ToolHandler (..), Toolable, runTool, toolBinding, toolDefsRaw, toolName)
 import Control.Monad.Prompt.Tool.Web
-import Data.Shroom.Class (Describable (..), Surveyable (..), description)
+import Data.Shroom.Class (Describable (..), Surveyable (..), description, reach)
 
 -- test
 import TestUtils
 import Types
+import UnqualifiedImports qualified
 
 -- * Mock backends
 
@@ -260,7 +267,7 @@ newtype Metric = Metric {metricText :: Text}
 instance Describable Metric where describeType _ = "A measurement written out in text."
 instance Surveyable Metric
 instance Promptable Metric where
-  prompt = Eff.withContext "Always prefer metric units." Eff.prompt
+  prompt = Eff.withContext "Always prefer metric units." Eff.promptSingle
 
 -- * Types prompted field by field
 
@@ -349,6 +356,48 @@ $(deriveDescribable ''Treat)
 instance Surveyable Treat
 deriving via Generically Treat instance Promptable Treat
 
+-- * Reachable types through 'DescriptionPrompt'
+
+-- | An inner record, reachable from 'Outer'.
+data Inner = Inner {innerNote :: Text}
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+-- | An outer record that refers to 'Inner', and is prompted for via 'Promptable.DescriptionPrompt'.
+data Outer = Outer
+  { outerInner :: Inner
+  , outerCount :: Int
+  , outerTags :: [Text]
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Inner where describeType _ = "An inner record."
+instance Surveyable Inner
+
+instance Describable Outer where
+  describeType _ = "An outer record."
+  referencedTypes _ = reach @Inner <> reach @Int <> reach @[Text]
+
+instance Surveyable Outer
+deriving via Promptable.DescriptionPrompt Outer instance Promptable Outer
+
+-- | A chain of links, each holding the next: a recursive type promoted through 'Promptable.DescriptionPrompt'.
+data Chain = Chain
+  { chainInner :: Inner
+  -- ^ What this link holds.
+  , chainNext :: Maybe Chain
+  -- ^ The next link, if any.
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+$(deriveDescribable ''Chain)
+
+-- A bare instance would hang: 'Chain' is directly recursive.
+instance Surveyable Chain where type Property Chain = Void
+deriving via Promptable.DescriptionPrompt Chain instance Promptable Chain
+
 {- | A mock 'Backend' that answers from a list in order (repeating the last
 reply once the list runs out, like 'seqMockBackend') and records, for every
 call, the rendered context, the type description and the schema it was sent —
@@ -418,7 +467,8 @@ main =
   defaultMain $
     testGroup
       "shroom"
-      [ testGroup
+      [ UnqualifiedImports.tests
+      , testGroup
           "deriveDescribeType"
           [ testCase "User description comes from Haddock comment" $
               describeType (Proxy @User)
@@ -488,22 +538,22 @@ main =
 
               _ <- Eff.runPromptResultEff (mockBackend mockCfg) defaultPromptConfig $ do
                 Eff.context "global info"
-                _ <- Eff.prompt @Counter
-                _ <- Eff.prompt @Counter
+                _ <- Eff.promptSingle @Counter
+                _ <- Eff.promptSingle @Counter
                 pure ()
 
               seen <- readIORef seenContexts
               -- Both calls should have seen the global context
               length seen @?= 2
               all (\c -> "global info" `textIsInfixOf` c) seen @?= True
-          , testCase "promptWith local context not carried forward" $ do
+          , testCase "promptSingleWith local context not carried forward" $ do
               seenContexts <- newIORef ([] :: [Text])
               let mockCfg = MockConfig seenContexts
 
               _ <- Eff.runPromptResultEff (mockBackend mockCfg) defaultPromptConfig $ do
                 Eff.context "global"
-                _ <- Eff.promptWith @Counter "local only"
-                _ <- Eff.prompt @Counter
+                _ <- Eff.promptSingleWith @Counter "local only"
+                _ <- Eff.promptSingle @Counter
                 pure ()
 
               seen <- readIORef seenContexts
@@ -522,7 +572,7 @@ main =
               let mockCfg = MockConfig seenContexts
               result <-
                 Eff.runPromptResultEff (mockBackend mockCfg) defaultPromptConfig $
-                  Eff.promptPar (Eff.prompt @Counter) (Eff.prompt @Counter)
+                  Eff.promptPar (Eff.promptSingle @Counter) (Eff.promptSingle @Counter)
               case result of
                 Left err -> fail (show err)
                 Right _ -> pure ()
@@ -533,7 +583,7 @@ main =
               let mockCfg = MockConfig seenContexts
               _ <- Eff.runPromptResultEff (mockBackend mockCfg) defaultPromptConfig $ do
                 Eff.context "shared global"
-                Eff.promptPar (Eff.prompt @Counter) (Eff.prompt @Counter)
+                Eff.promptPar (Eff.promptSingle @Counter) (Eff.promptSingle @Counter)
               seen <- readIORef seenContexts
               all ("shared global" `textIsInfixOf`) seen @?= True
           , testCase "context inside promptPar branch does not leak to sibling" $ do
@@ -542,8 +592,8 @@ main =
               _ <-
                 Eff.runPromptResultEff (mockBackend mockCfg) defaultPromptConfig $
                   Eff.promptPar
-                    (Eff.context "branch-local" >> Eff.prompt @Counter)
-                    (Eff.prompt @Counter)
+                    (Eff.context "branch-local" >> Eff.promptSingle @Counter)
+                    (Eff.promptSingle @Counter)
               seen <- readIORef seenContexts
               -- exactly one branch should have seen "branch-local"
               length (filter ("branch-local" `textIsInfixOf`) seen) @?= 1
@@ -553,9 +603,9 @@ main =
               _ <- Eff.runPromptResultEff (mockBackend mockCfg) defaultPromptConfig $ do
                 _ <-
                   Eff.promptPar
-                    (Eff.context "branch-local" >> Eff.prompt @Counter)
-                    (Eff.prompt @Counter)
-                Eff.prompt @Counter
+                    (Eff.context "branch-local" >> Eff.promptSingle @Counter)
+                    (Eff.promptSingle @Counter)
+                Eff.promptSingle @Counter
               seen <- readIORef seenContexts
               -- last (3rd) call must not contain "branch-local"
               "branch-local" `textIsInfixOf` (seen !! 2) @?= False
@@ -564,7 +614,7 @@ main =
               let mockCfg = MockConfig seenContexts
               result <-
                 Eff.runPromptResultEff (mockBackend mockCfg) defaultPromptConfig $
-                  Eff.promptsParallel (replicate 3 (Eff.prompt @Counter))
+                  Eff.promptsParallel (replicate 3 (Eff.promptSingle @Counter))
               case result of
                 Left err -> fail (show err)
                 Right xs -> length xs @?= 3
@@ -607,7 +657,7 @@ main =
           , testCase "backend error triggers fallback" $ do
               result <-
                 Eff.runPromptResultEff (injectFailBackend InjectFailConfig) defaultPromptConfig $
-                  Eff.prompt @Counter `Eff.orElse` pure (Counter 0)
+                  Eff.promptSingle @Counter `Eff.orElse` pure (Counter 0)
               case result of
                 Right (Counter 0) -> pure ()
                 _ -> fail "Expected Right (Counter 0)"
@@ -616,7 +666,7 @@ main =
               let cfg = MockConfig seenContexts
               _ <-
                 Eff.runPromptResultEff (mockBackend cfg) defaultPromptConfig $
-                  (Eff.context "leaked" >> Eff.failWith "x") `Eff.orElse` Eff.prompt @Counter
+                  (Eff.context "leaked" >> Eff.failWith "x") `Eff.orElse` Eff.promptSingle @Counter
               seen <- readIORef seenContexts
               length seen @?= 1
               forM_ seen $ assertNotContains "leaked"
@@ -624,8 +674,8 @@ main =
               seenContexts <- newIORef ([] :: [Text])
               let cfg = MockConfig seenContexts
               _ <- Eff.runPromptResultEff (mockBackend cfg) defaultPromptConfig $ do
-                _ <- (Eff.context "kept" >> Eff.prompt @Counter) `Eff.orElse` Eff.failWith "x"
-                Eff.prompt @Counter
+                _ <- (Eff.context "kept" >> Eff.promptSingle @Counter) `Eff.orElse` Eff.failWith "x"
+                Eff.promptSingle @Counter
               seen <- readIORef seenContexts
               length seen @?= 2
               assertContains "kept" (seen !! 1)
@@ -788,7 +838,7 @@ main =
                   result <-
                     Eff.runPromptResultEff (recordingBackend responses seen) defaultPromptConfig $ do
                       _ <- Eff.improve (User "Alice" "alice@example.com")
-                      Eff.prompt @User
+                      Eff.promptSingle @User
                   result @?= Right (User "Bob" "bob@example.com")
                   calls <- readIORef seen
                   length calls @?= 2
@@ -869,12 +919,12 @@ main =
                       ( Band "The Quarks" 4
                       , [UserMessage "Hello.", AssistantMessage (TL.toStrict (encodeToLazyText (Band "The Quarks" 4)))]
                       )
-              , testCase "the flat Effect.prompt stays flat for a type that derives Generically" $ do
+              , testCase "the flat Effect.promptSingle stays flat for a type that derives Generically" $ do
                   (result, calls) <-
                     runRecording
                       ["{\"bandName\":\"The Quarks\",\"bandSize\":4}"]
                       2
-                      (Eff.prompt @Band)
+                      (Eff.promptSingle @Band)
                   result @?= Right (Band "The Quarks" 4)
                   length calls @?= 1
               , testCase "a field with its own prompt override is prompted through it, and its answer stays visible" $ do
@@ -1039,7 +1089,7 @@ main =
                   let cfg = SeqMockConfig responses seenContexts
                   result <-
                     Eff.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 2}) $
-                      Eff.prompt @User
+                      Eff.promptSingle @User
                   result @?= Right (User "Alice" "alice@example.com")
                   seen <- readIORef seenContexts
                   length seen @?= 1
@@ -1053,7 +1103,7 @@ main =
                   let cfg = SeqMockConfig responses seenContexts
                   result <-
                     Eff.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 2}) $
-                      Eff.prompt @User
+                      Eff.promptSingle @User
                   result @?= Right (User "Alice" "alice@example.com")
                   seen <- readIORef seenContexts
                   length seen @?= 2
@@ -1067,7 +1117,7 @@ main =
                   let cfg = SeqMockConfig responses seenContexts
                   _ <-
                     Eff.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 2}) $
-                      Eff.prompt @User
+                      Eff.promptSingle @User
                   seen <- readIORef seenContexts
                   assertContains "The email address is not empty." (seen !! 1)
                   assertContains "Generate a new, corrected JSON response" (seen !! 1)
@@ -1081,7 +1131,7 @@ main =
                   let cfg = SeqMockConfig responses seenContexts
                   result <-
                     Eff.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 2}) $
-                      Eff.prompt @Guest
+                      Eff.promptSingle @Guest
                   result @?= Right (Guest "vip" (User "Alice" "alice@example.com"))
                   seen <- readIORef seenContexts
                   length seen @?= 2
@@ -1103,6 +1153,17 @@ main =
                       Promptable.prompt @[Int]
                   intsResult @?= Right [1, 2, 3 :: Int]
                   readIORef intsSeen >>= (@?= 1) . length
+              , testCase "the class method prompts a bare Int64, Word and Set Int" $ do
+                  (int64Result, int64Calls) <- runRecording ["42"] 0 (Promptable.prompt @Int64)
+                  int64Result @?= Right 42
+                  length int64Calls @?= 1
+                  (wordResult, wordCalls) <- runRecording ["7"] 0 (Promptable.prompt @Word)
+                  wordResult @?= Right 7
+                  length wordCalls @?= 1
+                  (setResult, setCalls) <- runRecording ["[3,1,2,3]"] 0 (Promptable.prompt @(Set Int))
+                  setResult @?= Right (Set.fromList [1, 2, 3])
+                  length setCalls @?= 1
+                  assertContains "A set of distinct values of the following type: A whole number." (callDesc setCalls 0)
               , testCase "a prompt override scopes its context to its own request" $ do
                   responses <- newIORef ["{\"metricText\":\"3 km\"}", "{\"metricText\":\"4 km\"}"]
                   seenContexts <- newIORef ([] :: [Text])
@@ -1110,7 +1171,7 @@ main =
                   result <-
                     Eff.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 0}) $ do
                       m <- Promptable.prompt @Metric
-                      _ <- Eff.prompt @Metric
+                      _ <- Eff.promptSingle @Metric
                       pure m
                   result @?= Right (Metric "3 km")
                   seen <- readIORef seenContexts
@@ -1127,7 +1188,7 @@ main =
                   let cfg = SeqMockConfig responses seenContexts
                   result <-
                     Eff.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 2}) $
-                      Eff.prompt @User
+                      Eff.promptSingle @User
                   result @?= Right (User "Alice" "alice@example.com")
                   seen <- readIORef seenContexts
                   length seen @?= 2
@@ -1139,7 +1200,7 @@ main =
                   let cfg = SeqMockConfig responses seenContexts
                   result <-
                     Eff.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 1}) $
-                      Eff.prompt @User
+                      Eff.promptSingle @User
                   case result of
                     Left err -> assertContains "JSON decode error" err
                     Right _ -> fail "Expected Left but got Right"
@@ -1152,7 +1213,7 @@ main =
                   let cfg = SeqMockConfig responses seenContexts
                   result <-
                     Eff.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 2}) $
-                      Eff.prompt @User
+                      Eff.promptSingle @User
                   case result of
                     Left err -> assertContains "The email address is not empty." err
                     Right _ -> assertFailure "Expected Left but got Right"
@@ -1164,7 +1225,7 @@ main =
                   let backend = truncatedBackend 1 "{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}" callRef seenContexts
                   result <-
                     Eff.runPromptResultEff backend (defaultPromptConfig {maxRetries = 2}) $
-                      Eff.prompt @User
+                      Eff.promptSingle @User
                   result @?= Right (User "Alice" "alice@example.com")
                   seen <- readIORef seenContexts
                   length seen @?= 2
@@ -1179,7 +1240,7 @@ main =
                   let backend = truncatedBackend maxBound "unused" callRef seenContexts
                   result <-
                     Eff.runPromptResultEff backend (defaultPromptConfig {maxRetries = 1}) $
-                      Eff.prompt @User
+                      Eff.promptSingle @User
                   case result of
                     Left err -> do
                       assertContains "cut off at the length limit" err
@@ -1196,7 +1257,7 @@ main =
                   outcome <-
                     timeout (5 * 1000 * 1000) $
                       Eff.runPromptResultEff (barrierBackend entered 2) defaultPromptConfig $
-                        Eff.promptPar (Eff.prompt @Counter) (Eff.prompt @Counter)
+                        Eff.promptPar (Eff.promptSingle @Counter) (Eff.promptSingle @Counter)
                   case outcome of
                     Nothing ->
                       assertFailure
@@ -1208,7 +1269,7 @@ main =
                   outcome <-
                     timeout (5 * 1000 * 1000) $
                       Eff.runPromptResultEff (barrierBackend entered 3) defaultPromptConfig $
-                        Eff.promptsParallel (replicate 3 (Eff.prompt @Counter))
+                        Eff.promptsParallel (replicate 3 (Eff.promptSingle @Counter))
                   case outcome of
                     Nothing ->
                       assertFailure
@@ -1299,6 +1360,28 @@ main =
               -}
               n <- readIORef roundRef
               n @?= 4
+          ]
+      , testGroup
+          "reachable types"
+          [ testCase "a type promoted through DescriptionPrompt renders the same reachable sections as its own description" $ do
+              let own = description (Proxy @Outer)
+              assertContains "The types above refer to the following types:\n\nInner:\nAn inner record.\n" own
+              description (Proxy @(Promptable.DescriptionPrompt Outer)) @?= own
+          , testCase "a recursive type promoted through DescriptionPrompt is not listed under itself" $ do
+              let sectionHeaders = filter (`elem` (["Chain:", "Inner:"] :: [Text])) . T.lines
+                  own = description (Proxy @Chain)
+                  promoted = description (Proxy @(Promptable.DescriptionPrompt Chain))
+              sectionHeaders own @?= ["Inner:"]
+              sectionHeaders promoted @?= ["Inner:"]
+              promoted @?= own
+          , testCase "prompt @Outer sends the reachable sections" $ do
+              (result, calls) <-
+                runRecording
+                  ["{\"outerInner\":{\"innerNote\":\"hi\"},\"outerCount\":1,\"outerTags\":[]}"]
+                  0
+                  (Promptable.prompt @Outer)
+              result @?= Right (Outer (Inner "hi") 1 [])
+              assertContains (description (Proxy @Outer)) (callDesc calls 0)
           ]
       , testGroup
           "Web tools"

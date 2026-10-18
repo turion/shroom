@@ -2,6 +2,78 @@
 
 ## Unreleased
 
+* **New: `description` also describes every type reachable from the requested one, once each.**
+  After the examples it appends a section ("The types above refer to the following types:") with,
+  for each type reachable through the new `Describable` method `referencedTypes`, a header line
+  naming the type (`Choice Fuel`) and its `describeType`. Each type appears once (told apart by
+  `TypeRep`, so `Choice Fuel` and `Choice Phase` are two types), breadth first from the requested
+  type, never the requested type itself, and recursive types terminate. A type with nothing
+  reachable renders exactly as before. New API: `referencedTypes :: Proxy a -> [Described]` (default
+  `[]`), `hasOwnSection :: Proxy a -> Bool` (default `True`; `False` for the base types and the
+  containers `[a]`, `NonEmpty a`, `Maybe a`, `Generically a`, which pass their element's entry
+  through), the existential `Described`, and `reach @t`, the entry a field of type
+  `t` contributes. **A hand-written `Describable` instance that does not write `referencedTypes`
+  contributes no reachable types**, so the types it refers to still do not reach the model.
+* **Breaking: `deriveDescribable` also generates `referencedTypes`, and so needs every field type
+  to be `Describable`.** The generated instance lists, for every field of every constructor
+  (record and positional alike), the field type's `reach`, so that the types the fields refer to
+  are described in the prompt text once each. Migrating a model package:
+  - (a) **Every field type of a derived type needs a `Describable` instance**, from an earlier
+    splice or from the same one; a field type without one is a compile error (`No instance for
+    Describable …`), by design: a silent skip could not see instances spliced later in the module
+    and would drop types without a word. Reorder the splices so that a field type comes before the
+    types that use it, and derive (or write) an instance for field types that had none. Mutually
+    recursive types are derived by a single splice over the list,
+    `$(concat <$> traverse deriveDescribable [''A, ''B])`; a self-recursive type needs nothing
+    special.
+  - (b) **A parameterised type now derives**: `data Choice a = …` gets
+    `instance (Describable a) => Describable (Choice a)`, and `Choice Fuel` makes `Fuel`
+    reachable. Switch a hand-written instance for such a wrapper to `deriveDescribable`, or write
+    `referencedTypes _ = reach @a` in it; otherwise the element types silently get no section. A
+    type variable of kind `Type` gets a `Describable` constraint; a variable of any other kind (a
+    `Symbol` or `Nat` unit, a dimension, or an unannotated phantom parameter, which `GHC2024` makes
+    poly-kinded) can never be a field's type, so it is annotated with its kind in the instance head
+    and gets only `Typeable`, plus `Typeable` for each kind variable of its kind:
+    `newtype Tagged a = Tagged Double` derives
+    `instance (Typeable k, Typeable a) => Describable (Tagged (a :: k))`. The splicing module needs
+    `TypeApplications` and `ScopedTypeVariables` (both in `GHC2021`/`GHC2024`).
+  - (c) **Compile the model package with `-haddock`**: the descriptions come from the Haddock
+    comments, and a type without one is a compile-time error, as before.
+  - (d) **Check the result** with `T.putStrLn (description (Proxy @T))` in `cabal repl`: the types
+    your model should know about each appear once under "The types above refer to the following
+    types:".
+
+  A hand-written instance that uses `deriveDescribableExp` for `describeType` must now also write
+  `referencedTypes` itself; `deriveDescribableExp` returns the `describeType` body only.
+* **New: `deriveDescribable` collects the docs of positional constructor fields, and no longer drops
+  a single constructor's own doc.** A documented positional argument is rendered like a record
+  field, labelled by its 1-based position: `- field 1: The first point.`, indented under its
+  constructor in a sum, directly under the type for a single constructor; an undocumented one adds
+  nothing. And `newtype Bounds = Bounds Int -- ^ The largest allowed value.` now renders that
+  constructor doc as a line after the type's own (a single-constructor type used to render its
+  fields only). Which Haddock layout documents what (GHC's rule for H98 constructors): a
+  **one-line** trailing `ByFuel X -- ^ doc` documents the *constructor* — it already rendered as
+  `- ByFuel: doc` and still does. An *argument* is documented only if the constructor has a
+  leading `-- |` doc, or each argument stands on a line of its own with its own comment, in either
+  the leading form (`-- | doc` above the argument, which is what fourmolu rewrites trailing
+  comments into) or the trailing form (`-- ^ doc` below it). If your model package documented
+  positional arguments and they did not reach the model, check it against this; the descriptions
+  of types that did not document arguments or a single constructor are unchanged.
+* New: `describedIdentity :: Proxy a -> TypeRep`, a `Describable` method (default: the type's own
+  `typeRep`) naming the type that `description` reports on, so the type is not listed under itself.
+  `Generically a` and `DescriptionPrompt a` forward to `a`'s, which fixes a recursive `X`
+  promoted via `deriving via Generically X`/`DescriptionPrompt X` being listed under itself. A
+  hand-written transparent wrapper forwards it the same way.
+* **Breaking: `Typeable` is now a superclass of `Describable`.** Every concrete type has it, and a
+  polymorphic instance gets it from the `Describable a` context of its parameter, so most instances
+  compile unchanged. An instance whose type is indexed by a parameter that is not itself
+  `Describable` (say `instance Describable (Report tools)` with `tools :: [Type]`) needs
+  `Typeable tools` in its context.
+* New: `Describable` and `Surveyable` instances for `Int64` and `Word`.
+* New: `Describable` and `Surveyable` instances for `Set a` (context `Describable a`), shaped like
+  the `[a]` and `NonEmpty a` ones: described through the element type, with no section of its own,
+  so `reach @(Set X)` is `X`'s entry. No `Ord a` is needed here; only `shroom`'s `Promptable` instance
+  asks for it.
 * **Breaking: `Surveyable`'s `Property` now defaults to `Structural a`, not `Void`.** A bare
   `instance Surveyable X` used to have no properties; it now has the properties of `X`'s fields —
   each field type's own `Property` — described in the prompt as `Field name: …` and checked on the

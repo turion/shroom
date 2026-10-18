@@ -4,12 +4,12 @@ a type from an LLM backend.
 @
 class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
   prompt :: forall es. (Prompt :> es, State [ContextItem] :> es) => Eff es a
-  prompt = Effect.prompt
+  prompt = Effect.promptSingle
 @
 
-The default 'prompt' sends a 'Control.Monad.Prompt.Effect.RequestPrompt'
-effect, which uses 'description' to build the prompt text from the type's
-'Surveyable' metadata.
+The default 'prompt' is 'Control.Monad.Prompt.Effect.promptSingle': it sends a
+'Control.Monad.Prompt.Effect.RequestPrompt' effect, which uses 'description'
+to build the prompt text from the type's 'Surveyable' metadata.
 
 Override 'prompt' to add type-specific context, fallback logic, or any other
 custom program. The method has @State [ContextItem]@ in scope, so an override
@@ -17,7 +17,7 @@ can scope context with 'Control.Monad.Prompt.Effect.withContext':
 
 @
 instance Promptable MyType where
-  prompt = withContext "Always prefer metric units." Effect.prompt
+  prompt = withContext "Always prefer metric units." Effect.promptSingle
 @
 
 Typical usage (no override needed):
@@ -43,9 +43,13 @@ program layer and must live under "Control.Monad.Prompt", never under
 module Control.Monad.Prompt.Promptable (module Control.Monad.Prompt.Promptable) where
 
 -- base
+import Data.Int (Int64)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Proxy (Proxy (..))
 import Numeric.Natural (Natural)
+
+-- containers
+import Data.Set (Set)
 
 -- aeson
 import Data.Aeson (FromJSON, ToJSON)
@@ -93,7 +97,7 @@ class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
   chains prompts has it.
   -}
   prompt :: forall es. (Prompt :> es, State [ContextItem] :> es) => Eff es a
-  prompt = Effect.prompt
+  prompt = Effect.promptSingle
 
 {- | Helper newtype for using the default description-based prompting strategy
 via @DerivingVia@.
@@ -116,20 +120,28 @@ newtype DescriptionPrompt a = DescriptionPrompt {getDescriptionPrompt :: a}
 instance (Describable a) => Describable (DescriptionPrompt a) where
   describeType _ = describeType (Proxy @a)
 
+  -- @description@ runs at @DescriptionPrompt a@ here, so forward what @a@
+  -- references. Not @reach @a@: that would list @a@ under itself.
+  -- The three methods below are the contract of a transparent wrapper, see
+  -- the 'describedIdentity' Haddock; 'Generically' is the other one.
+  referencedTypes _ = referencedTypes (Proxy @a)
+  hasOwnSection _ = False
+  describedIdentity _ = describedIdentity (Proxy @a)
+
 instance (Surveyable a) => Surveyable (DescriptionPrompt a) where
   type Property (DescriptionPrompt a) = Property a
   describeProperties _ = describeProperties (Proxy @a)
   propertyHolds (DescriptionPrompt x) = propertyHolds x
 
--- | Uses the default 'prompt' = 'PromptSingle'.
+-- | Uses the default 'prompt' = 'Control.Monad.Prompt.Effect.promptSingle'.
 instance (Surveyable a, ToSchema a, FromJSON a) => Promptable (DescriptionPrompt a)
 
 -- * Base types
 
 {- | Flat 'Promptable' instances for the base types that "Data.Shroom.Class"
-gives 'Surveyable' instances: 'Text', 'Int', 'Integer', 'Natural', 'Double',
+gives 'Surveyable' instances: 'Text', 'Int', 'Integer', 'Int64', 'Word', 'Natural', 'Double',
 'Float', 'Bool', 'Char', 'UTCTime', 'Day', and the containers @[a]@,
-@'NonEmpty' a@ and @'Maybe' a@. Each uses the default 'prompt', so a bare value
+@'NonEmpty' a@, @'Set' a@ and @'Maybe' a@. Each uses the default 'prompt', so a bare value
 is requested like any other type, from its 'description'.
 
 They live in this module, next to the class, so they are not orphans.
@@ -150,6 +162,10 @@ instance Promptable Int
 
 instance Promptable Integer
 
+instance Promptable Int64
+
+instance Promptable Word
+
 instance Promptable Natural
 
 instance Promptable Double
@@ -167,5 +183,7 @@ instance Promptable Day
 instance (Describable a, ToSchema a, FromJSON a) => Promptable [a]
 
 instance (Describable a, ToSchema a, FromJSON a) => Promptable (NonEmpty a)
+
+instance (Describable a, ToSchema a, FromJSON a, Ord a) => Promptable (Set a)
 
 instance (Describable a, ToSchema a, FromJSON a) => Promptable (Maybe a)

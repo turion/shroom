@@ -16,7 +16,7 @@ comes back ('User', 'Counter'), a property-validated chain runs end to end
 back in ('conferenceChainWithTools'). Three further cases run
 @deriving via Generically@ end to end, always through the class method
 'Control.Monad.Prompt.Promptable.prompt', since the flat
-'Control.Monad.Prompt.Effect.prompt' would pass without running the strategy:
+'Control.Monad.Prompt.Effect.promptSingle' would pass without running the strategy:
 a bare 'Text', 'Int' and 'Double' (the non-object schema roots the strategy
 sends for its fields and for the constructor choice, so a provider that
 rejects one fails there first), then the record 'Musician' and the sum
@@ -118,7 +118,7 @@ backendIntegrationTests backend =
           -- Any 'Int' and 'Double' prove the scalar roots round-tripped.
           Right (fruitName, _, _) -> assertBool "text is non-empty" (not (T.null fruitName))
     , testCase "Promptable.prompt returns a Musician, field by field" $ do
-        -- The class method, not 'Effect.prompt': that one sends a flat request
+        -- The class method, not 'Effect.promptSingle': that one sends a flat request
         -- and would pass without running the generic strategy.
         result <- Effect.runPromptResultEff backend sharedPromptConfig $ do
           Effect.context "Make up a classical composer."
@@ -133,10 +133,10 @@ backendIntegrationTests backend =
         case result of
           Left err -> assertFailure (show err)
           Right fruit -> assertBool "the properties of the fruit hold" (allPropertiesHold fruit)
-    , testCase "prompt returns a User" $ do
+    , testCase "promptSingle returns a User" $ do
         result <- Effect.runPromptResultEff backend sharedPromptConfig $ do
           Effect.context "Return a JSON object for a user named Alice with email alice@example.com"
-          Effect.prompt @User
+          Effect.promptSingle @User
         case result of
           Left err -> assertFailure (show err)
           Right user -> do
@@ -144,10 +144,10 @@ backendIntegrationTests backend =
             assertBool "email is non-empty" (not (T.null (userEmail user)))
             assertBool "email field holds an address" ("@" `T.isInfixOf` userEmail user)
             assertBool "name field does not hold an address" (not ("@" `T.isInfixOf` userName user))
-    , testCase "prompt returns a Counter" $ do
+    , testCase "promptSingle returns a Counter" $ do
         result <- Effect.runPromptResultEff backend sharedPromptConfig $ do
           Effect.context "Return a JSON counter object with value 42."
-          Effect.prompt @Counter
+          Effect.promptSingle @Counter
         case result of
           Left err -> assertFailure (show err)
           -- Any 'Int' proves the non-object top-level type round-tripped.
