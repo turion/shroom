@@ -21,9 +21,23 @@ and in the module (it needs @DerivingVia@, @StandaloneDeriving@, @DeriveAnyClass
 import Generics.SOP qualified as SOP
 @
 
-Then a record, with a flat leaf type for each of its parts:
+Then a record, with a flat leaf type for each of its parts. The leaf type is
+derived first: a field type needs its 'Describable' instance from an earlier
+splice (or the same one), so that its description reaches the model with the
+record's:
 
 @
+-- | The full name of a person.
+newtype Name = Name Text
+  deriving stock (Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+\$(deriveDescribable ''Name)
+
+instance Surveyable Name   -- or a custom Property, e.g. \"not empty\"
+
+instance Promptable Name   -- flat: one request
+
 -- | A musician.
 data Musician = Musician
   { name :: Name
@@ -39,17 +53,6 @@ data Musician = Musician
 instance Surveyable Musician
 
 deriving via Generically Musician instance Promptable Musician
-
--- | The full name of a person.
-newtype Name = Name Text
-  deriving stock (Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
-
-\$(deriveDescribable ''Name)
-
-instance Surveyable Name   -- or a custom Property, e.g. \"not empty\"
-
-instance Promptable Name   -- flat: one request
 @
 
 A sum is derived the same way: @data Fruit = FruitApple Apple | FruitBanana

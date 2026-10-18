@@ -10,7 +10,7 @@ import Data.Maybe (fromMaybe)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (typeRep)
 import Data.Void (Void)
-import GHC.Generics (Generic)
+import GHC.Generics (Generic, Generically (..))
 
 -- containers
 import Data.Set qualified as S
@@ -282,6 +282,129 @@ instance Describable Household where
 
 instance Surveyable Household where type Property Household = Void
 
+-- * Derived reachable types
+
+-- | A colour of paint.
+data Colour
+  = -- | Like a post box.
+    Red
+  | -- | Like a lawn.
+    Green
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- | Either a value was picked, or none was.
+data Choice a
+  = -- | The picked value.
+    Pick a
+  | -- | Nothing was picked.
+    Decline
+  deriving stock (Eq, Ord, Show, Generic)
+
+-- The generic defaults need the context of the parameter, which only a standalone clause can state.
+deriving anyclass instance (ToJSON a) => ToJSON (Choice a)
+
+deriving anyclass instance (ToSchema a) => ToSchema (Choice a)
+
+-- | The size of a tile.
+data Dimensions = Dimensions
+  { dimWidth :: Int
+  -- ^ The width in millimetres.
+  , dimHeight :: Int
+  -- ^ The height in millimetres.
+  }
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- | A text printed on a tile.
+newtype Label = Label
+  { labelText :: Text
+  -- ^ The words that are printed.
+  }
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- | How a tile is cut.
+data Cut
+  = -- | Straight edges, to the given dimensions.
+    Straight Dimensions
+  | -- | A round tile of the given diameter in millimetres.
+    Curved Int
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- | A ceramic tile.
+data Tile = Tile
+  { tileCut :: Cut
+  -- ^ How the tile is cut.
+  , tileSize :: Dimensions
+  -- ^ The size of the tile when laid.
+  , tileLabels :: [Label]
+  -- ^ The labels printed on the tile.
+  , tileColour :: Choice Colour
+  -- ^ The chosen colour, if any.
+  , tileNote :: Text
+  -- ^ A note for the tiler.
+  }
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- | A folder, holding files.
+data Folder = Folder
+  { folderName :: Text
+  -- ^ The name of the folder.
+  , folderFiles :: [File]
+  -- ^ What is in the folder.
+  }
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- | A file, which is either some text or another folder.
+data File
+  = -- | Some text.
+    Plain Text
+  | -- | A folder in place of a file.
+    Directory Folder
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- | An outline: a title with sub-outlines, a recursive type.
+data Outline = Outline
+  { outlineTitle :: Text
+  -- ^ The title of the outline.
+  , outlineChildren :: [Outline]
+  -- ^ The sub-outlines.
+  }
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- The field types are derived before the types that have them as fields.
+$(deriveDescribable ''Colour)
+
+$(deriveDescribable ''Choice)
+
+$(deriveDescribable ''Dimensions)
+
+$(deriveDescribable ''Label)
+
+$(deriveDescribable ''Cut)
+
+$(deriveDescribable ''Tile)
+
+instance Surveyable Tile where type Property Tile = Void
+
+-- Mutually recursive types are derived by one splice.
+$(concat <$> traverse deriveDescribable [''Folder, ''File])
+
+instance Surveyable Folder where type Property Folder = Void
+
+instance Surveyable File where type Property File = Void
+
+-- A self-recursive type needs nothing special.
+$(deriveDescribable ''Outline)
+
+instance Surveyable Outline where type Property Outline = Void
+
 -- | The lines of a description from the reachable-types section on, empty if it has none.
 reachableLines :: Text -> [Text]
 reachableLines = dropWhile (/= "The types above refer to the following types:") . T.lines
@@ -322,6 +445,7 @@ main =
       , golden "Email" $ description (Proxy @Email)
       , golden "Delivery" $ description (Proxy @Delivery)
       , golden "Fruit" $ description (Proxy @Fruit)
+      , golden "Tile" $ description (Proxy @Tile)
       , golden "StructuralContact" $
           structuralReport
             (Proxy @Contact)
@@ -374,6 +498,36 @@ main =
               map typeName (reach @[Shape]) @?= ["Shape"]
               map typeName (reach @(Maybe Mood)) @?= ["Mood"]
               map typeName (reach @[Maybe Text]) @?= []
+          , testGroup
+              "derived with deriveDescribable"
+              [ testCase "every nested type is named once, breadth first: sum, record, list element, parameterised type and its argument" $
+                  map typeName (reachableTypes (Proxy @Tile))
+                    @?= ["Cut", "Dimensions", "Label", "Choice Colour", "Colour"]
+              , testCase "Dimensions is reached through Cut and through a field of Tile, and has one section" $
+                  length (filter (== "Dimensions:") (T.lines (description (Proxy @Tile)))) @?= 1
+              , testCase "a parameterised type derives with a Describable context, and its argument is reachable" $ do
+                  map typeName (reachableTypes (Proxy @(Choice Colour))) @?= ["Colour"]
+                  map typeName (reachableTypes (Proxy @(Choice Dimensions))) @?= ["Dimensions"]
+                  map typeName (reachableTypes (Proxy @(Choice Text))) @?= []
+                  map typeName (reach @(Choice Colour)) @?= ["Choice Colour"]
+              , testCase "mutually recursive types derived in one splice terminate, each listing the other once" $ do
+                  reachableLines (description (Proxy @Folder))
+                    @?= ["The types above refer to the following types:", "", "File:", "A file, which is either some text or another folder.", "- Plain: Some text.", "- Directory: A folder in place of a file.", ""]
+                  map typeName (reachableTypes (Proxy @File)) @?= ["Folder"]
+              , testCase "a self-recursive derived type is not listed under itself" $
+                  reachableLines (description (Proxy @Outline)) @?= []
+              ]
+          , testGroup
+              "through Generically"
+              [ testCase "a recursive type promoted through Generically is not listed under itself" $
+                  map typeName (reachableTypes (Proxy @(Generically Outline))) @?= []
+              , testCase "the wrapper reaches what the wrapped type reaches" $
+                  map typeName (reachableTypes (Proxy @(Generically Folder))) @?= ["File"]
+              , testCase "a mutually recursive type through Generically lists the other type, not itself" $
+                  map typeName (reachableTypes (Proxy @(Generically File))) @?= ["Folder"]
+              , testCase "the wrapper has the identity of the wrapped type" $
+                  describedIdentity (Proxy @(Generically Outline)) @?= describedIdentity (Proxy @Outline)
+              ]
           , testCase "the section comes after the examples" $ do
               let (before, after) = break (== "The types above refer to the following types:") (T.lines (description (Proxy @Address)))
               assertBool "the examples come before the section" ("Example valid JSON responses:" `elem` before)

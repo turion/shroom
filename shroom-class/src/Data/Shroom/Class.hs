@@ -93,7 +93,7 @@ import Data.Kind (Type)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (mapMaybe)
 import Data.Proxy (Proxy (..))
-import Data.Typeable (Typeable, typeRep)
+import Data.Typeable (TypeRep, Typeable, typeRep)
 import Data.Void (Void, absurd)
 import GHC.Generics (Generically (..))
 import Numeric.Natural (Natural)
@@ -178,6 +178,15 @@ class (ToJSON a, Typeable a) => Describable a where
   hasOwnSection :: Proxy a -> Bool
   hasOwnSection _ = True
 
+  {- | The identity of the type that 'description' reports on, by which
+    'reachableTypes' keeps that type out of its own list of reachable types.
+    Defaults to the type's own 'TypeRep'. A transparent wrapper (@'Generically' X@,
+    @DescriptionPrompt X@) forwards to the wrapped type's, because @description@ runs at
+    the wrapper while the types that refer back to @X@ name @X@ itself.
+  -}
+  describedIdentity :: Proxy a -> TypeRep
+  describedIdentity = typeRep
+
 {- | A type of which only the 'Describable' instance is known, to put types of
 different kinds into one list: what 'referencedTypes' returns.
 -}
@@ -203,7 +212,7 @@ reach
 
 -- | Every type reachable from @a@ through 'referencedTypes' that has a section, see 'description'.
 reachableTypes :: forall a. (Describable a) => Proxy a -> [Described]
-reachableTypes p = go (S.singleton (typeRep p)) (referencedTypes p)
+reachableTypes p = go (S.singleton (describedIdentity p)) (referencedTypes p)
   where
     -- Breadth first: the whole frontier is emitted before anything it references.
     go _ [] = []
@@ -524,6 +533,7 @@ instance (Describable a, ToJSON (Generically a)) => Describable (Generically a) 
   -- must not appear as a section of its own under it ('reach' would list it).
   referencedTypes _ = referencedTypes (Proxy @a)
   hasOwnSection _ = False
+  describedIdentity _ = describedIdentity (Proxy @a)
 
 -- | Forwards to the wrapped type, see the 'Describable' instance.
 instance (Surveyable a, ToJSON (Generically a)) => Surveyable (Generically a) where

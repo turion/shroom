@@ -120,6 +120,7 @@ instance (Describable a) => Describable (DescriptionPrompt a) where
   -- references. Not @reach @a@: that would list @a@ under itself.
   referencedTypes _ = referencedTypes (Proxy @a)
   hasOwnSection _ = False
+  describedIdentity _ = describedIdentity (Proxy @a)
 
 instance (Surveyable a) => Surveyable (DescriptionPrompt a) where
   type Property (DescriptionPrompt a) = Property a

@@ -14,6 +14,38 @@
   through), the existential `Described` with `described`, and `reach @t`, the entry a field of type
   `t` contributes. **A hand-written `Describable` instance that does not write `referencedTypes`
   contributes no reachable types**, so the types it refers to still do not reach the model.
+* **Breaking: `deriveDescribable` also generates `referencedTypes`, and so needs every field type
+  to be `Describable`.** The generated instance lists, for every field of every constructor
+  (record and positional alike), the field type's `reach`, so that the types the fields refer to
+  are described in the prompt text once each. Migrating a model package:
+  - (a) **Every field type of a derived type needs a `Describable` instance**, from an earlier
+    splice or from the same one; a field type without one is a compile error (`No instance for
+    Describable …`), by design: a silent skip could not see instances spliced later in the module
+    and would drop types without a word. Reorder the splices so that a field type comes before the
+    types that use it, and derive (or write) an instance for field types that had none. Mutually
+    recursive types are derived by a single splice over the list,
+    `$(concat <$> traverse deriveDescribable [''A, ''B])`; a self-recursive type needs nothing
+    special.
+  - (b) **A parameterised type now derives**: `data Choice a = …` gets
+    `instance (Describable a) => Describable (Choice a)`, and `Choice Fuel` makes `Fuel`
+    reachable. Switch a hand-written instance for such a wrapper to `deriveDescribable`, or write
+    `referencedTypes _ = reach @a` in it; otherwise the element types silently get no section. Only
+    type variables of kind `Type` are supported, any other kind is a compile-time error that
+    suggests a hand-written instance. The splicing module needs `TypeApplications` and
+    `ScopedTypeVariables` (both in `GHC2021`/`GHC2024`).
+  - (c) **Compile the model package with `-haddock`**: the descriptions come from the Haddock
+    comments, and a type without one is a compile-time error, as before.
+  - (d) **Check the result** with `T.putStrLn (description (Proxy @T))` in `cabal repl`: the types
+    your model should know about each appear once under "The types above refer to the following
+    types:".
+
+  A hand-written instance that uses `deriveDescribableExp` for `describeType` must now also write
+  `referencedTypes` itself; `deriveDescribableExp` returns the `describeType` body only.
+* New: `describedIdentity :: Proxy a -> TypeRep`, a `Describable` method (default: the type's own
+  `typeRep`) naming the type that `description` reports on, so the type is not listed under itself.
+  `Generically a` and `DescriptionPrompt a` forward to `a`'s, which fixes a recursive `X`
+  promoted via `deriving via Generically X`/`DescriptionPrompt X` being listed under itself. A
+  hand-written transparent wrapper forwards it the same way.
 * **Breaking: `Typeable` is now a superclass of `Describable`.** Every concrete type has it, and a
   polymorphic instance gets it from the `Describable a` context of its parameter, so most instances
   compile unchanged. An instance whose type is indexed by a parameter that is not itself

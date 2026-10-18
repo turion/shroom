@@ -208,6 +208,8 @@ instance Surveyable Speakers where
 
 instance Promptable Speakers
 
+$(deriveDescribable ''GhcExtension)
+
 $(deriveDescribable ''Talk)
 
 instance Surveyable Talk where

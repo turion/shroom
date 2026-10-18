@@ -11,6 +11,7 @@ import Control.Monad (forM_, void)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.IORef
 import Data.Proxy (Proxy (..))
+import Data.Void (Void)
 import GHC.Clock (getMonotonicTime)
 import System.Timeout (timeout)
 
@@ -374,6 +375,22 @@ instance Describable Outer where
 
 instance Surveyable Outer
 deriving via Promptable.DescriptionPrompt Outer instance Promptable Outer
+
+-- | A chain of links, each holding the next: a recursive type promoted through 'Promptable.DescriptionPrompt'.
+data Chain = Chain
+  { chainInner :: Inner
+  -- ^ What this link holds.
+  , chainNext :: Maybe Chain
+  -- ^ The next link, if any.
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+$(deriveDescribable ''Chain)
+
+-- A bare instance would hang: 'Chain' is directly recursive.
+instance Surveyable Chain where type Property Chain = Void
+deriving via Promptable.DescriptionPrompt Chain instance Promptable Chain
 
 {- | A mock 'Backend' that answers from a list in order (repeating the last
 reply once the list runs out, like 'seqMockBackend') and records, for every
@@ -1332,6 +1349,13 @@ main =
               let own = description (Proxy @Outer)
               assertContains "The types above refer to the following types:\n\nInner:\nAn inner record.\n" own
               description (Proxy @(Promptable.DescriptionPrompt Outer)) @?= own
+          , testCase "a recursive type promoted through DescriptionPrompt is not listed under itself" $ do
+              let sectionHeaders = filter (`elem` (["Chain:", "Inner:"] :: [Text])) . T.lines
+                  own = description (Proxy @Chain)
+                  promoted = description (Proxy @(Promptable.DescriptionPrompt Chain))
+              sectionHeaders own @?= ["Inner:"]
+              sectionHeaders promoted @?= ["Inner:"]
+              promoted @?= own
           , testCase "prompt @Outer sends the reachable sections" $ do
               (result, calls) <-
                 runRecording
