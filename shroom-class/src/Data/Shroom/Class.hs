@@ -183,6 +183,22 @@ class (ToJSON a, Typeable a) => Describable a where
     Defaults to the type's own 'TypeRep'. A transparent wrapper (@'Generically' X@,
     @DescriptionPrompt X@) forwards to the wrapped type's, because @description@ runs at
     the wrapper while the types that refer back to @X@ name @X@ itself.
+
+    == Writing a transparent wrapper
+
+    A transparent wrapper @W a@ stands for @a@ without being a type of its own to
+    the model. Its 'Describable' instance must forward 'describeType', and the
+    three methods beyond it:
+
+    * 'referencedTypes' forwards to @a@'s (@referencedTypes _ = referencedTypes (Proxy \@a)@),
+      not @'reach' \@a@, which would list @a@ under itself;
+    * 'hasOwnSection' is 'False', so the wrapper gets no section;
+    * 'describedIdentity' forwards to @a@'s. Forget this one and 'reachableTypes'
+      lists the requested type under itself.
+
+    There are two such wrappers: @'Generically' a@ in this module, and
+    @DescriptionPrompt a@ in "Control.Monad.Prompt.Promptable" of the @shroom@
+    package. Keep the two in step.
   -}
   describedIdentity :: Proxy a -> TypeRep
   describedIdentity = typeRep
@@ -191,10 +207,6 @@ class (ToJSON a, Typeable a) => Describable a where
 different kinds into one list: what 'referencedTypes' returns.
 -}
 data Described = forall t. (Describable t) => Described (Proxy t)
-
--- | Wrap a type as a 'Described', whatever its 'hasOwnSection'. Prefer 'reach' in 'referencedTypes'.
-described :: forall t. (Describable t) => Described
-described = Described (Proxy @t)
 
 {- | The entries a field of type @t@ contributes to 'referencedTypes': @t@ itself
 if it has a section of its own ('hasOwnSection'), otherwise whatever @t@ itself
@@ -207,7 +219,7 @@ referencedTypes _ = reach \@Person <> reach \@[Address] <> reach \@Text
 -}
 reach :: forall t. (Describable t) => [Described]
 reach
-  | hasOwnSection (Proxy @t) = [described @t]
+  | hasOwnSection (Proxy @t) = [Described (Proxy @t)]
   | otherwise = referencedTypes (Proxy @t)
 
 -- | Every type reachable from @a@ through 'referencedTypes' that has a section, see 'description'.
@@ -546,6 +558,8 @@ instance (Describable a, ToJSON (Generically a)) => Describable (Generically a) 
 
   -- Like a container, but transparent: @a@ is the type being described, so it
   -- must not appear as a section of its own under it ('reach' would list it).
+  -- The three methods below are the contract of a transparent wrapper, see
+  -- 'describedIdentity'; 'DescriptionPrompt' in @shroom@ is the other one.
   referencedTypes _ = referencedTypes (Proxy @a)
   hasOwnSection _ = False
   describedIdentity _ = describedIdentity (Proxy @a)

@@ -11,7 +11,7 @@
   reachable renders exactly as before. New API: `referencedTypes :: Proxy a -> [Described]` (default
   `[]`), `hasOwnSection :: Proxy a -> Bool` (default `True`; `False` for the base types and the
   containers `[a]`, `NonEmpty a`, `Maybe a`, `Generically a`, which pass their element's entry
-  through), the existential `Described` with `described`, and `reach @t`, the entry a field of type
+  through), the existential `Described`, and `reach @t`, the entry a field of type
   `t` contributes. **A hand-written `Describable` instance that does not write `referencedTypes`
   contributes no reachable types**, so the types it refers to still do not reach the model.
 * **Breaking: `deriveDescribable` also generates `referencedTypes`, and so needs every field type
