@@ -99,8 +99,9 @@ type.
   `Control.Monad.Prompt`) to honour a type's strategy, or rename a flat call to `promptSingle` or
   `promptSingleWith`. `withContext t (prompt @a)` is the strategy-aware equivalent of
   `promptSingleWith t`.
-* **New: base-type `Promptable` instances.** `Text`, `Int`, `Integer`, `Natural`, `Double`, `Float`,
-  `Bool`, `Char`, `UTCTime`, `Day`, `[a]`, `NonEmpty a` and `Maybe a` are now `Promptable` with the
+* **New: base-type `Promptable` instances.** `Text`, `Int`, `Integer`, `Int64`, `Word`, `Natural`, `Double`, `Float`,
+  `Bool`, `Char`, `UTCTime`, `Day`, `[a]`, `NonEmpty a`, `Set a` (needs `Ord a`, for `FromJSON`) and
+  `Maybe a` are now `Promptable` with the
   default flat strategy, matching the `Surveyable` instances `Data.Shroom.Class` already gives them,
   so a bare value or a field of one of them can be prompted. Caveat: `openapi3` renders `Char`
   (`minLength`/`maxLength`), `Natural` (`exclusiveMinimum`) and, unconfirmed, `Double`/`Float` (a

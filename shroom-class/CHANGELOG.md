@@ -66,6 +66,10 @@
   `Describable` (say `instance Describable (Report tools)` with `tools :: [Type]`) needs
   `Typeable tools` in its context.
 * New: `Describable` and `Surveyable` instances for `Int64` and `Word`.
+* New: `Describable` and `Surveyable` instances for `Set a` (context `Describable a`), shaped like
+  the `[a]` and `NonEmpty a` ones: described through the element type, with no section of its own,
+  so `reach @(Set X)` is `X`'s entry. No `Ord a` is needed here; only `shroom`'s `Promptable` instance
+  asks for it.
 * **Breaking: `Surveyable`'s `Property` now defaults to `Structural a`, not `Void`.** A bare
   `instance Surveyable X` used to have no properties; it now has the properties of `X`'s fields —
   each field type's own `Property` — described in the prompt as `Field name: …` and checked on the

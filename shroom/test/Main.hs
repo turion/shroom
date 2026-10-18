@@ -10,10 +10,15 @@ import Control.Exception (bracket)
 import Control.Monad (forM_, void)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.IORef
+import Data.Int (Int64)
 import Data.Proxy (Proxy (..))
 import Data.Void (Void)
 import GHC.Clock (getMonotonicTime)
 import System.Timeout (timeout)
+
+-- containers
+import Data.Set (Set)
+import Data.Set qualified as Set
 
 -- aeson
 import Data.Aeson (FromJSON, ToJSON, Value (..), toJSON)
@@ -1148,6 +1153,17 @@ main =
                       Promptable.prompt @[Int]
                   intsResult @?= Right [1, 2, 3 :: Int]
                   readIORef intsSeen >>= (@?= 1) . length
+              , testCase "the class method prompts a bare Int64, Word and Set Int" $ do
+                  (int64Result, int64Calls) <- runRecording ["42"] 0 (Promptable.prompt @Int64)
+                  int64Result @?= Right 42
+                  length int64Calls @?= 1
+                  (wordResult, wordCalls) <- runRecording ["7"] 0 (Promptable.prompt @Word)
+                  wordResult @?= Right 7
+                  length wordCalls @?= 1
+                  (setResult, setCalls) <- runRecording ["[3,1,2,3]"] 0 (Promptable.prompt @(Set Int))
+                  setResult @?= Right (Set.fromList [1, 2, 3])
+                  length setCalls @?= 1
+                  assertContains "A set of distinct values of the following type: A whole number." (callDesc setCalls 0)
               , testCase "a prompt override scopes its context to its own request" $ do
                   responses <- newIORef ["{\"metricText\":\"3 km\"}", "{\"metricText\":\"4 km\"}"]
                   seenContexts <- newIORef ([] :: [Text])

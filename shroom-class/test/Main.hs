@@ -5,6 +5,7 @@
 module Main (main) where
 
 -- base
+import Data.Int (Int64)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (fromMaybe)
 import Data.Proxy (Proxy (..))
@@ -543,6 +544,9 @@ main =
           [ contains "Text" (description (Proxy @Text)) "A piece of text."
           , contains "[Int]" (description (Proxy @[Int])) "A list of values of the following type: A whole number."
           , contains "NonEmpty Bool" (description (Proxy @(NonEmpty Bool))) "A truth value: true or false."
+          , contains "Set Bool" (description (Proxy @(S.Set Bool))) "A truth value: true or false."
+          , contains "Int64" (description (Proxy @Int64)) "A whole number."
+          , contains "Word" (description (Proxy @Word)) "A non-negative whole number."
           , contains "Maybe Text" (description (Proxy @(Maybe Text))) "A piece of text."
           , contains "[Maybe Int]" (describeType (Proxy @[Maybe Int])) "A whole number."
           ]
@@ -578,6 +582,11 @@ main =
               map typeName (reach @[Shape]) @?= ["Shape"]
               map typeName (reach @(Maybe Mood)) @?= ["Mood"]
               map typeName (reach @[Maybe Text]) @?= []
+          , testCase "a Set of an enum reaches the element's entry and gets no section of its own" $ do
+              map typeName (reach @(S.Set Mood)) @?= ["Mood"]
+              map typeName (reach @(S.Set Int64)) @?= []
+              let sectionHeaders = filter (T.isSuffixOf ":") (reachableLines (description (Proxy @(S.Set Mood))))
+              sectionHeaders @?= ["The types above refer to the following types:", "Mood:"]
           , testGroup
               "derived with deriveDescribable"
               [ testCase "every nested type is named once, breadth first: sum, record, list element, parameterised type and its argument" $

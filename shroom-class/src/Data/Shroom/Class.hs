@@ -301,7 +301,7 @@ source, which adds a type's own properties to its structural ones, is planned in
 
 == Container fields contribute no properties
 
-A field of type @[a]@, @'NonEmpty' a@ or @'Maybe' a@ has no properties of its
+A field of type @[a]@, @'NonEmpty' a@, @'Set' a@ or @'Maybe' a@ has no properties of its
 own (its 'Property' is 'Void'), whatever @a@ has. So under a bare instance the
 properties of the elements of a @[Speaker]@ or of a @Maybe Name@ field stay
 unchecked, and not even told to the model, until container lifting (<https://github.com/turion/shroom/issues/18 issue #18>)
@@ -495,6 +495,21 @@ instance (Describable a) => Describable (NonEmpty a) where
 
 instance (Describable a) => Surveyable (NonEmpty a) where
   type Property (NonEmpty a) = Void
+
+{- | A set, described through its element type.
+
+Does not lift the element's properties: they are neither described nor checked
+for the container. Use 'everyHolds' and 'describeEvery' by hand for now; a
+derivable version is tracked in
+<https://github.com/turion/shroom/issues/18 issue #18>.
+-}
+instance (Describable a) => Describable (Set a) where
+  describeType _ = "A set of distinct values of the following type: " <> describeType (Proxy @a)
+  referencedTypes _ = reach @a
+  hasOwnSection _ = False
+
+instance (Describable a) => Surveyable (Set a) where
+  type Property (Set a) = Void
 
 {- | An optional value, described through its element type.
 

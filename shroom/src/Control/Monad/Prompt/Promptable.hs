@@ -43,9 +43,13 @@ program layer and must live under "Control.Monad.Prompt", never under
 module Control.Monad.Prompt.Promptable (module Control.Monad.Prompt.Promptable) where
 
 -- base
+import Data.Int (Int64)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Proxy (Proxy (..))
 import Numeric.Natural (Natural)
+
+-- containers
+import Data.Set (Set)
 
 -- aeson
 import Data.Aeson (FromJSON, ToJSON)
@@ -133,9 +137,9 @@ instance (Surveyable a, ToSchema a, FromJSON a) => Promptable (DescriptionPrompt
 -- * Base types
 
 {- | Flat 'Promptable' instances for the base types that "Data.Shroom.Class"
-gives 'Surveyable' instances: 'Text', 'Int', 'Integer', 'Natural', 'Double',
+gives 'Surveyable' instances: 'Text', 'Int', 'Integer', 'Int64', 'Word', 'Natural', 'Double',
 'Float', 'Bool', 'Char', 'UTCTime', 'Day', and the containers @[a]@,
-@'NonEmpty' a@ and @'Maybe' a@. Each uses the default 'prompt', so a bare value
+@'NonEmpty' a@, @'Set' a@ and @'Maybe' a@. Each uses the default 'prompt', so a bare value
 is requested like any other type, from its 'description'.
 
 They live in this module, next to the class, so they are not orphans.
@@ -156,6 +160,10 @@ instance Promptable Int
 
 instance Promptable Integer
 
+instance Promptable Int64
+
+instance Promptable Word
+
 instance Promptable Natural
 
 instance Promptable Double
@@ -173,5 +181,7 @@ instance Promptable Day
 instance (Describable a, ToSchema a, FromJSON a) => Promptable [a]
 
 instance (Describable a, ToSchema a, FromJSON a) => Promptable (NonEmpty a)
+
+instance (Describable a, ToSchema a, FromJSON a, Ord a) => Promptable (Set a)
 
 instance (Describable a, ToSchema a, FromJSON a) => Promptable (Maybe a)
