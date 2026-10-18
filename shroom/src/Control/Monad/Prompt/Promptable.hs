@@ -4,12 +4,12 @@ a type from an LLM backend.
 @
 class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
   prompt :: forall es. (Prompt :> es, State [ContextItem] :> es) => Eff es a
-  prompt = Effect.prompt
+  prompt = Effect.promptSingle
 @
 
-The default 'prompt' sends a 'Control.Monad.Prompt.Effect.RequestPrompt'
-effect, which uses 'description' to build the prompt text from the type's
-'Surveyable' metadata.
+The default 'prompt' is 'Control.Monad.Prompt.Effect.promptSingle': it sends a
+'Control.Monad.Prompt.Effect.RequestPrompt' effect, which uses 'description'
+to build the prompt text from the type's 'Surveyable' metadata.
 
 Override 'prompt' to add type-specific context, fallback logic, or any other
 custom program. The method has @State [ContextItem]@ in scope, so an override
@@ -17,7 +17,7 @@ can scope context with 'Control.Monad.Prompt.Effect.withContext':
 
 @
 instance Promptable MyType where
-  prompt = withContext "Always prefer metric units." Effect.prompt
+  prompt = withContext "Always prefer metric units." Effect.promptSingle
 @
 
 Typical usage (no override needed):
@@ -93,7 +93,7 @@ class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
   chains prompts has it.
   -}
   prompt :: forall es. (Prompt :> es, State [ContextItem] :> es) => Eff es a
-  prompt = Effect.prompt
+  prompt = Effect.promptSingle
 
 {- | Helper newtype for using the default description-based prompting strategy
 via @DerivingVia@.
@@ -127,7 +127,7 @@ instance (Surveyable a) => Surveyable (DescriptionPrompt a) where
   describeProperties _ = describeProperties (Proxy @a)
   propertyHolds (DescriptionPrompt x) = propertyHolds x
 
--- | Uses the default 'prompt' = 'PromptSingle'.
+-- | Uses the default 'prompt' = 'Control.Monad.Prompt.Effect.promptSingle'.
 instance (Surveyable a, ToSchema a, FromJSON a) => Promptable (DescriptionPrompt a)
 
 -- * Base types

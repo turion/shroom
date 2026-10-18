@@ -84,10 +84,21 @@ type.
 * **Breaking: `Promptable`'s method `prompt` now also needs `State [ContextItem] :> es`**, so an
   override can scope context with `withContext` around the default request. This breaks more than
   overrides: any polymorphic user function `(Prompt :> es) => … ` that calls the class method
-  `prompt` (not `Control.Monad.Prompt.Effect.prompt`, which is unchanged) must now also require
+  `prompt` (not `Control.Monad.Prompt.Effect.promptSingle`, which is unchanged) must now also require
   `State [ContextItem] :> es` (`State` from `Effectful.State.Static.Local`, `ContextItem` from
   `Control.Monad.Prompt.Backend`). A chain that already calls `context` has that constraint
   anyway, and `runPromptResultEff` supplies it, so a concrete program is unaffected.
+* **Breaking: `Control.Monad.Prompt.Effect.prompt` is now `promptSingle`, and `promptWith` is now
+  `promptSingleWith`** (#27). Two functions named `prompt` were in play, and the flat one in
+  `Effect` silently ignored a type's `Promptable` strategy (for instance `deriving via
+  Generically`) while the class method honoured it, so importing both unqualified was ambiguous,
+  and picking the wrong one compiled and ran but skipped the strategy. The flat request keeps its
+  behaviour under its new name and never consults `Promptable`; no deprecated alias is left
+  behind, since an alias named `prompt` would keep the ambiguity. `Promptable`'s default is
+  now `prompt = Effect.promptSingle`. Migrate: call the class method `prompt` (from
+  `Control.Monad.Prompt`) to honour a type's strategy, or rename a flat call to `promptSingle` or
+  `promptSingleWith`. `withContext t (prompt @a)` is the strategy-aware equivalent of
+  `promptSingleWith t`.
 * **New: base-type `Promptable` instances.** `Text`, `Int`, `Integer`, `Natural`, `Double`, `Float`,
   `Bool`, `Char`, `UTCTime`, `Day`, `[a]`, `NonEmpty a` and `Maybe a` are now `Promptable` with the
   default flat strategy, matching the `Surveyable` instances `Data.Shroom.Class` already gives them,
@@ -97,7 +108,7 @@ type.
   `normalizeSchemaForStructuredOutput` does not yet strip, so these may fail against Claude until it
   does.
 * **New: `improve :: a -> Eff es (Maybe a)`** in `Control.Monad.Prompt.Effect`, a fourth `Prompt`
-  request (`RequestImprove`) beside `prompt`/`promptWith`/`promptTools`. It shows the model an
+  request (`RequestImprove`) beside `promptSingle`/`promptSingleWith`/`promptTools`. It shows the model an
   existing value as JSON and gets back one verdict object, `{"verdict": "fine" | "improved",
   "value": <a>}`: `Nothing` means the value is valid and the model is content with it, `Just v`
   is a corrected whole value. Both `verdict` and `value` are `required` in the wire schema (OpenAI's
@@ -115,11 +126,11 @@ type.
   through **its own type's** `Promptable.prompt`, told the parent's description, the cue and the
   field's name, each later field seeing the earlier ones; assembles the draft with `generics-sop`;
   runs `improve` on it, keeping the draft on a `fine` verdict; and finally restores the context and
-  appends the value's JSON as one `AssistantMessage`, as after a flat `prompt`. A record with `n`
+  appends the value's JSON as one `AssistantMessage`, as after a flat `promptSingle`. A record with `n`
   fields costs `n + 2` requests, plus retries and the requests of any generic field. `X` needs
   `SOP.Generic` and `SOP.HasDatatypeInfo` (so `generics-sop` in your `build-depends`) and a
   `Promptable` instance for every field type. It takes effect through the class method
-  `Promptable.prompt`; `Control.Monad.Prompt.Effect.prompt` stays flat.
+  `Promptable.prompt`; `Control.Monad.Prompt.Effect.promptSingle` stays flat.
   `Describable`/`Surveyable (Generically a)` are in
   `Data.Shroom.Class`; `shroom` carries two orphan instances, `ToSchema (Generically a)` (which
   `openapi3` lacks) and `Promptable (Generically a)` itself, so import `Control.Monad.Prompt` or

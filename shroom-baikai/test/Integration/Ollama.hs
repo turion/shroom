@@ -92,26 +92,26 @@ ollamaIntegrationTests model = do
                 Right fact -> do
                   assertBool "celebrity not empty" (not (T.null (celebrity fact)))
                   assertBool "trivia fact not empty" (not (T.null (triviaFact fact)))
-          , testCase "prompt returns a non-object Int" $ do
+          , testCase "promptSingle returns a non-object Int" $ do
               result <- Effect.runPromptResultEff localBackend (defaultPromptConfig {maxRetries = 10}) $ do
                 Effect.context "How many legs does a spider have? Answer with just the number."
-                Effect.prompt @ScalarInt
+                Effect.promptSingle @ScalarInt
               case result of
                 Left err -> assertFailure (show err)
                 -- Any 'Int' proves the non-object top-level type round-tripped;
                 -- see "Integration.Cases" for why the answer is not asserted.
                 Right (ScalarInt _) -> pure ()
-          , testCase "prompt returns a non-object Text" $ do
+          , testCase "promptSingle returns a non-object Text" $ do
               result <- Effect.runPromptResultEff localBackend (defaultPromptConfig {maxRetries = 10}) $ do
                 Effect.context "Return the word \"hello\" and nothing else."
-                Effect.prompt @ScalarText
+                Effect.promptSingle @ScalarText
               case result of
                 Left err -> assertFailure (show err)
                 Right (ScalarText t) -> assertBool "non-empty" (not (T.null t))
-          , testCase "prompt returns a non-object array of Int" $ do
+          , testCase "promptSingle returns a non-object array of Int" $ do
               result <- Effect.runPromptResultEff localBackend (defaultPromptConfig {maxRetries = 10}) $ do
                 Effect.context "Return the first three positive integers as a JSON array, in order."
-                Effect.prompt @ScalarIntList
+                Effect.promptSingle @ScalarIntList
               case result of
                 Left err -> assertFailure (show err)
                 -- Any list of 'Int' proves the non-object array round-tripped;

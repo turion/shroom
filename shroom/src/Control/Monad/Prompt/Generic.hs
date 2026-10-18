@@ -69,7 +69,7 @@ and @SOP.HasDatatypeInfo@ (derivable with @deriving anyclass@), and a
 @deriving via Generically@ takes effect only through the class method
 'Control.Monad.Prompt.Promptable.prompt' (and so through any 'Promptable'
 instance that calls it, such as a field's). The flat
-'Control.Monad.Prompt.Effect.prompt' stays flat: it sends one request for the
+'Control.Monad.Prompt.Effect.promptSingle' stays flat: it sends one request for the
 whole value, never calls the type's own @prompt@, and so never runs the strategy;
 'Control.Monad.Prompt.Effect.improve' is flat as well. A program that means to use
 the strategy must call @Promptable.prompt \@Musician@, qualified as in
@@ -126,7 +126,7 @@ for a constructor with @n > 0@ fields of a type with several constructors (choic
 cue, fields, improve) and 2 for a constructor without fields (choice, improve);
 and one more for every retry. Flat leaves cost one request each. So the example
 @Musician@ costs 4 requests, and a @Fruit@ 4 (choice, cue, the one field,
-improve), where a flat 'Control.Monad.Prompt.Effect.prompt' costs 1.
+improve), where a flat 'Control.Monad.Prompt.Effect.promptSingle' costs 1.
 
 == Leaves flat, composites generic
 
