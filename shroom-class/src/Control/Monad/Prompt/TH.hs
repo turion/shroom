@@ -7,6 +7,8 @@ module Control.Monad.Prompt.TH (deriveDescribable, deriveDescribableExp) where
 
 -- base
 import Data.Kind qualified as Kind
+import Data.List (nub)
+import Data.Typeable (Typeable)
 
 -- template-haskell
 import Language.Haskell.TH
@@ -60,9 +62,28 @@ data Choice a = Pick a | Skip
 @
 
 generates @instance ('Describable' a) => 'Describable' (Choice a)@, where a field of type
-@a@ contributes @reach \@a@, so that @Choice Fuel@ makes @Fuel@ reachable. A type
-variable of any other kind is a compile-time error: write the instance by hand
-then. The generated code uses type applications and the instance head's type
+@a@ contributes @reach \@a@, so that @Choice Fuel@ makes @Fuel@ reachable.
+
+A type variable of any other kind (a @Symbol@ or @Nat@ unit, a dimension, or an
+unannotated phantom parameter, which GHC2024 makes poly-kinded) can never be the
+type of a field, so it needs no 'Describable'. It is annotated with its kind in the
+instance head and needs only @Typeable@, as does each kind variable its kind
+mentions:
+
+@
+-- | An amount in some unit.
+newtype Measure (unit :: Symbol) = Measure Double
+
+-- | A value tagged by a phantom parameter.
+newtype Tagged a = Tagged Double
+
+\$(deriveDescribable ''Measure)
+\$(deriveDescribable ''Tagged)
+@
+
+generates @instance 'Typeable' unit => 'Describable' (Measure (unit :: Symbol))@ and
+@instance ('Typeable' k, 'Typeable' a) => 'Describable' (Tagged (a :: k))@. The
+generated code uses type applications and the instance head's type
 variables, so the module needs @TypeApplications@ and @ScopedTypeVariables@ (both
 in @GHC2021@ and @GHC2024@).
 
@@ -97,8 +118,28 @@ deriveDescribable name = do
               fieldTypes
           )
       referencedTypesClause = ValD (VarP 'referencedTypes) (NormalB referencedTypesBody) []
-      instanceHead = foldl AppT (ConT name) (VarT <$> typeVars)
-      context = [AppT (ConT ''Describable) (VarT v) | v <- typeVars]
+      -- A Type-kinded variable appears bare in the head and needs Describable. Any other variable
+      -- is annotated with its kind in the head and needs only Typeable, as do the kind variables
+      -- of those kinds (a poly-kinded `a :: k` needs `Typeable k` as well to be Typeable itself).
+      headArg (v, Nothing) = VarT v
+      headArg (v, Just kind) = SigT (VarT v) kind
+      describableVars = [v | (v, Nothing) <- typeVars]
+      kindVars =
+        nub
+          [ kv
+          | (_, Just kind) <- typeVars
+          , kv <- freeKindVars kind
+          , kv `notElem` describableVars
+          ]
+      instanceHead = foldl AppT (ConT name) (headArg <$> typeVars)
+      context =
+        concat
+          [ case mkind of
+              Nothing -> [AppT (ConT ''Describable) (VarT v)]
+              Just _ -> [AppT (ConT ''Typeable) (VarT v)]
+          | (v, mkind) <- typeVars
+          ]
+          <> [AppT (ConT ''Typeable) (VarT kv) | kv <- kindVars]
   pure
     [ InstanceD
         Nothing
@@ -107,34 +148,33 @@ deriveDescribable name = do
         [describeTypeClause, referencedTypesClause]
     ]
 
-{- | The type variables of a type, which must all be of kind @Type@, and the types of all fields of all
-its constructors, in declaration order.
+-- | The type variables a kind mentions, each once, in order of appearance.
+freeKindVars :: Kind -> [Name]
+freeKindVars = nub . go
+  where
+    go (VarT v) = [v]
+    go (AppT a b) = go a <> go b
+    go (SigT t k) = go t <> go k
+    go (ForallT _ _ t) = go t
+    go (InfixT a _ b) = go a <> go b
+    go _ = []
+
+{- | The type variables of a type, each with its kind unless that is @Type@ ('Nothing'),
+and the types of all fields of all its constructors, in declaration order.
 -}
-getTypeShape :: Name -> Q ([Name], [Type])
+getTypeShape :: Name -> Q ([(Name, Maybe Kind)], [Type])
 getTypeShape name = do
   info <- reify name
   (binders, cons) <- case info of
     TyConI (DataD _ _ tvs _ cs _) -> pure (tvs, cs)
     TyConI (NewtypeD _ _ tvs _ c _) -> pure (tvs, [c])
     _ -> pure ([], [])
-  typeVars <- mapM checkKind binders
-  pure (typeVars, concatMap fieldTypesOf cons)
+  pure (binderKind <$> binders, concatMap fieldTypesOf cons)
   where
-    checkKind (PlainTV v _) = pure v
-    checkKind (KindedTV v _ k)
-      | isTypeKind k = pure v
-      | otherwise =
-          fail $
-            "deriveDescribable: the type variable '"
-              <> nameBase v
-              <> "' of '"
-              <> nameBase name
-              <> "' has the kind "
-              <> pprint k
-              <> ", but only type variables of kind Type are supported.\n"
-              <> "Write the Describable instance of '"
-              <> nameBase name
-              <> "' by hand instead, with deriveDescribableExp for describeType and referencedTypes of your own."
+    binderKind (PlainTV v _) = (v, Nothing)
+    binderKind (KindedTV v _ k)
+      | isTypeKind k = (v, Nothing)
+      | otherwise = (v, Just k)
 
     isTypeKind StarT = True
     isTypeKind (ConT k) = k == ''Kind.Type

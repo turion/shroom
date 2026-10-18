@@ -9,9 +9,10 @@ import Data.Int (Int64)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (fromMaybe)
 import Data.Proxy (Proxy (..))
-import Data.Typeable (typeRep)
+import Data.Typeable (Typeable, typeRep)
 import Data.Void (Void)
 import GHC.Generics (Generic, Generically (..))
+import GHC.TypeLits (Symbol)
 
 -- containers
 import Data.Set qualified as S
@@ -442,6 +443,25 @@ newtype Wrapped = Wrapped Int
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON, ToSchema)
 
+-- | An amount in some unit, a phantom parameter of kind Symbol.
+newtype Measure (unit :: Symbol) = Measure
+  { measureAmount :: Double
+  -- ^ The amount, in the unit.
+  }
+  deriving stock (Eq, Ord, Show, Generic)
+
+deriving anyclass instance ToJSON (Measure unit)
+
+deriving anyclass instance (Typeable unit) => ToSchema (Measure unit)
+
+-- | A value tagged by an unannotated phantom parameter, which is poly-kinded under GHC2024.
+newtype Tagged a = Tagged Double
+  deriving stock (Eq, Ord, Show, Generic)
+
+deriving anyclass instance ToJSON (Tagged a)
+
+deriving anyclass instance (Typeable k, Typeable (a :: k)) => ToSchema (Tagged a)
+
 -- The field types are derived before the types that have them as fields.
 $(deriveDescribable ''Colour)
 
@@ -485,6 +505,15 @@ $(deriveDescribable ''Point)
 instance Surveyable Point where type Property Point = Void
 
 $(deriveDescribable ''Wrapped)
+
+-- A phantom parameter that is not of kind Type needs no Describable, only Typeable.
+$(deriveDescribable ''Measure)
+
+instance (Typeable unit) => Surveyable (Measure unit) where type Property (Measure unit) = Void
+
+$(deriveDescribable ''Tagged)
+
+instance (Typeable k, Typeable (a :: k)) => Surveyable (Tagged a) where type Property (Tagged a) = Void
 
 -- | The lines of a description from the reachable-types section on, empty if it has none.
 reachableLines :: Text -> [Text]
@@ -605,6 +634,18 @@ main =
                   map typeName (reachableTypes (Proxy @File)) @?= ["Folder"]
               , testCase "a self-recursive derived type is not listed under itself" $
                   reachableLines (description (Proxy @Outline)) @?= []
+              , testCase "a Symbol-kinded phantom parameter derives, and its description renders at a concrete unit" $ do
+                  describeType (Proxy @(Measure "metre"))
+                    @?= T.unlines ["An amount in some unit, a phantom parameter of kind Symbol.", "- measureAmount: The amount, in the unit."]
+                  assertBool "the description names the type" ("An amount in some unit" `T.isInfixOf` description (Proxy @(Measure "metre")))
+                  reachableLines (description (Proxy @(Measure "second"))) @?= []
+                  assertBool "two units are two types" (describedIdentity (Proxy @(Measure "metre")) /= describedIdentity (Proxy @(Measure "second")))
+              , testCase "an unannotated, poly-kinded phantom parameter derives, and its description renders at concrete instantiations" $ do
+                  describeType (Proxy @(Tagged Int))
+                    @?= T.unlines ["A value tagged by an unannotated phantom parameter, which is poly-kinded under GHC2024."]
+                  assertBool "the description names the type" ("unannotated phantom parameter" `T.isInfixOf` description (Proxy @(Tagged Int)))
+                  assertBool "the description renders at a parameter of another kind" ("unannotated phantom parameter" `T.isInfixOf` description (Proxy @(Tagged "label")))
+                  assertBool "the description renders at a parameter of kind Type -> Type" ("unannotated phantom parameter" `T.isInfixOf` description (Proxy @(Tagged Maybe)))
               ]
           , testGroup
               "through Generically"

@@ -29,10 +29,14 @@
   - (b) **A parameterised type now derives**: `data Choice a = …` gets
     `instance (Describable a) => Describable (Choice a)`, and `Choice Fuel` makes `Fuel`
     reachable. Switch a hand-written instance for such a wrapper to `deriveDescribable`, or write
-    `referencedTypes _ = reach @a` in it; otherwise the element types silently get no section. Only
-    type variables of kind `Type` are supported, any other kind is a compile-time error that
-    suggests a hand-written instance. The splicing module needs `TypeApplications` and
-    `ScopedTypeVariables` (both in `GHC2021`/`GHC2024`).
+    `referencedTypes _ = reach @a` in it; otherwise the element types silently get no section. A
+    type variable of kind `Type` gets a `Describable` constraint; a variable of any other kind (a
+    `Symbol` or `Nat` unit, a dimension, or an unannotated phantom parameter, which `GHC2024` makes
+    poly-kinded) can never be a field's type, so it is annotated with its kind in the instance head
+    and gets only `Typeable`, plus `Typeable` for each kind variable of its kind:
+    `newtype Tagged a = Tagged Double` derives
+    `instance (Typeable k, Typeable a) => Describable (Tagged (a :: k))`. The splicing module needs
+    `TypeApplications` and `ScopedTypeVariables` (both in `GHC2021`/`GHC2024`).
   - (c) **Compile the model package with `-haddock`**: the descriptions come from the Haddock
     comments, and a type without one is a compile-time error, as before.
   - (d) **Check the result** with `T.putStrLn (description (Proxy @T))` in `cabal repl`: the types
