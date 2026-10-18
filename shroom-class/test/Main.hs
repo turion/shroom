@@ -8,6 +8,8 @@ module Main (main) where
 import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (fromMaybe)
 import Data.Proxy (Proxy (..))
+import Data.Typeable (typeRep)
+import Data.Void (Void)
 import GHC.Generics (Generic)
 
 -- containers
@@ -205,6 +207,89 @@ instance Surveyable Registration where
   describeProperties _ (Left RegistrationEmailMentionsName) = Just "The email address must contain the registrant's name."
   describeProperties px (Right p) = describeStructural px p
 
+-- * Reachable types
+
+-- | A street: the leaf of the reachable-types tree.
+newtype Street = Street {streetName :: Text}
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- | A record nesting a record.
+data Address = Address {addressStreet :: Street, addressCity :: Text}
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- | An enum.
+data Mood = Happy | Grumpy
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- | A sum whose constructors refer to types that are also reachable another way.
+data Shape = Circle Street | Square Address
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- | A recursive type.
+data Tree = Leaf Int | Node [Tree]
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- | A record that reaches all of the above, some of them twice, and base types.
+data Household = Household
+  { householdAddress :: Address
+  , householdShapes :: [Shape]
+  , householdMood :: Maybe Mood
+  , householdTree :: Tree
+  , householdNote :: Text
+  , householdSize :: Int
+  }
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+instance Describable Street where describeType _ = "A street."
+
+instance Surveyable Street where type Property Street = Void
+
+instance Describable Address where
+  describeType _ = "An address."
+  referencedTypes _ = reach @Street <> reach @Text
+
+instance Surveyable Address where
+  type Property Address = Void
+  examples _ = S.singleton (Address (Street "Main Street") "Hull")
+
+-- No 'referencedTypes': a hand-written instance contributes no reachable types unless it says so.
+instance Describable Mood where describeType _ = "A mood."
+
+instance Surveyable Mood where type Property Mood = Void
+
+instance Describable Shape where
+  describeType _ = "A shape."
+  referencedTypes _ = reach @Street <> reach @Address
+
+instance Surveyable Shape where type Property Shape = Void
+
+instance Describable Tree where
+  describeType _ = "A tree."
+  referencedTypes _ = reach @Int <> reach @[Tree]
+
+instance Surveyable Tree where type Property Tree = Void
+
+instance Describable Household where
+  describeType _ = "A household."
+  referencedTypes _ =
+    reach @Address <> reach @[Shape] <> reach @(Maybe Mood) <> reach @Tree <> reach @Text <> reach @Int
+
+instance Surveyable Household where type Property Household = Void
+
+-- | The lines of a description from the reachable-types section on, empty if it has none.
+reachableLines :: Text -> [Text]
+reachableLines = dropWhile (/= "The types above refer to the following types:") . T.lines
+
+-- | The name 'description' gives a reachable type in its section header.
+typeName :: Described -> String
+typeName (Described q) = show (typeRep q)
+
 {- | Every structural property of a type, with its description, and for each
 given value whether each property holds.
 -}
@@ -256,6 +341,43 @@ main =
           , contains "NonEmpty Bool" (description (Proxy @(NonEmpty Bool))) "A truth value: true or false."
           , contains "Maybe Text" (description (Proxy @(Maybe Text))) "A piece of text."
           , contains "[Maybe Int]" (describeType (Proxy @[Maybe Int])) "A whole number."
+          ]
+      , testGroup
+          "reachable types"
+          [ testCase "each reachable documented type is listed once, breadth first, without base types, containers or the requested type" $
+              reachableLines (description (Proxy @Household))
+                @?= [ "The types above refer to the following types:"
+                    , ""
+                    , "Address:"
+                    , "An address."
+                    , ""
+                    , "Shape:"
+                    , "A shape."
+                    , ""
+                    , "Mood:"
+                    , "A mood."
+                    , ""
+                    , "Tree:"
+                    , "A tree."
+                    , ""
+                    , "Street:"
+                    , "A street."
+                    ]
+          , testCase "a record nesting a record lists the nested one" $
+              reachableLines (description (Proxy @Address))
+                @?= ["The types above refer to the following types:", "", "Street:", "A street."]
+          , testCase "a recursive type terminates and is not listed under itself" $
+              reachableLines (description (Proxy @Tree)) @?= []
+          , testCase "a hand-written instance without referencedTypes contributes no reachable types" $
+              reachableLines (description (Proxy @Mood)) @?= []
+          , testCase "a list of a record, a Maybe of an enum and a base type reach what their element reaches" $ do
+              map typeName (reach @[Shape]) @?= ["Shape"]
+              map typeName (reach @(Maybe Mood)) @?= ["Mood"]
+              map typeName (reach @[Maybe Text]) @?= []
+          , testCase "the section comes after the examples" $ do
+              let (before, after) = break (== "The types above refer to the following types:") (T.lines (description (Proxy @Address)))
+              assertBool "the examples come before the section" ("Example valid JSON responses:" `elem` before)
+              length after @?= 4
           ]
       , testGroup
           "custom property combined with the structural one"

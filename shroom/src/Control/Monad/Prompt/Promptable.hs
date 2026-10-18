@@ -116,6 +116,11 @@ newtype DescriptionPrompt a = DescriptionPrompt {getDescriptionPrompt :: a}
 instance (Describable a) => Describable (DescriptionPrompt a) where
   describeType _ = describeType (Proxy @a)
 
+  -- @description@ runs at @DescriptionPrompt a@ here, so forward what @a@
+  -- references. Not @reach @a@: that would list @a@ under itself.
+  referencedTypes _ = referencedTypes (Proxy @a)
+  hasOwnSection _ = False
+
 instance (Surveyable a) => Surveyable (DescriptionPrompt a) where
   type Property (DescriptionPrompt a) = Property a
   describeProperties _ = describeProperties (Proxy @a)

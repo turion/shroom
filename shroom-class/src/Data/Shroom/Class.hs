@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -87,10 +88,12 @@ module Data.Shroom.Class (module Data.Shroom.Class) where
 
 -- base
 
+import Data.Int (Int64)
 import Data.Kind (Type)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (mapMaybe)
 import Data.Proxy (Proxy (..))
+import Data.Typeable (Typeable, typeRep)
 import Data.Void (Void, absurd)
 import GHC.Generics (Generically (..))
 import Numeric.Natural (Natural)
@@ -132,12 +135,87 @@ Minimal complete definition: 'describeType'.
 
 Use @$(deriveDescribable ''MyType)@ from "Control.Monad.Prompt.TH" to derive
 this automatically from all Haddock comments on the type declaration.
+
+'Typeable' is a superclass so that 'description' can tell types apart when it
+lists each reachable type once (see 'referencedTypes'). Every concrete type is
+'Typeable' automatically, and a polymorphic instance gets it from the
+'Describable' context of its type parameter, so no instance needs to change.
+
+== What reaches the model
+
+'description' sends the requested type's own 'describeType', and then, in a
+section of their own, the 'describeType' of every type it can reach through
+'referencedTypes', each once. A type that wants its field types documented to
+the model lists them in 'referencedTypes'; @deriveDescribable@ does this for
+you. __A hand-written instance that does not write 'referencedTypes' contributes
+no reachable types__: the types it refers to are not described to the model.
 -}
-class (ToJSON a) => Describable a where
+class (ToJSON a, Typeable a) => Describable a where
   {- | A one- or two-sentence description of what the type represents,
     and what the constructors and fields mean.
   -}
   describeType :: Proxy a -> Text
+
+  {- | The types whose descriptions the model also needs in order to produce
+    an @a@: typically the types of its fields. 'description' follows these
+    transitively and lists each type once, so an entry may refer back to the
+    type itself or to another entry without harm.
+
+    Build an entry for a field type @t@ with @'reach' \@t@, which takes the
+    container and base types out and passes their elements through. Defaults
+    to the empty list, so a hand-written instance that does not write this
+    method contributes no reachable types.
+  -}
+  referencedTypes :: Proxy a -> [Described]
+  referencedTypes _ = []
+
+  {- | Whether the type gets a section of its own in the list of reachable
+    types. Defaults to 'True', so a hand-written instance is listed. The
+    base types ('Text', 'Int', …) and the containers (@[a]@, 'Maybe', …) set it
+    to 'False': they need no section, as their 'describeType' is a sentence
+    that the types using them already quote.
+  -}
+  hasOwnSection :: Proxy a -> Bool
+  hasOwnSection _ = True
+
+{- | A type of which only the 'Describable' instance is known, to put types of
+different kinds into one list: what 'referencedTypes' returns.
+-}
+data Described = forall t. (Describable t) => Described (Proxy t)
+
+-- | Wrap a type as a 'Described', whatever its 'hasOwnSection'. Prefer 'reach' in 'referencedTypes'.
+described :: forall t. (Describable t) => Described
+described = Described (Proxy @t)
+
+{- | The entries a field of type @t@ contributes to 'referencedTypes': @t@ itself
+if it has a section of its own ('hasOwnSection'), otherwise whatever @t@ itself
+references. So a field of type @[Speaker]@ or @Maybe Speaker@ contributes
+@Speaker@, and a field of type @Text@ contributes nothing:
+
+@
+referencedTypes _ = reach \@Person <> reach \@[Address] <> reach \@Text
+@
+-}
+reach :: forall t. (Describable t) => [Described]
+reach
+  | hasOwnSection (Proxy @t) = [described @t]
+  | otherwise = referencedTypes (Proxy @t)
+
+-- | Every type reachable from @a@ through 'referencedTypes' that has a section, see 'description'.
+reachableTypes :: forall a. (Describable a) => Proxy a -> [Described]
+reachableTypes p = go (S.singleton (typeRep p)) (referencedTypes p)
+  where
+    -- Breadth first: the whole frontier is emitted before anything it references.
+    go _ [] = []
+    go seen frontier =
+      let (seen', visited) = foldl' visit (seen, []) frontier
+          visited' = reverse visited
+       in filter hasSection visited' <> go seen' (concatMap children visited')
+    visit (seen, acc) d@(Described q)
+      | typeRep q `S.member` seen = (seen, acc)
+      | otherwise = (S.insert (typeRep q) seen, d : acc)
+    hasSection (Described q) = hasOwnSection q
+    children (Described q) = referencedTypes q
 
 -- * Surveyable
 
@@ -297,60 +375,84 @@ class (Describable a, Universe (Property a)) => Surveyable a where
 
 instance Describable Text where
   describeType _ = "A piece of text."
+  hasOwnSection _ = False
 
 instance Surveyable Text where
   type Property Text = Void
 
 instance Describable Int where
   describeType _ = "A whole number."
+  hasOwnSection _ = False
 
 instance Surveyable Int where
   type Property Int = Void
 
 instance Describable Integer where
   describeType _ = "A whole number."
+  hasOwnSection _ = False
 
 instance Surveyable Integer where
   type Property Integer = Void
 
+instance Describable Int64 where
+  describeType _ = "A whole number."
+  hasOwnSection _ = False
+
+instance Surveyable Int64 where
+  type Property Int64 = Void
+
+instance Describable Word where
+  describeType _ = "A non-negative whole number."
+  hasOwnSection _ = False
+
+instance Surveyable Word where
+  type Property Word = Void
+
 instance Describable Natural where
   describeType _ = "A non-negative whole number."
+  hasOwnSection _ = False
 
 instance Surveyable Natural where
   type Property Natural = Void
 
 instance Describable Double where
   describeType _ = "A number, possibly with a fractional part."
+  hasOwnSection _ = False
 
 instance Surveyable Double where
   type Property Double = Void
 
 instance Describable Float where
   describeType _ = "A number, possibly with a fractional part."
+  hasOwnSection _ = False
 
 instance Surveyable Float where
   type Property Float = Void
 
 instance Describable Bool where
   describeType _ = "A truth value: true or false."
+  hasOwnSection _ = False
 
 instance Surveyable Bool where
   type Property Bool = Void
 
 instance Describable Char where
   describeType _ = "A single character."
+  hasOwnSection _ = False
 
 instance Surveyable Char where
   type Property Char = Void
 
 instance Describable UTCTime where
   describeType _ = "A point in time, in UTC."
+  hasOwnSection _ = False
 
 instance Surveyable UTCTime where
   type Property UTCTime = Void
 
 instance Describable Day where
   describeType _ = "A calendar date."
+  hasOwnSection _ = False
 
 instance Surveyable Day where
   type Property Day = Void
@@ -364,6 +466,8 @@ derivable version is tracked in
 -}
 instance (Describable a) => Describable [a] where
   describeType _ = "A list of values of the following type: " <> describeType (Proxy @a)
+  referencedTypes _ = reach @a
+  hasOwnSection _ = False
 
 instance (Describable a) => Surveyable [a] where
   type Property [a] = Void
@@ -377,6 +481,8 @@ derivable version is tracked in
 -}
 instance (Describable a) => Describable (NonEmpty a) where
   describeType _ = "A non-empty list of values of the following type: " <> describeType (Proxy @a)
+  referencedTypes _ = reach @a
+  hasOwnSection _ = False
 
 instance (Describable a) => Surveyable (NonEmpty a) where
   type Property (NonEmpty a) = Void
@@ -390,6 +496,8 @@ derivable version is tracked in
 -}
 instance (Describable a) => Describable (Maybe a) where
   describeType _ = "A value that may be absent (null), and otherwise of the following type: " <> describeType (Proxy @a)
+  referencedTypes _ = reach @a
+  hasOwnSection _ = False
 
 instance (Describable a) => Surveyable (Maybe a) where
   type Property (Maybe a) = Void
@@ -411,6 +519,11 @@ the classes, so they are not orphans.
 -}
 instance (Describable a, ToJSON (Generically a)) => Describable (Generically a) where
   describeType _ = describeType (Proxy @a)
+
+  -- Like a container, but transparent: @a@ is the type being described, so it
+  -- must not appear as a section of its own under it ('reach' would list it).
+  referencedTypes _ = referencedTypes (Proxy @a)
+  hasOwnSection _ = False
 
 -- | Forwards to the wrapped type, see the 'Describable' instance.
 instance (Surveyable a, ToJSON (Generically a)) => Surveyable (Generically a) where
@@ -628,6 +741,16 @@ schema (e.g. @- name (string): The user's full name.@).
 
 This is what @runPrompt@ (from the @shroom@ package) sends as the prompt text
 for a @RequestPrompt@.
+
+After the examples comes a section of the types the requested type refers to,
+through 'referencedTypes': each such type once (told apart by its 'TypeRep',
+so @Choice Fuel@ and @Choice Phase@ are two types), breadth first from the
+requested type and in the order 'referencedTypes' lists them, never the requested
+type itself, and also for recursive types. Each entry is the type's name and its
+'describeType', nothing more. The section is absent when nothing is reachable, so
+a type without references renders as before. Types with 'hasOwnSection' 'False'
+(the base types and the containers) get no entry, and a hand-written instance
+that does not write 'referencedTypes' contributes none.
 -}
 description :: (Surveyable a, ToSchema a) => Proxy a -> Text
 description p =
@@ -638,7 +761,14 @@ description p =
     ]
       <> propSection
       <> examplesSection
+      <> reachableSection
   where
+    reachable = reachableTypes p
+    reachableSection
+      | null reachable = []
+      | otherwise =
+          "The types above refer to the following types:"
+            : concatMap (\(Described q) -> ["", T.pack (show (typeRep q)) <> ":", describeType q]) reachable
     propDescs = mapMaybe (describeProperties p) universe
     propSection
       | null propDescs = []

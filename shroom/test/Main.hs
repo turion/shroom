@@ -75,7 +75,7 @@ import Control.Monad.Prompt.Promptable qualified as Promptable
 import Control.Monad.Prompt.TH (deriveDescribable)
 import Control.Monad.Prompt.Tool (Tool, ToolHandler (..), Toolable, runTool, toolBinding, toolDefsRaw, toolName)
 import Control.Monad.Prompt.Tool.Web
-import Data.Shroom.Class (Describable (..), Surveyable (..), description)
+import Data.Shroom.Class (Describable (..), Surveyable (..), description, reach)
 
 -- test
 import TestUtils
@@ -348,6 +348,32 @@ $(deriveDescribable ''Treat)
 
 instance Surveyable Treat
 deriving via Generically Treat instance Promptable Treat
+
+-- * Reachable types through 'DescriptionPrompt'
+
+-- | An inner record, reachable from 'Outer'.
+data Inner = Inner {innerNote :: Text}
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+-- | An outer record that refers to 'Inner', and is prompted for via 'Promptable.DescriptionPrompt'.
+data Outer = Outer
+  { outerInner :: Inner
+  , outerCount :: Int
+  , outerTags :: [Text]
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Inner where describeType _ = "An inner record."
+instance Surveyable Inner
+
+instance Describable Outer where
+  describeType _ = "An outer record."
+  referencedTypes _ = reach @Inner <> reach @Int <> reach @[Text]
+
+instance Surveyable Outer
+deriving via Promptable.DescriptionPrompt Outer instance Promptable Outer
 
 {- | A mock 'Backend' that answers from a list in order (repeating the last
 reply once the list runs out, like 'seqMockBackend') and records, for every
@@ -1299,6 +1325,21 @@ main =
               -}
               n <- readIORef roundRef
               n @?= 4
+          ]
+      , testGroup
+          "reachable types"
+          [ testCase "a type promoted through DescriptionPrompt renders the same reachable sections as its own description" $ do
+              let own = description (Proxy @Outer)
+              assertContains "The types above refer to the following types:\n\nInner:\nAn inner record.\n" own
+              description (Proxy @(Promptable.DescriptionPrompt Outer)) @?= own
+          , testCase "prompt @Outer sends the reachable sections" $ do
+              (result, calls) <-
+                runRecording
+                  ["{\"outerInner\":{\"innerNote\":\"hi\"},\"outerCount\":1,\"outerTags\":[]}"]
+                  0
+                  (Promptable.prompt @Outer)
+              result @?= Right (Outer (Inner "hi") 1 [])
+              assertContains (description (Proxy @Outer)) (callDesc calls 0)
           ]
       , testGroup
           "Web tools"

@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+* **New: `description` also describes every type reachable from the requested one, once each.**
+  After the examples it appends a section ("The types above refer to the following types:") with,
+  for each type reachable through the new `Describable` method `referencedTypes`, a header line
+  naming the type (`Choice Fuel`) and its `describeType`. Each type appears once (told apart by
+  `TypeRep`, so `Choice Fuel` and `Choice Phase` are two types), breadth first from the requested
+  type, never the requested type itself, and recursive types terminate. A type with nothing
+  reachable renders exactly as before. New API: `referencedTypes :: Proxy a -> [Described]` (default
+  `[]`), `hasOwnSection :: Proxy a -> Bool` (default `True`; `False` for the base types and the
+  containers `[a]`, `NonEmpty a`, `Maybe a`, `Generically a`, which pass their element's entry
+  through), the existential `Described` with `described`, and `reach @t`, the entry a field of type
+  `t` contributes. **A hand-written `Describable` instance that does not write `referencedTypes`
+  contributes no reachable types**, so the types it refers to still do not reach the model.
+* **Breaking: `Typeable` is now a superclass of `Describable`.** Every concrete type has it, and a
+  polymorphic instance gets it from the `Describable a` context of its parameter, so most instances
+  compile unchanged. An instance whose type is indexed by a parameter that is not itself
+  `Describable` (say `instance Describable (Report tools)` with `tools :: [Type]`) needs
+  `Typeable tools` in its context.
+* New: `Describable` and `Surveyable` instances for `Int64` and `Word`.
 * **Breaking: `Surveyable`'s `Property` now defaults to `Structural a`, not `Void`.** A bare
   `instance Surveyable X` used to have no properties; it now has the properties of `X`'s fields —
   each field type's own `Property` — described in the prompt as `Field name: …` and checked on the
