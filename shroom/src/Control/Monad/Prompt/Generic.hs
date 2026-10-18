@@ -138,7 +138,7 @@ its measurements, where the cue and the earlier fields steer the later ones.
 
 == Containers are prompted whole
 
-A field of type @[a]@, @'NonEmpty' a@ or @'Maybe' a@ is prompted whole, in one
+A field of type @[a]@, @'NonEmpty' a@, @'Set' a@ or @'Maybe' a@ is prompted whole, in one
 request for the container (issue #24), through its flat 'Promptable' instance;
 the strategy does not go element by element. The properties of the elements are
 therefore not checked, nor told to the model, as for any container field (issue
@@ -147,7 +147,7 @@ therefore not checked, nor told to the model, as for any container field (issue
 == Recursive types hang, and fail against Claude
 
 A directly or mutually recursive type (@data Expr = Lit Int | Neg Expr@: a field
-of its own type that is not under a list, 'NonEmpty' or 'Maybe', or one that
+of its own type that is not under a list, 'NonEmpty', 'Set' or 'Maybe', or one that
 reaches itself through another type's bare instance) with a bare
 @instance Surveyable@ hangs under the structural default, on every backend and
 before any request is sent: enumerating its structural 'Property' never ends.

@@ -84,7 +84,8 @@ type.
 * **Breaking: `Promptable`'s method `prompt` now also needs `State [ContextItem] :> es`**, so an
   override can scope context with `withContext` around the default request. This breaks more than
   overrides: any polymorphic user function `(Prompt :> es) => … ` that calls the class method
-  `prompt` (not `Control.Monad.Prompt.Effect.promptSingle`, which is unchanged) must now also require
+  `prompt` (not the flat `Control.Monad.Prompt.Effect.promptSingle`, formerly `prompt`, which is
+  unaffected) must now also require
   `State [ContextItem] :> es` (`State` from `Effectful.State.Static.Local`, `ContextItem` from
   `Control.Monad.Prompt.Backend`). A chain that already calls `context` has that constraint
   anyway, and `runPromptResultEff` supplies it, so a concrete program is unaffected.
@@ -128,7 +129,10 @@ type.
   field's name, each later field seeing the earlier ones; assembles the draft with `generics-sop`;
   runs `improve` on it, keeping the draft on a `fine` verdict; and finally restores the context and
   appends the value's JSON as one `AssistantMessage`, as after a flat `promptSingle`. A record with `n`
-  fields costs `n + 2` requests, plus retries and the requests of any generic field. `X` needs
+  fields costs `n + 2` requests, plus retries and the requests of any generic field.
+  Each of those requests now carries the parent's full reachable-type section in its
+  context (`promptGeneric` puts `description (Proxy @a)` there once, ahead of the
+  first), so the prompt grows with the type tree. `X` needs
   `SOP.Generic` and `SOP.HasDatatypeInfo` (so `generics-sop` in your `build-depends`) and a
   `Promptable` instance for every field type. It takes effect through the class method
   `Promptable.prompt`; `Control.Monad.Prompt.Effect.promptSingle` stays flat.

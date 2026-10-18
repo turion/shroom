@@ -170,7 +170,9 @@ costs, how containers and recursive types behave.
 `prompt` is a separate LLM request, but they share the same
 accumulated context. The examples in this and the next two sections are statements for
 `main`'s do-block, with `backend` as above and `Score`, `Talk` and the like derived the way
-`User` is; they need these imports besides the ones of the first example:
+`User` is (the Parallel section's are `Eff` statements, so they sit inside a
+`runPromptResultEff … $ do` block there); they need these imports besides the ones of the first
+example:
 
 ```haskell
 import Control.Monad.Prompt.Effect (orElse, promptPar, promptsParallel, withContext)
@@ -194,11 +196,13 @@ sequentially, the same as any other `Applicative` — reach for `promptPar` or
 `effectful`'s `Concurrent` effect:
 
 ```haskell
--- Two independent prompts, run concurrently:
-(user, score) <- promptPar (prompt @User) (prompt @Score)
+result <- runPromptResultEff backend defaultPromptConfig $ do
+  -- Two independent prompts, run concurrently:
+  (user, score) <- promptPar (prompt @User) (prompt @Score)
 
--- A list of independent prompts, all in parallel:
-talks <- promptsParallel [ withContext ("Speaker: " <> speakerName spk) (prompt @Talk) | spk <- speakers ]
+  -- A list of independent prompts, all in parallel:
+  talks <- promptsParallel [ withContext ("Speaker: " <> speakerName spk) (prompt @Talk) | spk <- speakers ]
+  pure (user, score, talks)
 ```
 
 Context added *inside* a parallel branch is local to that branch — it does not
