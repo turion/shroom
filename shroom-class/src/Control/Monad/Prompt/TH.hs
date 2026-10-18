@@ -164,8 +164,37 @@ record, the @reach \@t@ of each of its field types, as 'deriveDescribable' gener
 
 For a type with several constructors, each constructor is listed as
 @- Constructor: doc@ (by name alone if undocumented), followed by its documented
-record fields indented beneath it.  For a single-constructor type, the documented
-record fields are listed directly.  Documentation of positional fields is not collected.
+fields indented beneath it.  For a single-constructor type, the constructor's own
+doc, if any, is a line of its own right after the type's doc, and the documented
+fields are listed directly.  A documented record field is listed as
+@- fieldName: doc@, a documented positional field as @- field N: doc@ with @N@ counting
+from 1; an undocumented field adds nothing.
+
+Which Haddock layout documents what, for a constructor with positional fields (GHC's
+rule for H98 constructors):
+
+@
+data Shape
+  = -- | Documents the constructor Circle.
+    Circle Double
+  | Square Double -- ^ Documents the constructor Square, not its argument.
+  | -- | Documents the constructor Rect.
+    Rect
+      Double
+      -- ^ Documents the first argument of Rect.
+      Double
+      -- ^ Documents the second argument of Rect.
+@
+
+A one-line trailing comment after the constructor and all its arguments, as on
+@Square@, documents the constructor (it renders as @- Square: doc@). A positional
+argument's doc is collected only when the constructor has a leading Haddock comment
+or each argument stands on a line of its own with its own trailing comment, as on
+@Rect@, which renders its two arguments as @- field 1: …@ and @- field 2: …@. An
+argument documented in any other way is not collected, because GHC does not attach
+the comment to the argument. A leading comment on each argument (a Haddock comment on
+the line above the argument's type) is collected the same way; this is the layout
+that fourmolu rewrites the trailing comments into, and it renders unchanged.
 
 Prefer 'deriveDescribable' for the common case where a full instance is needed.
 -}
@@ -198,17 +227,24 @@ deriveDescribableExp name = do
           <> cn
           <> maybe "\n" ((": " <>) . normalizeDoc) mcd
           <> concatMap (renderField "  ") fields
-      -- A single constructor is the type itself, so its fields are listed directly.
+      -- A single constructor is the type itself, so its own doc (if any) is a line of its own,
+      -- and its fields are listed directly.
       constructorLines = case constructorDocs of
-        [(_, _, fields)] -> concatMap (renderField "") fields
+        [(_, mcd, fields)] -> maybe "" normalizeDoc mcd <> concatMap (renderField "") fields
         cons -> concatMap renderConstructor cons
       fullDoc = normalizeDoc doc <> constructorLines
       docLit = litE (stringL fullDoc)
   [|\_ -> pack $docLit|]
 
 {- | Collect, for each constructor of a type, its name, its Haddock (if any), and
-the (fieldName, doc) pairs of its documented record fields.  Positional fields'
-docs are not collected.
+the (label, doc) pairs of its documented fields: a record field is labelled by its
+name, a positional field (read with @'ArgDoc'@) by @field N@ with @N@ counting from 1.
+Undocumented fields are left out.
+
+A one-line trailing comment after a constructor and all its arguments documents the
+constructor, not its last argument. GHC attaches argument docs only if the constructor
+has a leading Haddock comment, or each argument stands on a line of its own with its
+own trailing comment.
 -}
 getConstructorDocs :: Name -> Q [(String, Maybe String, [(String, String)])]
 getConstructorDocs name = do
@@ -222,8 +258,12 @@ getConstructorDocs name = do
     collect con = do
       let cn = conName con
       cdoc <- getDoc (DeclDoc cn)
-      pairs <- mapM (\fn -> (nameBase fn,) <$> getDoc (DeclDoc fn)) (recFields con)
-      pure (nameBase cn, cdoc, [(fn, d) | (fn, Just d) <- pairs])
+      recordPairs <- mapM (\fn -> (nameBase fn,) <$> getDoc (DeclDoc fn)) (recFields con)
+      positionalPairs <-
+        mapM
+          (\i -> ("field " <> show (i + 1),) <$> getDoc (ArgDoc cn i))
+          [0 .. positionalCount con - 1]
+      pure (nameBase cn, cdoc, [(fn, d) | (fn, Just d) <- recordPairs <> positionalPairs])
 
     conName (NormalC n _) = n
     conName (RecC n _) = n
@@ -238,3 +278,12 @@ getConstructorDocs name = do
     recFields (ForallC _ _ c) = recFields c
     recFields (RecGadtC _ fields _) = [fn | (fn, _, _) <- fields]
     recFields _ = []
+
+    -- The number of positional fields; a record constructor has none, its fields are named.
+    positionalCount :: Con -> Int
+    positionalCount (NormalC _ bts) = length bts
+    positionalCount (InfixC {}) = 2
+    positionalCount (ForallC _ _ c) = positionalCount c
+    positionalCount (GadtC _ bts _) = length bts
+    positionalCount (RecC {}) = 0
+    positionalCount (RecGadtC {}) = 0

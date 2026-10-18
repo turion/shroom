@@ -378,6 +378,69 @@ data Outline = Outline
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON, ToSchema)
 
+-- | A span between points, a positional sum with a doc on each argument.
+data Span
+  = -- | Between two points.
+    Between
+      -- | The first point.
+      Int
+      -- | The second point.
+      Int
+  | -- | From a point on, with one argument documented and one not.
+    Starting
+      -- | The point to start at.
+      Int
+      Text
+  | Whole
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- | A bound, in millimetres.
+newtype Bounds
+  = -- | The largest allowed value.
+    Bounds Int
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- | A point, a single positional constructor with a doc on each argument.
+data Point
+  = -- | A point in the plane.
+    Point
+      -- | The horizontal position.
+      Int
+      -- | The vertical position.
+      Int
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- The two layouts below are the ones fourmolu would rewrite into the leading form above, so it
+-- is told to leave them alone.
+
+{- FOURMOLU_DISABLE -}
+
+-- | How a purchase is made, a sum in the one-line form.
+data Purchase
+  = ByFuel Int -- ^ Bought by the litre.
+  | ByVoucher Text
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+-- | A couple, each argument on a line of its own with a trailing comment.
+data Couple = Couple
+  Int
+  -- ^ The left one.
+  Int
+  -- ^ The right one.
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
+{- FOURMOLU_ENABLE -}
+
+-- | A wrapper whose constructor and field have no docs.
+newtype Wrapped = Wrapped Int
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema)
+
 -- The field types are derived before the types that have them as fields.
 $(deriveDescribable ''Colour)
 
@@ -404,6 +467,23 @@ instance Surveyable File where type Property File = Void
 $(deriveDescribable ''Outline)
 
 instance Surveyable Outline where type Property Outline = Void
+
+-- The positional types, whose fields are all base types.
+$(deriveDescribable ''Span)
+
+instance Surveyable Span where type Property Span = Void
+
+$(deriveDescribable ''Purchase)
+
+$(deriveDescribable ''Bounds)
+
+$(deriveDescribable ''Couple)
+
+$(deriveDescribable ''Point)
+
+instance Surveyable Point where type Property Point = Void
+
+$(deriveDescribable ''Wrapped)
 
 -- | The lines of a description from the reachable-types section on, empty if it has none.
 reachableLines :: Text -> [Text]
@@ -532,6 +612,52 @@ main =
               let (before, after) = break (== "The types above refer to the following types:") (T.lines (description (Proxy @Address)))
               assertBool "the examples come before the section" ("Example valid JSON responses:" `elem` before)
               length after @?= 4
+          ]
+      , golden "Span" $ description (Proxy @Span)
+      , testGroup
+          "positional constructor docs"
+          [ testCase "a sum with a doc on each argument renders each documented argument under its constructor, by position" $
+              describeType (Proxy @Span)
+                @?= T.unlines
+                  [ "A span between points, a positional sum with a doc on each argument."
+                  , "- Between: Between two points."
+                  , "  - field 1: The first point."
+                  , "  - field 2: The second point."
+                  , "- Starting: From a point on, with one argument documented and one not."
+                  , "  - field 1: The point to start at."
+                  , "- Whole"
+                  ]
+          , testCase "a sum in the one-line form documents the constructor, as before" $
+              describeType (Proxy @Purchase)
+                @?= T.unlines
+                  [ "How a purchase is made, a sum in the one-line form."
+                  , "- ByFuel: Bought by the litre."
+                  , "- ByVoucher"
+                  ]
+          , testCase "a single constructor's own doc is rendered after the type's" $
+              describeType (Proxy @Bounds)
+                @?= T.unlines ["A bound, in millimetres.", "The largest allowed value."]
+          , testCase "a single positional constructor lists its documented arguments directly" $
+              describeType (Proxy @Point)
+                @?= T.unlines
+                  [ "A point, a single positional constructor with a doc on each argument."
+                  , "A point in the plane."
+                  , "- field 1: The horizontal position."
+                  , "- field 2: The vertical position."
+                  ]
+          , testCase "a single positional constructor in the trailing-comment layout lists its arguments the same way" $
+              describeType (Proxy @Couple)
+                @?= T.unlines
+                  [ "A couple, each argument on a line of its own with a trailing comment."
+                  , "- field 1: The left one."
+                  , "- field 2: The right one."
+                  ]
+          , testCase "annotateFieldTypes leaves a positional argument line alone" $ do
+              let rendered = T.lines (description (Proxy @Point))
+              assertBool "the first argument line is unchanged" ("- field 1: The horizontal position." `elem` rendered)
+              assertBool "the second argument line is unchanged" ("- field 2: The vertical position." `elem` rendered)
+          , testCase "undocumented positional fields add no lines" $
+              describeType (Proxy @Wrapped) @?= "A wrapper whose constructor and field have no docs.\n"
           ]
       , testGroup
           "custom property combined with the structural one"

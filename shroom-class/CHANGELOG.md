@@ -41,6 +41,20 @@
 
   A hand-written instance that uses `deriveDescribableExp` for `describeType` must now also write
   `referencedTypes` itself; `deriveDescribableExp` returns the `describeType` body only.
+* **New: `deriveDescribable` collects the docs of positional constructor fields, and no longer drops
+  a single constructor's own doc.** A documented positional argument is rendered like a record
+  field, labelled by its 1-based position: `- field 1: The first point.`, indented under its
+  constructor in a sum, directly under the type for a single constructor; an undocumented one adds
+  nothing. And `newtype Bounds = Bounds Int -- ^ The largest allowed value.` now renders that
+  constructor doc as a line after the type's own (a single-constructor type used to render its
+  fields only). Which Haddock layout documents what (GHC's rule for H98 constructors): a
+  **one-line** trailing `ByFuel X -- ^ doc` documents the *constructor* — it already rendered as
+  `- ByFuel: doc` and still does. An *argument* is documented only if the constructor has a
+  leading `-- |` doc, or each argument stands on a line of its own with its own comment, in either
+  the leading form (`-- | doc` above the argument, which is what fourmolu rewrites trailing
+  comments into) or the trailing form (`-- ^ doc` below it). If your model package documented
+  positional arguments and they did not reach the model, check it against this; the descriptions
+  of types that did not document arguments or a single constructor are unchanged.
 * New: `describedIdentity :: Proxy a -> TypeRep`, a `Describable` method (default: the type's own
   `typeRep`) naming the type that `description` reports on, so the type is not listed under itself.
   `Generically a` and `DescriptionPrompt a` forward to `a`'s, which fixes a recursive `X`
