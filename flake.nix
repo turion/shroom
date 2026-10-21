@@ -29,7 +29,7 @@
         # "ghc910" # Dropped: baikai-claude declares `time ^>=1.14`, but the pinned nixpkgs'
         # ghc910 package set ships time-1.12.2, so dependency resolution fails. No bound change
         # in shroom's own cabal files can fix this; it needs a baikai-claude release with a wider
-        # time bound (0.7.1.0 still pins ^>=1.14), or a local jailbreak of that pin.
+        # time bound (0.7.1.1 still pins ^>=1.14), or a local jailbreak of that pin.
         # "ghc914" # Uncomment as soon as nixpkgs is more advanced
       ];
 
@@ -62,14 +62,14 @@
                   # `nix store prefetch-file --unpack`.
                   claude = fromHackage "claude" "1.5.0"
                     "sha256-Jng3pCOl9d9XqXbHomBJNiXDMViKZYymj9AKTWwHhvY=";
-                  baikai-claude = fromHackage "baikai-claude" "0.7.0.0"
-                    "sha256-GSOzULFgbJae4Wf6vwdr2xR+83CwhrCuWMxuZJG6NZA=";
-                  baikai-effectful = fromHackage "baikai-effectful" "0.4.0.2"
-                    "sha256-SgcvuYmfJt8bF4WU5MCKQzTCBkAPdsy5G5X3nwPVPd0=";
-                  baikai-openai = fromHackage "baikai-openai" "0.7.0.0"
-                    "sha256-FVYkPkL8hzzaNY0YprnmRFVswJKHyqEk15hcPauyYkI=";
+                  baikai-claude = fromHackage "baikai-claude" "0.7.1.1"
+                    "sha256-ZKqRqMd67GmhbpNts4/qbE0pPy3kdy6Z5pKy0JQC3fw=";
+                  baikai-effectful = fromHackage "baikai-effectful" "0.4.0.3"
+                    "sha256-0V0VuVOeIxj/1L51RVdujlpTMCUR+NeE1FUeOZDUx+4=";
+                  baikai-openai = fromHackage "baikai-openai" "0.7.1.1"
+                    "sha256-GVh0bpTJRqwdzqWIHpSqVjESa9wCJ9ZXavklv44i22s=";
 
-                  # baikai-effectful 0.4.0.2 and shroom-baikai itself both want
+                  # baikai-effectful 0.4.0.3 and shroom-baikai itself both want
                   # effectful ^>=2.7; nixpkgs is on 2.6.1.0.
                   effectful = fromHackage "effectful" "2.7.1.0"
                     "sha256-1jr7uWldG/qzNljv41c8ustRFNLnD9DuOFBmL3BYT6g=";
@@ -79,7 +79,7 @@
                   strict-mutable-base = fromHackage "strict-mutable-base" "2.0.0.0"
                     "sha256-3o2PMN8l56X7ULqyNNJrJQZ8xgqqOsxhjm0jfULQt+k=";
 
-                  # baikai 0.7.1.0 wants streamly >=0.11, streamly-core >=0.3 and
+                  # baikai 0.8.0.0 wants streamly >=0.11, streamly-core >=0.3 and
                   # generic-lens >=2.3; nixpkgs is still on 0.10.1 / 0.2.3 / 2.2.2.0, and
                   # so is current nixos-unstable, so bumping the pin would not have helped.
                   streamly = fromHackage "streamly" "0.11.1"
@@ -97,8 +97,8 @@
                   # rebuilds the whole TLS/HTTP stack. nixpkgs' tls 2.1.8 is API-compatible
                   # with what baikai actually uses -- it compiles clean against it -- so
                   # relax the bound instead.
-                  baikai = doJailbreak (fromHackage "baikai" "0.7.1.0"
-                    "sha256-h2BWpYua+/RT/cDBqVNeAK9XFFrD5j8FXJQh9PHMa4Y=");
+                  baikai = doJailbreak (fromHackage "baikai" "0.8.0.0"
+                    "sha256-9taJUqln85cHFlEu4GMDf1PmKn8VnGvrCnjBOYiNuvo=");
 
                   # baikai declares `build-depends: openai ^>=2.5` -- a different Hackage
                   # package (Servant bindings to the OpenAI API, unrelated to
