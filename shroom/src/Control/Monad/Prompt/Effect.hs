@@ -9,7 +9,9 @@ ordinary effect rather than a constructor in a bespoke DSL.
 * Scoping — @local@-style, over that same state ('withContextItem' \/
   'withContext')
 * The typed request itself — the 'Prompt' dynamic effect ('promptSingle' \/
-  'promptSingleWith' \/ 'promptTools')
+  'promptSingleWith' \/ 'promptTools' \/ 'improve'), each with an opt-in
+  variant that takes properties of the call's own ('promptSingleChecked' \/
+  'promptToolsChecked' \/ 'improveChecked')
 * Failure — "Effectful.Error.Static" with 'Text' ('failWith')
 * Fallback — 'catchError' plus context restoration ('orElse')
 * Parallelism — "Effectful.Concurrent.Async", explicit rather than hiding in
@@ -23,6 +25,14 @@ strategy. 'promptSingle' is the flat request that method defaults to: one
 request, never consulting 'Control.Monad.Prompt.Promptable.Promptable'. So
 @'withContext' t ('Control.Monad.Prompt.Promptable.prompt' \@a)@ is the
 strategy-aware equivalent of @'promptSingleWith' t@.
+
+'promptSingleChecked', 'promptToolsChecked' and 'improveChecked' are opt-ins,
+flat like 'promptSingle', 'promptTools' and 'improve': each adds properties
+passed at the call, told to the model in a \"MUST hold\" message and checked
+with the type's own. A wrapper generic over
+'Control.Monad.Prompt.Promptable.Promptable' @a@ must not switch from
+'Control.Monad.Prompt.Promptable.prompt' to 'promptSingleChecked', which would
+skip a type's own strategy; see the Haddock of 'promptSingleChecked' for why.
 
 Tool use (todo 10 of the shroom arc) is 'promptTools' plus
 "Control.Monad.Prompt.Tool"\'s 'Control.Monad.Prompt.Tool.Tool' effect and
@@ -46,9 +56,13 @@ module Control.Monad.Prompt.Effect (
   -- * The 'Prompt' effect
   Prompt,
   promptSingle,
+  promptSingleChecked,
   promptSingleWith,
   promptTools,
+  promptToolsChecked,
   improve,
+  improveChecked,
+  PropertyCheck (..),
   promptPar,
   promptsParallel,
   runPrompt,
@@ -103,7 +117,7 @@ import Control.Monad.Prompt.Backend (
  )
 import Control.Monad.Prompt.Schema (ToolDef, ToolDispatcher, encodeJson, schemaWithDefs)
 import Control.Monad.Prompt.Tool (ToolBinding (..), dispatchBindings)
-import Data.Shroom.Class (PropertyCheck (..), Surveyable, description, typeProperties)
+import Data.Shroom.Class (PropertyCheck (..), Surveyable, description, propertyLines, typeProperties)
 
 -- * The Prompt effect
 
@@ -111,12 +125,13 @@ import Data.Shroom.Class (PropertyCheck (..), Surveyable, description, typePrope
 context is currently held in "Effectful.State.Static.Local".
 -}
 data Prompt :: Effect where
-  RequestPrompt :: (Surveyable a, ToSchema a, FromJSON a) => Prompt m a
+  RequestPrompt :: (Surveyable a, ToSchema a, FromJSON a) => [PropertyCheck a] -> Prompt m a
   RequestPromptTools ::
     (Surveyable a, ToSchema a, FromJSON a) =>
+    [PropertyCheck a] ->
     [ToolBinding m] ->
     Prompt m a
-  RequestImprove :: (Surveyable a, ToSchema a, FromJSON a) => a -> Prompt m (Maybe a)
+  RequestImprove :: (Surveyable a, ToSchema a, FromJSON a) => [PropertyCheck a] -> a -> Prompt m (Maybe a)
 
 type instance DispatchOf Prompt = Dynamic
 
@@ -132,7 +147,35 @@ this does not. Reach for 'promptSingle' only when a flat request is the point
 (inside a strategy itself, or to compare against it).
 -}
 promptSingle :: forall a es. (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) => Eff es a
-promptSingle = send RequestPrompt
+promptSingle = promptSingleChecked []
+
+{- | Like 'promptSingle', with properties of this call's own that a reply must
+satisfy in addition to the type's own ('typeProperties').
+
+The type description is exactly the one 'promptSingle' sends, so a backend that
+caches it sees the same text on every call. The extra properties go in a message
+of their own: one 'UserMessage' after the current context (and after the
+type's own request, for 'improveChecked'), headed \"For this request, the
+following properties MUST hold in addition to those in the type description:\"
+and listing each property's description; it is sent for this request only and is
+not kept, so the context left behind is the one before the request plus the
+reply. Properties without a description are left out of that message but are
+still checked. With none to list, no message is sent.
+
+The check runs over the type's properties followed by these, so a reply that
+breaks one is repaired and counted against the same 'maxRetries' budget as a
+reply that breaks the type's own.
+
+Like 'promptSingle', this is flat: it never consults a
+'Control.Monad.Prompt.Promptable.Promptable' instance, so a type's own prompt
+strategy does not see the extra properties.
+-}
+promptSingleChecked ::
+  forall a es.
+  (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) =>
+  [PropertyCheck a] ->
+  Eff es a
+promptSingleChecked = send . RequestPrompt
 
 {- | Like 'promptSingle', with an extra piece of context scoped to this request
 only. Equally flat: it never consults 'Control.Monad.Prompt.Promptable.Promptable'.
@@ -156,7 +199,20 @@ promptTools ::
   (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) =>
   [ToolBinding (Eff es)] ->
   Eff es a
-promptTools bindings = send (RequestPromptTools bindings)
+promptTools = promptToolsChecked []
+
+{- | Like 'promptTools', with properties of this call's own that a reply must
+satisfy in addition to the type's own: told to the model and enforced exactly as
+'promptSingleChecked' does, and flat in the same way. They are checked on the
+final reply only; tool arguments are not validated against them.
+-}
+promptToolsChecked ::
+  forall a es.
+  (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) =>
+  [PropertyCheck a] ->
+  [ToolBinding (Eff es)] ->
+  Eff es a
+promptToolsChecked extra bindings = send (RequestPromptTools extra bindings)
 
 {- | Ask the model to improve a value it (or anyone) has already produced:
 'Nothing' means the given value is a good value of its type and the model is
@@ -174,13 +230,13 @@ description (see 'description') goes with it, as for
 context as an 'AssistantMessage', as for 'promptSingle'.
 
 The reply goes through the same retry path as any request: an @improved@ value
-that fails to parse or violates a property is re-prompted. A @fine@ verdict
-is accepted only if the value passed in satisfies every 'Data.Shroom.Class.Property'
-of @a@; otherwise it is retried in just the same way, the correction message naming
-the violated properties. A violated property without a description (see
-'Data.Shroom.Class.describeProperties') counts as much as any other; the correction
-then says so in one line. So 'Nothing' always means \"the original
-value is valid and the model is content with it\".
+that fails to parse or violates a property is re-prompted. A @fine@ verdict is
+accepted only if the value passed in satisfies every
+'Data.Shroom.Class.Property' of @a@; otherwise it is retried in just the same
+way, the correction message naming the violated properties. A violated property
+without a description (see 'Data.Shroom.Class.describeProperties') counts as
+much as any other; the correction then says so in one line. So 'Nothing' always
+means \"the original value is valid and the model is content with it\".
 
 'improve' is flat by construction: it never calls the type's own
 'Control.Monad.Prompt.Promptable.prompt', so a prompt strategy may call it
@@ -193,7 +249,22 @@ improve ::
   (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) =>
   a ->
   Eff es (Maybe a)
-improve = send . RequestImprove
+improve = improveChecked []
+
+{- | Like 'improve', with properties of this call's own in addition to the
+type's: a @fine@ verdict about a value that breaks one, and an @improved@ value
+that breaks one, are both retried from the same 'maxRetries' budget as for the
+type's own properties. The properties are told to the model as for
+'promptSingleChecked', in a message after the question 'improve' scopes; the type
+description is unchanged.
+-}
+improveChecked ::
+  forall a es.
+  (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) =>
+  [PropertyCheck a] ->
+  a ->
+  Eff es (Maybe a)
+improveChecked extra = send . RequestImprove extra
 
 {- | The reply to an 'improve' request: the model's verdict on the value shown.
 Internal; the wire form is one object, see 'improveSchema'.
@@ -244,6 +315,19 @@ improveSchema prx =
 -- | The line that stands for every failed property without a description.
 undescribedViolation :: Text
 undescribedViolation = "A property without a description was violated."
+
+{- | The message that tells the model the properties of one call, if there is a
+description to tell: sent after the context for that request only. The wording
+reads right wherever a backend puts the type description.
+-}
+callPropertiesMessage :: [PropertyCheck a] -> [ContextItem]
+callPropertiesMessage extra = case propertyLines extra of
+  [] -> []
+  ls ->
+    [ UserMessage $
+        T.intercalate "\n" $
+          "For this request, the following properties MUST hold in addition to those in the type description:" : ls
+    ]
 
 -- | The checks in the list that a value fails, described or not.
 failedChecks :: [PropertyCheck a] -> a -> [PropertyCheck a]
@@ -358,16 +442,17 @@ runPrompt ::
   Eff es a
 runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) b) -> case request of
   -- No tools for 'RequestPrompt' (unchanged from before todo 10).
-  RequestPrompt -> let (toolDefs, dispatch, maxSteps) = noTools in runRequest toolDefs dispatch maxSteps
+  RequestPrompt extra -> let (toolDefs, dispatch, maxSteps) = noTools in runRequest extra toolDefs dispatch maxSteps
   -- 'RequestPromptTools': build the dispatcher out of the bindings by
   -- unlifting each binding's call — which runs in the request's own local
   -- effect stack ('localEs') — into this interpreter's 'es'.
-  RequestPromptTools bindings ->
+  RequestPromptTools extra bindings ->
     runRequest
+      extra
       (fmap toolBindingDef bindings)
       (\name v -> localSeqUnlift env (\unlift -> unlift (dispatchBindings bindings name v)))
       (maxToolSteps promptCfg)
-  RequestImprove original -> runImprove original
+  RequestImprove extra original -> runImprove extra original
   where
     -- The tool setup of a flat request: no tool definitions, a dispatcher
     -- that refuses every call, and zero tool steps. Shared by 'RequestPrompt'
@@ -383,9 +468,10 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
     runImprove ::
       forall b.
       (Surveyable b, ToSchema b, FromJSON b) =>
+      [PropertyCheck b] ->
       b ->
       Eff es (Maybe b)
-    runImprove original = do
+    runImprove extra original = do
       ctx <- get
       let prx = Proxy @b
           shown = encodeJson original
@@ -400,30 +486,35 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
             description prx
               <> "\nAnswer with a single JSON object: {\"verdict\": \"fine\", \"value\": <the given value, unchanged>} for a good value as it stands, "
               <> "or {\"verdict\": \"improved\", \"value\": <the corrected whole value>}.\n"
-          check VerdictFine = failedDescriptions (typeProperties @b) original
-          check (VerdictImproved v) = failedDescriptions (typeProperties @b) v
+          checks = typeProperties @b <> extra
+          check VerdictFine = failedDescriptions checks original
+          check (VerdictImproved v) = failedDescriptions checks v
       let (toolDefs, dispatch, maxSteps) = noTools
       (verdict, rawTxt) <-
-        attemptLoop toolDefs dispatch maxSteps (ctx <> [ask]) typeDesc (improveSchema prx) check (maxRetries promptCfg) (maxRetries promptCfg)
+        attemptLoop toolDefs dispatch maxSteps (ctx <> [ask] <> callPropertiesMessage extra) typeDesc (improveSchema prx) check (maxRetries promptCfg) (maxRetries promptCfg)
       put (ctx <> [AssistantMessage rawTxt])
       pure $ case verdict of
         VerdictFine -> Nothing
         VerdictImproved v -> Just v
 
+    -- The call's own properties (@extra@) go to the model in a scoped message
+    -- after the context, which is not kept; the check runs over the type's
+    -- properties and @extra@ alike.
     runRequest ::
       forall b.
       (Surveyable b, ToSchema b, FromJSON b) =>
+      [PropertyCheck b] ->
       [ToolDef] ->
       ToolDispatcher (Eff es) ->
       Maybe Int ->
       Eff es b
-    runRequest toolDefs dispatch maxSteps = do
+    runRequest extra toolDefs dispatch maxSteps = do
       ctx <- get
       let prx = Proxy @b
           typeDesc = description prx
           schema = schemaWithDefs prx
-          checkProps = failedDescriptions (typeProperties @b)
-      (a, rawTxt) <- attemptLoop toolDefs dispatch maxSteps ctx typeDesc schema checkProps (maxRetries promptCfg) (maxRetries promptCfg)
+          checkProps = failedDescriptions (typeProperties @b <> extra)
+      (a, rawTxt) <- attemptLoop toolDefs dispatch maxSteps (ctx <> callPropertiesMessage extra) typeDesc schema checkProps (maxRetries promptCfg) (maxRetries promptCfg)
       put (ctx <> [AssistantMessage rawTxt])
       pure a
 
