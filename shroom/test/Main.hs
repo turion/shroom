@@ -73,7 +73,7 @@ import Effectful.State.Static.Local (State, get)
 
 -- shroom
 import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..), ContextItem (..), ToolCall (..), ToolDef (..), renderContextItems, schemaWithDefs)
-import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
+import Control.Monad.Prompt.Effect (PromptConfig (..), PropertyCheck (..), defaultPromptConfig)
 import Control.Monad.Prompt.Effect qualified as Eff
 import Control.Monad.Prompt.Generic ()
 import Control.Monad.Prompt.Promptable (Promptable)
@@ -453,6 +453,21 @@ callDesc calls n = case calls !! n of (_, desc, _) -> desc
 -- | The schema sent with the n-th recorded call.
 callSchema :: [(Text, Text, Value)] -> Int -> Value
 callSchema calls n = case calls !! n of (_, _, schema) -> schema
+
+-- | A property of a call: the user has a name.
+nameNotEmpty :: PropertyCheck User
+nameNotEmpty = PropertyCheck (Just "The user name is not empty.") (not . T.null . userName)
+
+-- | What the model is told ahead of a call's own properties.
+callHeading :: Text
+callHeading = "For this request, the following properties MUST hold in addition to those in the type description:"
+
+-- | Replies for a 'User': a valid one, one without a name, one without an email address; and a @fine@ verdict.
+validUserJson, noNameJson, noEmailJson, fineJson :: Text
+validUserJson = "{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}"
+noNameJson = "{\"userName\":\"\",\"userEmail\":\"alice@example.com\"}"
+noEmailJson = "{\"userName\":\"Alice\",\"userEmail\":\"\"}"
+fineJson = "{\"verdict\":\"fine\"}"
 
 {- | Run an action against a localhost TCP listener that accepts a connection
 and then never reads from it or writes to it. Binds port 0, so the OS picks a
@@ -895,6 +910,118 @@ main =
                   assertContains "Here is a value of the type described below" ctx0
                   assertNotContains "Here is a value of the type described below" ctx1
                   assertContains "[assistant] {\"verdict\":\"fine\"}" ctx1
+              ]
+          , testGroup
+              "call-site properties"
+              [ testCase "promptSingleChecked sends the type description of promptSingle, and the call's properties in a message after the context" $ do
+                  (plainResult, plainCalls) <- runRecording [validUserJson] 2 (Eff.context "Hello." >> Eff.promptSingle @User)
+                  (result, calls) <- runRecording [validUserJson] 2 (Eff.context "Hello." >> Eff.promptSingleChecked [nameNotEmpty])
+                  plainResult @?= Right (User "Alice" "alice@example.com")
+                  result @?= Right (User "Alice" "alice@example.com")
+                  length calls @?= 1
+                  -- the type description and schema are those of the plain call, byte for byte
+                  callDesc calls 0 @?= callDesc plainCalls 0
+                  callSchema calls 0 @?= callSchema plainCalls 0
+                  assertNotContains "The user name is not empty." (callDesc calls 0)
+                  -- the call's properties follow the context, in a message of their own
+                  callCtx plainCalls 0 @?= "Hello."
+                  callCtx calls 0 @?= "Hello.\n" <> callHeading <> "\n- The user name is not empty."
+              , testCase "the context after the request holds the reply and no trace of the scoped message" $ do
+                  (result, _) <-
+                    runRecording [validUserJson] 2 $ do
+                      Eff.context "Hello."
+                      user <- Eff.promptSingleChecked [nameNotEmpty]
+                      (ctx :: [ContextItem]) <- get
+                      pure (user, ctx)
+                  result @?= Right (User "Alice" "alice@example.com", [UserMessage "Hello.", AssistantMessage validUserJson])
+              , testCase "a reply that breaks the call's property is retried with a correction naming it" $ do
+                  (result, calls) <- runRecording [noNameJson, validUserJson] 2 (Eff.promptSingleChecked [nameNotEmpty])
+                  result @?= Right (User "Alice" "alice@example.com")
+                  length calls @?= 2
+                  assertNotContains "Violated properties" (callCtx calls 0)
+                  assertContains "Violated properties:" (callCtx calls 1)
+                  assertContains "- The user name is not empty." (callCtx calls 1)
+                  -- the repair turn comes after the scoped message
+                  assertContains (callHeading <> "\n- The user name is not empty.\n[assistant] " <> noNameJson) (callCtx calls 1)
+              , testCase "the call's properties and the type's own share one retry budget" $ do
+                  let replies = [noEmailJson, noNameJson, validUserJson]
+                  (enough, enoughCalls) <- runRecording replies 2 (Eff.promptSingleChecked [nameNotEmpty])
+                  enough @?= Right (User "Alice" "alice@example.com")
+                  length enoughCalls @?= 3
+                  (short, shortCalls) <- runRecording replies 1 (Eff.promptSingleChecked [nameNotEmpty])
+                  case short of
+                    Left err -> do
+                      assertContains "Property validation failed:" err
+                      assertContains "- The user name is not empty." err
+                    Right r -> assertFailure ("expected a failure, got " <> show r)
+                  length shortCalls @?= 2
+              , testCase "a reply that keeps breaking the call's property fails once retries run out" $ do
+                  (result, calls) <- runRecording [noNameJson] 2 (Eff.promptSingleChecked [nameNotEmpty])
+                  case result of
+                    Left err -> assertContains "- The user name is not empty." err
+                    Right r -> assertFailure ("expected a failure, got " <> show r)
+                  -- 1 original + 2 retries
+                  length calls @?= 3
+              , testCase "a call's property without a description is enforced but not told" $ do
+                  (result, calls) <- runRecording [noNameJson, validUserJson] 2 (Eff.promptSingleChecked [PropertyCheck Nothing (not . T.null . userName)])
+                  result @?= Right (User "Alice" "alice@example.com")
+                  length calls @?= 2
+                  assertNotContains callHeading (callCtx calls 0)
+                  assertContains "- A property without a description was violated." (callCtx calls 1)
+              , testCase "no properties of its own sends the same request as promptSingle" $ do
+                  (_, plainCalls) <- runRecording [validUserJson] 2 (Eff.context "Hello." >> Eff.promptSingle @User)
+                  (_, calls) <- runRecording [validUserJson] 2 (Eff.context "Hello." >> Eff.promptSingleChecked @User [])
+                  calls @?= plainCalls
+              , testCase "improveChecked tells the call's properties after the question, and keeps nothing of them" $ do
+                  (result, calls) <-
+                    runRecording [fineJson] 2 $ do
+                      verdict <- Eff.improveChecked [nameNotEmpty] (User "Alice" "alice@example.com")
+                      (ctx :: [ContextItem]) <- get
+                      pure (verdict, ctx)
+                  result @?= Right (Nothing, [AssistantMessage fineJson])
+                  assertContains "Here is a value of the type described below" (callCtx calls 0)
+                  assertBool
+                    "the call's properties come after the question"
+                    ((callHeading <> "\n- The user name is not empty.") `T.isSuffixOf` callCtx calls 0)
+                  assertNotContains "The user name is not empty." (callDesc calls 0)
+              , testCase "improveChecked retries a fine verdict about a value that breaks the call's property" $ do
+                  (result, calls) <-
+                    runRecording
+                      [fineJson, "{\"verdict\":\"improved\",\"value\":" <> validUserJson <> "}"]
+                      2
+                      (Eff.improveChecked [nameNotEmpty] (User "" "alice@example.com"))
+                  result @?= Right (Just (User "Alice" "alice@example.com"))
+                  length calls @?= 2
+                  assertNotContains "Violated properties" (callCtx calls 0)
+                  assertContains "Violated properties:" (callCtx calls 1)
+                  assertContains "- The user name is not empty." (callCtx calls 1)
+              , testCase "improveChecked retries an improved value that breaks the call's property" $ do
+                  (result, calls) <-
+                    runRecording
+                      [ "{\"verdict\":\"improved\",\"value\":" <> noNameJson <> "}"
+                      , "{\"verdict\":\"improved\",\"value\":" <> validUserJson <> "}"
+                      ]
+                      2
+                      (Eff.improveChecked [nameNotEmpty] (User "Alice" "alice@example.com"))
+                  result @?= Right (Just (User "Alice" "alice@example.com"))
+                  length calls @?= 2
+                  assertContains "Violated properties:" (callCtx calls 1)
+                  assertContains "- The user name is not empty." (callCtx calls 1)
+              , testCase "promptToolsChecked tells and enforces the call's property as promptSingleChecked does" $ do
+                  responses <- newIORef [noNameJson, validUserJson]
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  let handler = ToolHandler $ \_ -> pure (Right "fetched page text")
+                      program :: Eff (Tool WebFetch : BaseEs) User
+                      program = Eff.context "Hello." >> Eff.promptToolsChecked [nameNotEmpty] [toolBinding @WebFetch]
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) (runTool handler program)
+                  result @?= Right (User "Alice" "alice@example.com")
+                  calls <- readIORef seen
+                  length calls @?= 2
+                  callCtx calls 0 @?= "Hello.\n" <> callHeading <> "\n- The user name is not empty."
+                  assertNotContains "The user name is not empty." (callDesc calls 0)
+                  assertContains "Violated properties:" (callCtx calls 1)
+                  assertContains "- The user name is not empty." (callCtx calls 1)
               ]
           , testGroup
               "Generically (products)"

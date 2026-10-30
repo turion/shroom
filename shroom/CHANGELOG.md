@@ -88,6 +88,18 @@ type.
   that succeeded before can now fail. A user who wrote `Nothing` to switch a property off must
   return `True` from `propertyHolds` instead; `Nothing` now only keeps a property out of the
   prompt.
+* **New: a call can pass properties of its own.** `promptSingleChecked :: [PropertyCheck a] ->
+  Eff es a`, `promptToolsChecked :: [PropertyCheck a] -> [ToolBinding (Eff es)] -> Eff es a` and
+  `improveChecked :: [PropertyCheck a] -> a -> Eff es (Maybe a)` in `Control.Monad.Prompt.Effect`
+  (which now re-exports `PropertyCheck (..)`) take properties in addition to the type's own.
+  The type description stays exactly what a plain call sends, so a backend that caches it is
+  unaffected; the model is told the call's properties in one `UserMessage` after the context
+  ("For this request, the following properties MUST hold in addition to those in the type
+  description:", then one line per described property), sent for that request only and not kept in
+  the context. A reply that breaks one is repaired from the same `maxRetries` budget as the type's
+  own properties. `promptSingle`, `promptTools` and `improve` are now their `…Checked []` and send
+  the same requests as before. The `Checked` variants are flat like `promptSingle`: a type's own
+  `Promptable` strategy does not see the extra properties.
 * **Breaking: a directly or mutually recursive type with a bare `instance Surveyable X` hangs**
   before any request is sent, on every backend, because the structural default enumerates its
   properties forever (e.g. `data Expr = Lit Int | Neg Expr`, or `data Tree = Node [Tree]`: a
