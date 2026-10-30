@@ -33,6 +33,8 @@ import Data.Time (Day, UTCTime)
 
 -- * Describable
 
+-- ** The class
+
 {- | Attach a one-sentence description to a type.
 
 Minimal complete definition: 'describeType'.
@@ -40,14 +42,14 @@ Minimal complete definition: 'describeType'.
 Use @$(deriveDescribable ''MyType)@ from "Control.Monad.Prompt.TH" to derive
 this automatically from all Haddock comments on the type declaration.
 
-'Typeable' is a superclass so that 'description' can tell types apart when it
+'Typeable' is a superclass so that 'Data.Shroom.Class.Surveyable.description' can tell types apart when it
 lists each reachable type once (see 'referencedTypes'). Every concrete type is
 'Typeable' automatically, and a polymorphic instance gets it from the
 'Describable' context of its type parameter, so no instance needs to change.
 
 == What reaches the model
 
-'description' sends the requested type's own 'describeType', and then, in a
+'Data.Shroom.Class.Surveyable.description' sends the requested type's own 'describeType', and then, in a
 section of their own, the 'describeType' of every type it can reach through
 'referencedTypes', each once. A type that wants its field types documented to
 the model lists them in 'referencedTypes'; @deriveDescribable@ does this for
@@ -61,7 +63,7 @@ class (ToJSON a, Typeable a) => Describable a where
   describeType :: Proxy a -> Text
 
   {- | The types whose descriptions the model also needs in order to produce
-    an @a@: typically the types of its fields. 'description' follows these
+    an @a@: typically the types of its fields. 'Data.Shroom.Class.Surveyable.description' follows these
     transitively and lists each type once, so an entry may refer back to the
     type itself or to another entry without harm.
 
@@ -82,7 +84,7 @@ class (ToJSON a, Typeable a) => Describable a where
   hasOwnSection :: Proxy a -> Bool
   hasOwnSection _ = True
 
-  {- | The identity of the type that 'description' reports on, by which
+  {- | The identity of the type that 'Data.Shroom.Class.Surveyable.description' reports on, by which
     'reachableTypes' keeps that type out of its own list of reachable types.
     Defaults to the type's own 'TypeRep'. A transparent wrapper (@'Generically' X@,
     @DescriptionPrompt X@) forwards to the wrapped type's, because @description@ runs at
@@ -107,6 +109,8 @@ class (ToJSON a, Typeable a) => Describable a where
   describedIdentity :: Proxy a -> TypeRep
   describedIdentity = typeRep
 
+-- ** Referenced types
+
 {- | A type of which only the 'Describable' instance is known, to put types of
 different kinds into one list: what 'referencedTypes' returns.
 -}
@@ -126,7 +130,7 @@ reach
   | hasOwnSection (Proxy @t) = [Described (Proxy @t)]
   | otherwise = referencedTypes (Proxy @t)
 
--- | Every type reachable from @a@ through 'referencedTypes' that has a section, see 'description'.
+-- | Every type reachable from @a@ through 'referencedTypes' that has a section, see 'Data.Shroom.Class.Surveyable.description'.
 reachableTypes :: forall a. (Describable a) => Proxy a -> [Described]
 reachableTypes p = go (S.singleton (describedIdentity p)) (referencedTypes p)
   where
@@ -150,6 +154,8 @@ reachableTypes p = go (S.singleton (describedIdentity p)) (referencedTypes p)
 --
 -- They live in the module of their class, not a sibling: there they are not orphans,
 -- and modules importing only "Data.Shroom.Class" see them.
+
+-- ** Scalars
 
 instance Describable Text where
   describeType _ = "A piece of text."
@@ -199,10 +205,12 @@ instance Describable Day where
   describeType _ = "A calendar date."
   hasOwnSection _ = False
 
+-- ** Containers
+
 {- | A list, described through its element type.
 
 Does not lift the element's properties: they are neither described nor checked
-for the container. Use 'everyHolds' and 'describeEvery' by hand for now; a
+for the container. Use 'Data.Shroom.Class.Surveyable.everyHolds' and 'Data.Shroom.Class.Surveyable.describeEvery' by hand for now; a
 derivable version is tracked in
 <https://github.com/turion/shroom/issues/18 issue #18>.
 -}
@@ -214,7 +222,7 @@ instance (Describable a) => Describable [a] where
 {- | A non-empty list, described through its element type.
 
 Does not lift the element's properties: they are neither described nor checked
-for the container. Use 'everyHolds' and 'describeEvery' by hand for now; a
+for the container. Use 'Data.Shroom.Class.Surveyable.everyHolds' and 'Data.Shroom.Class.Surveyable.describeEvery' by hand for now; a
 derivable version is tracked in
 <https://github.com/turion/shroom/issues/18 issue #18>.
 -}
@@ -226,7 +234,7 @@ instance (Describable a) => Describable (NonEmpty a) where
 {- | A set, described through its element type.
 
 Does not lift the element's properties: they are neither described nor checked
-for the container. Use 'everyHolds' and 'describeEvery' by hand for now; a
+for the container. Use 'Data.Shroom.Class.Surveyable.everyHolds' and 'Data.Shroom.Class.Surveyable.describeEvery' by hand for now; a
 derivable version is tracked in
 <https://github.com/turion/shroom/issues/18 issue #18>.
 -}
@@ -238,7 +246,7 @@ instance (Describable a) => Describable (Set a) where
 {- | An optional value, described through its element type.
 
 Does not lift the element's properties: they are neither described nor checked
-for the container. Use 'everyHolds' and 'describeEvery' by hand for now; a
+for the container. Use 'Data.Shroom.Class.Surveyable.everyHolds' and 'Data.Shroom.Class.Surveyable.describeEvery' by hand for now; a
 derivable version is tracked in
 <https://github.com/turion/shroom/issues/18 issue #18>.
 -}
@@ -247,11 +255,11 @@ instance (Describable a) => Describable (Maybe a) where
   referencedTypes _ = reach @a
   hasOwnSection _ = False
 
--- * Generically
+-- ** Generically
 
 {- | Forwards to the wrapped type.
 
-These two instances (this one and the one for 'Surveyable') exist so that
+These two instances (this one and the one for 'Data.Shroom.Class.Surveyable.Surveyable') exist so that
 @deriving via 'Generically' X instance Promptable X@ (from the @shroom@ package)
 has superclasses to build on: a @deriving via@ coerces only the class's own
 method, and the superclass instances of @'Generically' X@ are what GHC then

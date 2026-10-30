@@ -221,6 +221,8 @@ typeProperties = [PropertyCheck (describeProperties (Proxy @a) p) (`propertyHold
 -- They live in the module of their class, not a sibling: there they are not orphans,
 -- and modules importing only "Data.Shroom.Class" see them.
 
+-- ** Scalars
+
 instance Surveyable Text where
   type Property Text = Void
 
@@ -257,6 +259,8 @@ instance Surveyable UTCTime where
 instance Surveyable Day where
   type Property Day = Void
 
+-- ** Containers
+
 instance (Describable a) => Surveyable [a] where
   type Property [a] = Void
 
@@ -269,7 +273,7 @@ instance (Describable a) => Surveyable (Set a) where
 instance (Describable a) => Surveyable (Maybe a) where
   type Property (Maybe a) = Void
 
--- * Generically
+-- ** Generically
 
 -- | Forwards to the wrapped type, see the 'Describable' instance.
 instance (Surveyable a, ToJSON (Generically a)) => Surveyable (Generically a) where
@@ -278,7 +282,9 @@ instance (Surveyable a, ToJSON (Generically a)) => Surveyable (Generically a) wh
   describeProperties _ = describeProperties (Proxy @a)
   examples _ = S.mapMonotonic Generically (examples (Proxy @a))
 
--- * Lifting element properties into containers
+-- * Property machinery
+
+-- ** Lifting element properties into containers
 
 {- | Check that one of an element type's properties holds for every element
 of a container. Use it to lift the element's properties into the container's
@@ -322,7 +328,7 @@ See 'everyHolds' for the pattern, and
 describeEvery :: (Surveyable a) => Text -> Proxy a -> Property a -> Maybe Text
 describeEvery label p prop = (\d -> label <> ": " <> d) <$> describeProperties p prop
 
--- * Structural properties
+-- ** Structural properties
 
 {- | The properties of one field type @x@, wrapped in a newtype so that a
 sum over fields ('NS') can carry them. A data type rather than a type family
@@ -445,7 +451,7 @@ fieldNameAt i (Record _ fields) = case drop i (hcollapse (hmap (\(FieldInfo name
   [] -> Nothing
 fieldNameAt _ _ = Nothing
 
--- * Defaults of 'Surveyable''s methods
+-- ** Defaults of 'Surveyable''s methods
 
 {- | What 'propertyHolds' and 'describeProperties' do when an instance does not
 write them, chosen by the instance's 'Property' type @p@: nothing for 'Void',
@@ -476,7 +482,7 @@ instance (Generic a, HasDatatypeInfo a, All2 Surveyable (Code a)) => PropertyDef
   defaultHolds = structuralHolds
   defaultDescribe = describeStructural
 
--- * description helper functions
+-- * Rendering a type for the model
 
 {- | Render the full prompt fragment for a type: its description, any
 properties, and example values (if any).

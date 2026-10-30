@@ -81,8 +81,13 @@ validation machinery. Keep it that way: an import of @Control.Monad.Prompt@
 here would put the program layer back in C3's way.
 -}
 module Data.Shroom.Class (
+  -- * Describable
   module Data.Shroom.Class.Describable,
+
+  -- * Surveyable
   module Data.Shroom.Class.Surveyable,
+
+  -- * Property checks
   PropertyCheck (..),
   propertyLines,
 ) where
