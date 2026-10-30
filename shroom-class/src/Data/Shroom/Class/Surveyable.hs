@@ -131,28 +131,62 @@ Writing this combination by hand is interim: a derived \"Combined\" property
 source, which adds a type's own properties to its structural ones, is planned in
 <https://github.com/turion/shroom/issues/18 issue #18>.
 
-== Container fields contribute no properties
+== Container fields have their elements' properties
 
-A field of type @[a]@, @'NonEmpty' a@, @'Set' a@ or @'Maybe' a@ has no properties of its
-own (its 'Property' is 'Void'), whatever @a@ has. So under a bare instance the
-properties of the elements of a @[Speaker]@ or of a @Maybe Name@ field stay
-unchecked, and not even told to the model, until container lifting (<https://github.com/turion/shroom/issues/18 issue #18>)
-is derivable. For now lift them by hand with 'everyHolds' and 'describeEvery' in
-a custom 'Property' combined with @'Structural' X@, as the @Speakers@ example under 'everyHolds' does.
+A field of type @[a]@, @'NonEmpty' a@, @'Set' a@ or @'Maybe' a@ has the
+properties of @a@: the container's 'Property' is @a@'s, told to the model under
+a label (\"Every element: …\", for 'Maybe' \"If present: …\") and checked on every
+element, vacuously for 'Nothing' and an empty container. So under a bare
+instance the properties of the elements of a @[Speaker]@ or of a @Maybe Name@
+field are described in the prompt and checked like those of any other field,
+as @Field speakers: Every element: …@. This needs @Surveyable a@, not only
+'Describable'. See 'everyHolds' for the definition, which a 'Foldable'
+container of your own can use the same way.
+
+A reply that passed under the old behaviour (when the properties of container
+elements were not checked) can therefore now fail a property of an element and
+get a repair turn.
 
 == A recursive type with a bare instance hangs
 
 A type that is directly or mutually recursive must not use the structural
-default. \"Directly recursive\" means a field of its own type that is not under a
-list, 'NonEmpty' or 'Maybe', like the @Neg Expr@ in @data Expr = Lit Int | Neg
-Expr@; \"mutually recursive\" means the same through another type's bare
-instance. Enumerating the structural 'Property' (its 'Universe') of such a type
-never ends, and 'description' and shroom's retry loop enumerate
-it, so with a bare @instance Surveyable Expr@ they run forever, in @shroom@
-before any request is sent and on every backend. (Under the former @Void@
-default this worked.) Opt out on the recursive type with
+default. \"Directly recursive\" means a field of its own type, also under a
+list, 'NonEmpty', 'Set' or 'Maybe': like the @Neg Expr@ in @data Expr = Lit Int |
+Neg Expr@ and the @[Tree]@ in @data Tree = Node [Tree]@, since a container
+carries its element's 'Property'. \"Mutually recursive\" means the same through
+another type's bare instance. Enumerating the structural 'Property' (its
+'Universe') of such a type never ends, and 'description' and shroom's retry
+loop enumerate it, so with a bare @instance Surveyable Expr@ they run forever,
+in @shroom@ before any request is sent and on every backend. (Under the former
+@Void@ default this worked.) Opt out on the recursive type with
 @type Property Expr = Void@, as above, or give it a custom 'Property' that does
 not contain @'Structural' Expr@.
+
+To keep the other properties of a recursive type, name the properties of its
+non-recursive fields and check the recursive field by hand with 'everyHolds'.
+For
+
+@
+data Section = Section { heading :: Title, subsections :: [Section] }
+@
+
+the properties of the @Title@ are the properties of the @Section@, with a finite
+'Universe', and they are checked on the heading and, recursively, on every
+subsection:
+
+@
+instance Surveyable Section where
+  type Property Section = Property Title
+  propertyHolds s p = propertyHolds (heading s) p && everyHolds (subsections s) p
+  describeProperties _ p = describeProperties (Proxy \@Title) p
+@
+
+The check ends on a finite tree, since 'everyHolds' recurses into the
+subsections, each one smaller. @type Property Section = Property Title@ needs
+@UndecidableInstances@ in your module, as the type family application is no smaller
+than the left-hand side; naming
+the concrete property type of @Title@ instead, say
+@type Property Section = TitleProperty@, does not.
 
 == A field of a type you do not own
 
@@ -261,17 +295,40 @@ instance Surveyable Day where
 
 -- ** Containers
 
-instance (Describable a) => Surveyable [a] where
-  type Property [a] = Void
+-- A container has the properties of its element, told with a label and checked
+-- on every element, see "Lifting element properties into containers" below.
 
-instance (Describable a) => Surveyable (NonEmpty a) where
-  type Property (NonEmpty a) = Void
+{- | The properties of @a@, checked on every element and told as \"Every
+element: …\".
+-}
+instance (Surveyable a) => Surveyable [a] where
+  type Property [a] = Property a
+  propertyHolds = everyHolds
+  describeProperties _ = describeEvery "Every element" (Proxy @a)
 
-instance (Describable a) => Surveyable (Set a) where
-  type Property (Set a) = Void
+{- | The properties of @a@, checked on every element and told as \"Every
+element: …\".
+-}
+instance (Surveyable a) => Surveyable (NonEmpty a) where
+  type Property (NonEmpty a) = Property a
+  propertyHolds = everyHolds
+  describeProperties _ = describeEvery "Every element" (Proxy @a)
 
-instance (Describable a) => Surveyable (Maybe a) where
-  type Property (Maybe a) = Void
+{- | The properties of @a@, checked on every element and told as \"Every
+element: …\".
+-}
+instance (Surveyable a) => Surveyable (Set a) where
+  type Property (Set a) = Property a
+  propertyHolds = everyHolds
+  describeProperties _ = describeEvery "Every element" (Proxy @a)
+
+{- | The properties of @a@, checked on the value if there is one and told as
+\"If present: …\". Vacuously true for 'Nothing'.
+-}
+instance (Surveyable a) => Surveyable (Maybe a) where
+  type Property (Maybe a) = Property a
+  propertyHolds = everyHolds
+  describeProperties _ = describeEvery "If present" (Proxy @a)
 
 -- ** Generically
 
@@ -287,8 +344,32 @@ instance (Surveyable a, ToJSON (Generically a)) => Surveyable (Generically a) wh
 -- ** Lifting element properties into containers
 
 {- | Check that one of an element type's properties holds for every element
-of a container. Use it to lift the element's properties into the container's
-own 'Property' type, as one side of an 'Either':
+of a container, vacuously for an empty one (and for 'Nothing'). Together with
+'describeEvery' this is the one definition, over any 'Foldable', behind the
+'Surveyable' instances of @[a]@, @'NonEmpty' a@, @'Set' a@ and @'Maybe' a@: a
+container @f a@ has the properties of @a@, so @Property (f a) = Property a@,
+each one told to the model under a label and checked on every element.
+
+A 'Foldable' container of your own gets the same by calling the pair from
+three lines of its instance, here for a @Roster@ that wraps a list (and has a
+'Describable' instance of its own):
+
+@
+instance (Surveyable a) => Surveyable (Roster a) where
+  type Property (Roster a) = Property a
+  propertyHolds = everyHolds
+  describeProperties _ = describeEvery \"Every entry\" (Proxy \@a)
+@
+
+A field of type @Roster X@ then contributes @X@'s properties, under that label,
+to the structural default of the type that holds it. Enumerating the
+'Universe' of such a container's 'Property' ends exactly when the element's
+does, so a type recursive through it needs the opt-out of the recursion
+section in 'Surveyable'.
+
+The same pair also serves a hand-written lift into a custom 'Property', as one
+side of an 'Either', when a container has properties of its own besides those
+of its elements:
 
 @
 instance Surveyable Speakers where
@@ -302,28 +383,29 @@ instance Surveyable Speakers where
 Name the element's concrete property type (here @SpeakerProperty@) rather than
 writing @Property Speaker@ in the instance head: GHC rejects the latter without
 @UndecidableInstances@, as a type family application is no smaller than the
-instance's own left-hand side.
+instance's own left-hand side. Do not combine a lift like this with
+@'Structural' X@ for a container field of @X@ whose element properties it
+lifts: the structural default already tells and checks them, so they would be
+told and checked twice.
 
 @runPrompt@ (from the @shroom@ package) only checks the properties of the
-top-level value, and 'description' only lists those, so without this lift a
-property of the elements is neither told to the model nor checked.
-This is a hand-written helper; a derivable version is tracked in
-<https://github.com/turion/shroom/issues/18 issue #18>.
-
-Vacuously 'True' for an empty container.
+top-level value, and 'description' only lists those: the properties of a
+container's elements are told and checked because the container's own
+'Property' is the element's.
 -}
 everyHolds :: (Foldable f, Surveyable a) => f a -> Property a -> Bool
 everyHolds xs p = all (`propertyHolds` p) xs
 
 {- | Describe an element's property as a property of every element of a
-container, to be used from 'describeProperties' alongside 'everyHolds'.
-The label is joined to the element's own description with a colon, e.g.
+container, the partner of 'everyHolds'. The label is joined to the element's
+own description with a colon, e.g.
 @describeEvery \"Every speaker\"@ turns \"The speaker's last name must not be
 empty.\" into \"Every speaker: The speaker's last name must not be empty.\".
 
-Returns 'Nothing' when the element has no description for the property.
-See 'everyHolds' for the pattern, and
-<https://github.com/turion/shroom/issues/18 issue #18> for the derivable version.
+Returns 'Nothing' when the element has no description for the property, so a
+container tells nothing where the element tells nothing. The 'Surveyable'
+instances of the containers use the label \"Every element\" and, for 'Maybe',
+\"If present\".
 -}
 describeEvery :: (Surveyable a) => Text -> Proxy a -> Property a -> Maybe Text
 describeEvery label p prop = (\d -> label <> ": " <> d) <$> describeProperties p prop

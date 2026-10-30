@@ -209,10 +209,8 @@ instance Describable Day where
 
 {- | A list, described through its element type.
 
-Does not lift the element's properties: they are neither described nor checked
-for the container. Use 'Data.Shroom.Class.Surveyable.everyHolds' and 'Data.Shroom.Class.Surveyable.describeEvery' by hand for now; a
-derivable version is tracked in
-<https://github.com/turion/shroom/issues/18 issue #18>.
+Its 'Data.Shroom.Class.Surveyable.Surveyable' instance has the element's properties, see
+'Data.Shroom.Class.Surveyable.everyHolds'.
 -}
 instance (Describable a) => Describable [a] where
   describeType _ = "A list of values of the following type: " <> describeType (Proxy @a)
@@ -221,10 +219,8 @@ instance (Describable a) => Describable [a] where
 
 {- | A non-empty list, described through its element type.
 
-Does not lift the element's properties: they are neither described nor checked
-for the container. Use 'Data.Shroom.Class.Surveyable.everyHolds' and 'Data.Shroom.Class.Surveyable.describeEvery' by hand for now; a
-derivable version is tracked in
-<https://github.com/turion/shroom/issues/18 issue #18>.
+Its 'Data.Shroom.Class.Surveyable.Surveyable' instance has the element's properties, see
+'Data.Shroom.Class.Surveyable.everyHolds'.
 -}
 instance (Describable a) => Describable (NonEmpty a) where
   describeType _ = "A non-empty list of values of the following type: " <> describeType (Proxy @a)
@@ -233,10 +229,8 @@ instance (Describable a) => Describable (NonEmpty a) where
 
 {- | A set, described through its element type.
 
-Does not lift the element's properties: they are neither described nor checked
-for the container. Use 'Data.Shroom.Class.Surveyable.everyHolds' and 'Data.Shroom.Class.Surveyable.describeEvery' by hand for now; a
-derivable version is tracked in
-<https://github.com/turion/shroom/issues/18 issue #18>.
+Its 'Data.Shroom.Class.Surveyable.Surveyable' instance has the element's properties, see
+'Data.Shroom.Class.Surveyable.everyHolds'.
 -}
 instance (Describable a) => Describable (Set a) where
   describeType _ = "A set of distinct values of the following type: " <> describeType (Proxy @a)
@@ -245,10 +239,8 @@ instance (Describable a) => Describable (Set a) where
 
 {- | An optional value, described through its element type.
 
-Does not lift the element's properties: they are neither described nor checked
-for the container. Use 'Data.Shroom.Class.Surveyable.everyHolds' and 'Data.Shroom.Class.Surveyable.describeEvery' by hand for now; a
-derivable version is tracked in
-<https://github.com/turion/shroom/issues/18 issue #18>.
+Its 'Data.Shroom.Class.Surveyable.Surveyable' instance has the element's properties, see
+'Data.Shroom.Class.Surveyable.everyHolds'.
 -}
 instance (Describable a) => Describable (Maybe a) where
   describeType _ = "A value that may be absent (null), and otherwise of the following type: " <> describeType (Proxy @a)

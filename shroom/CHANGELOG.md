@@ -68,11 +68,23 @@ type.
   bare instance needs `SOP.Generic` and `SOP.HasDatatypeInfo` for `X` (and `generics-sop` in your
   `build-depends`) or the one-line opt-out `type Property X = Void`, and a custom `Property` must now
   write both `propertyHolds` and `describeProperties`. `shroom-class`'s changelog has the migration
-  note, the compile error to search for, and what container fields do (nothing yet).
+  note, the compile error to search for, and what container fields do (they now have their
+  elements' properties, see the next entry).
+* **Breaking: container fields have their elements' properties, and `Promptable` of `[a]`,
+  `NonEmpty a`, `Set a` and `Maybe a` now needs `Surveyable a`** (it was `Describable a`; the
+  `Surveyable` instances of the four need it too). A bare prompt of such a container, and a container
+  field of a type with the structural default, tells the model the element's properties under a
+  label ("Every element: …", "If present: …") and checks them on every element, so a reply that was
+  accepted before can get a repair turn. An element type that has only a `Describable` instance
+  needs a `Surveyable` one (`type Property X = Void` is enough). A type recursive through a
+  container now needs the opt-out of the next entry. `shroom-class`'s changelog has the details.
 * **Breaking: a directly or mutually recursive type with a bare `instance Surveyable X` hangs**
   before any request is sent, on every backend, because the structural default enumerates its
-  properties forever (e.g. `data Expr = Lit Int | Neg Expr`). Opt out with
-  `type Property X = Void` or a custom `Property`; `shroom-class`'s changelog has the details. (A
+  properties forever (e.g. `data Expr = Lit Int | Neg Expr`, or `data Tree = Node [Tree]`: a
+  container carries its element's properties, so recursion under a list, `NonEmpty`, `Set` or
+  `Maybe` counts as direct recursion). Opt out with
+  `type Property X = Void` or a custom `Property`; `shroom-class`'s changelog has the details, and
+  the pattern that keeps the type's other properties. (A
   recursive schema is in any case rejected by Claude.)
 * **Breaking: the new base-type `Promptable` instances can overlap yours.** `Promptable` now has
   instances for `Text`, `Int`, `Integer`, `Natural`, `Double`, `Float`, `Bool`, `Char`, `UTCTime`,
