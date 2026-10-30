@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+* **`Data.Shroom.Class` is split into a module per class; it still exports everything.** The new
+  `Data.Shroom.Class.Describable` holds the class `Describable`, its helpers (`Described`, `reach`,
+  `reachableTypes`) and every `Describable` instance; `Data.Shroom.Class.Surveyable` holds the class
+  `Surveyable`, `typeProperties`, every `Surveyable` instance, `everyHolds` and `describeEvery`,
+  `Structural` and its machinery, `PropertyDefault`, and `description`. `Data.Shroom.Class` now
+  defines nothing and re-exports these two modules and `Data.Shroom.Class.PropertyCheck`, so
+  every name it exported before is still exported from it and no import has to change. Nothing
+  behaves differently. One visible difference: the name in the compile error for a custom
+  `Property` that leaves out a method (see below) is now `Data.Shroom.Class.Surveyable.$dm…`.
 * **New: a property as a value, `PropertyCheck a`, in the new module `Data.Shroom.Class.PropertyCheck`
   (re-exported by `Data.Shroom.Class`).** `PropertyCheck {description :: Maybe Text, holds :: a ->
   Bool}` is one property: what the model is told (`Nothing`: left out of the prompt's property list)
@@ -123,7 +132,7 @@
 
   ```
   No instance for ‘PropertyDefault XProperty X’
-    arising from a use of ‘Data.Shroom.Class.$dmdescribeProperties’
+    arising from a use of ‘Data.Shroom.Class.Surveyable.$dmdescribeProperties’
   ```
 
   (`$dmpropertyHolds` when `propertyHolds` is the one missing). Write the method; for an informal
