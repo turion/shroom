@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Main (main) where
@@ -717,6 +718,34 @@ main =
           , violations "a valid value violates nothing" 0 (Registration (Name "Ada") (Email "ada@example.org"))
           , violations "an own property violation is found" 1 (Registration (Name "Ada") (Email "bob@example.org"))
           , violations "a field property violation is found" 1 (Registration (Name "") (Email "ada@example.org"))
+          ]
+      , testGroup
+          "PropertyCheck"
+          [ testCase "description lists the described properties in universe order and leaves the undescribed one out" $ do
+              let propertySection = takeWhile (T.isPrefixOf "- ") $ drop 1 $ dropWhile (/= "The following properties MUST hold in your response:") $ T.lines $ description (Proxy @Registration)
+              propertySection
+                @?= [ "- The email address must contain the registrant's name."
+                    , "- Field registrationName: The name must not be empty."
+                    , "- Field registrationEmail: The email address is not empty."
+                    , "- Field registrationEmail: The email address must contain an '@' character."
+                    ]
+          , testCase "typeProperties has one entry per element of the universe, described and checked like it" $ do
+              let checks = typeProperties @Registration
+                  values = [Registration (Name "Ada") (Email "ada@example.org"), Registration (Name "") (Email "ada@example.org"), Registration (Name "Ada") (Email "bob")]
+              length checks @?= length (universe @(Property Registration))
+              length checks @?= 5
+              [c.description | c <- checks] @?= [describeProperties (Proxy @Registration) p | p <- universe]
+              mapM_ (\v -> [c.holds v | c <- checks] @?= [propertyHolds v p | p <- universe]) values
+          , testCase "propertyLines gives a line per described property, in order, and none for an undescribed one" $ do
+              propertyLines [PropertyCheck {description = Just "The number should be even", holds = even}, PropertyCheck Nothing (const True), PropertyCheck (Just "The number should be positive") (> (0 :: Int))]
+                @?= ["- The number should be even", "- The number should be positive"]
+              propertyLines ([] :: [PropertyCheck Int]) @?= []
+          , testCase "PropertyCheck is built by record syntax next to the description function" $ do
+              let c = PropertyCheck {description = Just "The number should be even", holds = even} :: PropertyCheck Int
+              c.description @?= Just "The number should be even"
+              assertBool "even 4 holds" (c.holds 4)
+              assertBool "even 3 does not hold" (not (c.holds 3))
+              assertBool "the description function is still callable" ("A whole number." `T.isInfixOf` description (Proxy @Int64))
           ]
       ]
   where

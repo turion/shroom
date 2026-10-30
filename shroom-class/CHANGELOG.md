@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+* **New: a property as a value, `PropertyCheck a`, in the new module `Data.Shroom.Class.PropertyCheck`
+  (re-exported by `Data.Shroom.Class`).** `PropertyCheck {description :: Maybe Text, holds :: a ->
+  Bool}` is one property: what the model is told (`Nothing`: left out of the prompt's property list)
+  and the check. The module has `NoFieldSelectors`, so the field `description` does not clash with
+  the `description` function; read a field with `OverloadedRecordDot` (`c.description`, `c.holds`).
+  Record construction next to the `description` function needs `GHC2024` or
+  `DisambiguateRecordFields`; under `Haskell2010` or `GHC2021` build it positionally,
+  `PropertyCheck (Just "…") check`. Also new: `typeProperties :: Surveyable a => [PropertyCheck a]`,
+  one entry per element of `universe @(Property a)` with `describeProperties`'s description and the
+  check `propertyHolds`, and `propertyLines :: [PropertyCheck a] -> [Text]`, the `"- <description>"`
+  lines of a list of properties, leaving out an undescribed one. `description` draws its property
+  section from `propertyLines typeProperties`; its output is unchanged.
 * **New: `description` also describes every type reachable from the requested one, once each.**
   After the examples it appends a section ("The types above refer to the following types:") with,
   for each type reachable through the new `Describable` method `referencedTypes`, a header line
@@ -92,8 +104,8 @@
 * **Breaking: a directly or mutually recursive type with a bare `instance Surveyable X` hangs.**
   With the structural default, `universe @(Structural X)` never ends for a type with a field of its
   own type that is not under a list, `NonEmpty` or `Maybe` (`data Expr = Lit Int | Neg Expr`), or
-  that reaches itself through another type's bare instance. `description` and the checks that
-  enumerate the properties (`violatedProperties` in `shroom`) then run forever, in `shroom` before
+  that reaches itself through another type's bare instance. `description` and shroom's retry loop
+  (which enumerate the properties) then run forever, in `shroom` before
   any request is sent and on every backend; under the old `Void` default such a type worked. Opt out
   on the recursive type with `instance Surveyable X where type Property X = Void`, or give it a
   custom `Property` that does not contain `Structural X`. No attempt is made to make `Universe`
