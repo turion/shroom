@@ -78,6 +78,16 @@ type.
   accepted before can get a repair turn. An element type that has only a `Describable` instance
   needs a `Surveyable` one (`type Property X = Void` is enough). A type recursive through a
   container now needs the opt-out of the next entry. `shroom-class`'s changelog has the details.
+* **Behaviour change: a property whose `describeProperties` is `Nothing` is now enforced.** Until
+  now the retry loop and `improve` checked a reply against the described properties only, so a
+  property without a description was never enforced, whatever its `propertyHolds` said. Every
+  property is checked now: a reply that breaks one is retried, its repair message adds a line
+  saying that a property without a description was violated (the described ones are worded as
+  before), and once the retries are spent the request fails with "Property validation failed",
+  and an `improve` reply with a `fine` verdict about such a value is not accepted. So a request
+  that succeeded before can now fail. A user who wrote `Nothing` to switch a property off must
+  return `True` from `propertyHolds` instead; `Nothing` now only keeps a property out of the
+  prompt.
 * **Breaking: a directly or mutually recursive type with a bare `instance Surveyable X` hangs**
   before any request is sent, on every backend, because the structural default enumerates its
   properties forever (e.g. `data Expr = Lit Int | Neg Expr`, or `data Tree = Node [Tree]`: a

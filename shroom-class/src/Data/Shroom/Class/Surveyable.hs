@@ -223,7 +223,8 @@ class (Describable a, Universe (Property a)) => Surveyable a where
   propertyHolds = defaultHolds
 
   {- | Human-readable description of a property, used in the prompt.
-    May be 'Nothing' if you don't wish to describe it.
+    May be 'Nothing' if you don't wish to describe it; the property is
+    still checked by 'propertyHolds'.
 
     Defaults like 'propertyHolds': for the 'Structural' properties of the fields
     if 'Property' is its default, for no property at all if it is 'Void', and

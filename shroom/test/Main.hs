@@ -303,6 +303,24 @@ instance Surveyable Profile where
   describeProperties _ ProfileEmailNotEmpty = Just "The email address is not empty."
 deriving via Generically Profile instance Promptable Profile
 
+-- | The property of a 'Voucher' that should hold, which the model is not told about.
+data VoucherProperty = VoucherCodeNotEmpty
+  deriving stock (Bounded, Enum, Eq, Show)
+  deriving anyclass (Universe)
+
+{- | A voucher with a code, whose code must not be empty. The property has no
+description ('Nothing'), so the model is not told about it, but it is checked.
+-}
+newtype Voucher = Voucher {voucherCode :: Text}
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Voucher where describeType _ = "A voucher with a code."
+instance Surveyable Voucher where
+  type Property Voucher = VoucherProperty
+  propertyHolds v VoucherCodeNotEmpty = not (T.null (voucherCode v))
+  describeProperties _ VoucherCodeNotEmpty = Nothing
+
 -- | A measurement whose length field has its own scoped 'prompt' (see 'Metric').
 data Measurement = Measurement
   { measurementLength :: Metric
@@ -830,6 +848,36 @@ main =
                     Left err -> assertContains "The email address is not empty." err
                     Right r -> assertFailure ("expected a failure, got " <> show r)
                   readIORef seen >>= (@?= 2) . length
+              , testCase "a fine reply about a value breaking only an undescribed property is not accepted" $ do
+                  responses <-
+                    newIORef
+                      ( [ "{\"verdict\":\"fine\",\"value\":{\"voucherCode\":\"\"}}"
+                        , "{\"verdict\":\"improved\",\"value\":{\"voucherCode\":\"SPRING\"}}"
+                        ] ::
+                          [Text]
+                      )
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.improve (Voucher "")
+                  result @?= Right (Just (Voucher "SPRING"))
+                  calls <- readIORef seen
+                  length calls @?= 2
+                  let (ctx1, _, _) = calls !! 1
+                  assertContains "Violated properties:" ctx1
+                  assertContains "- A property without a description was violated." ctx1
+              , testCase "a fine reply about a value breaking only an undescribed property is an error once retries run out" $ do
+                  responses <- newIORef (["{\"verdict\":\"fine\"}"] :: [Text])
+                  seen <- newIORef ([] :: [(Text, Text, Value)])
+                  result <-
+                    Eff.runPromptResultEff (recordingBackend responses seen) (defaultPromptConfig {maxRetries = 1}) $
+                      Eff.improve (Voucher "")
+                  case result of
+                    Left err -> do
+                      assertContains "Property validation failed:" err
+                      assertContains "- A property without a description was violated." err
+                    Right r -> assertFailure ("expected a failure, got " <> show r)
+                  readIORef seen >>= (@?= 2) . length
               , testCase "the scoped message is not persisted; the raw reply is" $ do
                   responses <-
                     newIORef
@@ -1138,6 +1186,53 @@ main =
                   assertNotContains "Violated properties" (seen !! 0)
                   assertContains "Violated properties:" (seen !! 1)
                   assertContains "- Field guestUser: The email address is not empty." (seen !! 1)
+              , testCase "a reply breaking only an undescribed property is retried, and the correction says so" $ do
+                  responses <-
+                    newIORef
+                      [ "{\"voucherCode\":\"\"}"
+                      , "{\"voucherCode\":\"SPRING\"}"
+                      ]
+                  seenContexts <- newIORef ([] :: [Text])
+                  let cfg = SeqMockConfig responses seenContexts
+                  result <-
+                    Eff.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.promptSingle @Voucher
+                  result @?= Right (Voucher "SPRING")
+                  seen <- readIORef seenContexts
+                  length seen @?= 2
+                  assertNotContains "Violated properties" (seen !! 0)
+                  assertContains "Violated properties:" (seen !! 1)
+                  assertContains "- A property without a description was violated." (seen !! 1)
+              , testCase "an undescribed property is not listed in the type description" $ do
+                  assertNotContains "The following properties MUST hold" (description (Proxy @Voucher))
+              , testCase "a reply that keeps breaking an undescribed property fails once retries run out" $ do
+                  responses <- newIORef (repeat "{\"voucherCode\":\"\"}")
+                  seenContexts <- newIORef ([] :: [Text])
+                  let cfg = SeqMockConfig responses seenContexts
+                  result <-
+                    Eff.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.promptSingle @Voucher
+                  case result of
+                    Left err -> do
+                      assertContains "Property validation failed:" err
+                      assertContains "- A property without a description was violated." err
+                    Right r -> assertFailure ("expected a failure, got " <> show r)
+                  -- 1 original + 2 retries
+                  readIORef seenContexts >>= (@?= 3) . length
+              , testCase "a described violation is worded as before, with no line about undescribed properties" $ do
+                  responses <-
+                    newIORef
+                      [ "{\"userName\":\"Alice\",\"userEmail\":\"\"}"
+                      , "{\"userName\":\"Alice\",\"userEmail\":\"alice@example.com\"}"
+                      ]
+                  seenContexts <- newIORef ([] :: [Text])
+                  let cfg = SeqMockConfig responses seenContexts
+                  _ <-
+                    Eff.runPromptResultEff (seqMockBackend cfg) (defaultPromptConfig {maxRetries = 2}) $
+                      Eff.promptSingle @User
+                  seen <- readIORef seenContexts
+                  assertContains "- The email address is not empty." (seen !! 1)
+                  assertNotContains "without a description" (seen !! 1)
               , testCase "the class method prompts a bare Text and a [Int]" $ do
                   textResponses <- newIORef ["\"hello\""]
                   textSeen <- newIORef ([] :: [Text])
