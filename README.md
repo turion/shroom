@@ -138,6 +138,9 @@ Describable          — describeType: one sentence (auto-derived from Haddock)
     `Either MyProperty (Structural MyType)`, see `Data.Shroom.Class`
   - `examples` — sample values to include in the prompt
 
+  A type's properties are fixed by its instance. A single call can add properties of its own, see
+  [Properties passed at the call](#properties-passed-at-the-call).
+
 - **`Promptable`** — a single method,
   `prompt :: (Prompt :> es, State [ContextItem] :> es) => Eff es a`,
   the `effectful` program that requests a value of the type from the LLM.
@@ -145,7 +148,10 @@ Describable          — describeType: one sentence (auto-derived from Haddock)
   `RequestPrompt`, which renders the prompt from the type's description, properties and examples,
   annotated with JSON field types, and never consults the type's `Promptable` instance.
   `instance Promptable MyType` with no body is the normal case; override `prompt` to add
-  type-specific context, fallback logic, or any other custom program.
+  type-specific context, fallback logic, or any other custom program. Such a strategy never sees the
+  properties a call passes (`promptSingleChecked` and friends, see
+  [Properties passed at the call](#properties-passed-at-the-call)); that section also shows how to
+  enforce them on a type with its own strategy.
 
 ## Prompting a type part by part
 
@@ -218,6 +224,83 @@ leak to sibling branches or to subsequent steps in the chain.
 - For fine-grained control, `addContextItem` and `withContextItem` accept
   `ContextItem` values (`SystemMessage`, `UserMessage`, or `AssistantMessage`)
   directly, letting you build structured multi-turn conversation history.
+
+## Properties passed at the call
+
+A type's own properties are fixed by its `Surveyable` instance. Sometimes only the call knows a
+property: which values a field may take depends on what the program was given. A `PropertyCheck a`
+is one such property as a value, the text the model is told (`description :: Maybe Text`) and the
+check (`holds :: a -> Bool`). A call passes a list of them with `promptSingleChecked ps`,
+`promptToolsChecked ps tools` or `improveChecked ps x` from `Control.Monad.Prompt.Effect`, which
+re-exports `PropertyCheck (..)`; `promptSingle`, `promptTools` and `improve` are these with `[]`.
+A reply that breaks one is repaired and retried, within the same `maxRetries` budget as for the
+type's own properties. (`promptToolsChecked` checks the final reply only; tool arguments are not
+validated against the properties.)
+
+An example in the shape of a real call: a record with a `kehrbezirk` field, which must be one of
+the Kennungen the program was given.
+
+```haskell
+data Besuch = Besuch { kehrbezirk :: Text, bemerkung :: Text }  -- derived like `User` above
+
+nurDieseKennungen :: [Text] -> PropertyCheck Besuch
+nurDieseKennungen kennungen =
+  PropertyCheck
+    { description = Just ("kehrbezirk must be one of: " <> T.intercalate ", " kennungen)
+    , holds = \b -> kehrbezirk b `elem` kennungen
+    }
+
+-- … in the Eff program, with `kennungen :: [Text]` in scope:
+besuch <- promptSingleChecked @Besuch [nurDieseKennungen kennungen]
+```
+
+Record syntax needs `GHC2024` or `DisambiguateRecordFields` in the building module whenever
+`description` the function of `Data.Shroom.Class` is also in scope; without one it is an
+"Ambiguous occurrence", as in a package built with `Haskell2010` or `GHC2021`. There, build it
+positionally instead, the same value:
+
+```haskell
+PropertyCheck (Just ("kehrbezirk must be one of: " <> T.intercalate ", " kennungen))
+              (\b -> kehrbezirk b `elem` kennungen)
+```
+
+Reading a field of a `PropertyCheck`, as `c.holds`, needs `OverloadedRecordDot`; the guarded form
+below uses it.
+
+What the model is told. The type description keeps only the type's own properties, so it is the
+same text from call to call, and a backend that caches the prompt prefix stays valid. The call's
+properties go in a message of their own, sent after the context for that request only (a
+`withContext` message comes before it, and for `improveChecked` it follows the question), headed
+"For this request, the following properties MUST hold in addition to those in the type
+description:" with one `- <description>` line each. That message is not kept: the context left
+behind is the one before the request plus the reply. A property without a description
+(`description = Nothing`) is left out of the message, but still enforced. When it fails, the model
+is told in the repair message, as one line among the violated properties:
+`- A property without a description was violated.`, and the same line is in the final error
+(`Property validation failed:`) once the retries are spent.
+
+**With a type's own strategy.** For a type with the default strategy, `promptSingleChecked ps` is
+`prompt` plus the properties, in the same request. For one with its own strategy (a
+`deriving via Generically`, a hand-written `prompt`) it is not: `promptSingleChecked` is flat, so
+the strategy never sees the call's properties. A wrapper generic over `Promptable a` must therefore
+not switch from `prompt` to `promptSingleChecked`: for every type with its own strategy that
+silently skips the strategy. The way round is the guarded form: run the strategy, and ask
+`improveChecked` only if the value it produced breaks a call-site property:
+
+```haskell
+-- needs OverloadedRecordDot, for `c.holds`
+x <- prompt @T
+if all (\c -> c.holds x) ps
+  then pure x
+  else fromMaybe x <$> improveChecked ps x   -- fromMaybe from Data.Maybe
+```
+
+It costs one `improve` turn (plus its repairs, if the reply breaks a property) only when the
+strategy's value breaks a call-site property. In that branch `x` breaks a property, so
+`improveChecked` answers `Nothing` ("`x` is good as it is") only when `x` satisfies every property,
+which it does not here: in practice it returns `Just` a value that satisfies them all, and
+`fromMaybe x` just unwraps it totally. If the replies keep breaking a property past `maxRetries`,
+the call fails with the `Property validation failed:` error.
 
 ## Falling back with `orElse`
 
