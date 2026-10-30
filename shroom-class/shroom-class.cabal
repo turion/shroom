@@ -44,7 +44,9 @@ library
   exposed-modules:
     Control.Monad.Prompt.TH
     Data.Shroom.Class
+    Data.Shroom.Class.Describable
     Data.Shroom.Class.PropertyCheck
+    Data.Shroom.Class.Surveyable
 
   hs-source-dirs: src
   default-language: GHC2024
