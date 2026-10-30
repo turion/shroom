@@ -72,6 +72,7 @@ module Control.Monad.Prompt.Effect (
 -- base
 import Control.Monad.IO.Class (liftIO)
 import Data.Functor ((<&>))
+import Data.Maybe (catMaybes, isNothing)
 import Data.Proxy (Proxy (..))
 
 -- text
@@ -83,9 +84,6 @@ import Data.Aeson (FromJSON (..), Value, eitherDecodeStrictText, object, withObj
 
 -- openapi3
 import Data.OpenApi (ToSchema)
-
--- universe-base
-import Data.Universe.Class (universe)
 
 -- effectful
 import Effectful (Dispatch (Dynamic), DispatchOf, Eff, Effect, IOE, runEff, (:>))
@@ -105,7 +103,7 @@ import Control.Monad.Prompt.Backend (
  )
 import Control.Monad.Prompt.Schema (ToolDef, ToolDispatcher, encodeJson, schemaWithDefs)
 import Control.Monad.Prompt.Tool (ToolBinding (..), dispatchBindings)
-import Data.Shroom.Class (Surveyable, describeProperties, description, propertyHolds)
+import Data.Shroom.Class (PropertyCheck (..), Surveyable, description, typeProperties)
 
 -- * The Prompt effect
 
@@ -179,8 +177,10 @@ The reply goes through the same retry path as any request: an @improved@ value
 that fails to parse or violates a property is re-prompted. A @fine@ verdict
 is accepted only if the value passed in satisfies every 'Data.Shroom.Class.Property'
 of @a@; otherwise it is retried in just the same way, the correction message naming
-the violated properties. So 'Nothing' always means \"the original value is valid
-and the model is content with it\".
+the violated properties. A violated property without a description (see
+'Data.Shroom.Class.describeProperties') counts as much as any other; the correction
+then says so in one line. So 'Nothing' always means \"the original
+value is valid and the model is content with it\".
 
 'improve' is flat by construction: it never calls the type's own
 'Control.Monad.Prompt.Promptable.prompt', so a prompt strategy may call it
@@ -241,14 +241,17 @@ improveSchema prx =
     , "additionalProperties" .= False
     ]
 
--- | The descriptions of the properties of @a@ that a value does not satisfy.
-violatedProperties :: forall a. (Surveyable a) => a -> [Text]
-violatedProperties v =
-  [ desc
-  | p <- universe
-  , not (propertyHolds v p)
-  , Just desc <- [describeProperties (Proxy @a) p]
-  ]
+-- | The line that stands for every failed property without a description.
+undescribedViolation :: Text
+undescribedViolation = "A property without a description was violated."
+
+-- | The checks in the list that a value fails, described or not.
+failedChecks :: [PropertyCheck a] -> a -> [PropertyCheck a]
+failedChecks checks v = [c | c <- checks, not (c.holds v)]
+
+-- | What a failed check leaves for the retry loop: its description, if it has one.
+failedDescriptions :: [PropertyCheck a] -> a -> [Maybe Text]
+failedDescriptions checks v = fmap (\c -> c.description) (failedChecks checks v)
 
 {- | Run two programs concurrently via "Effectful.Concurrent.Async", returning
 both results. Parallelism is an explicit call here, rather than hiding
@@ -397,8 +400,8 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
             description prx
               <> "\nAnswer with a single JSON object: {\"verdict\": \"fine\", \"value\": <the given value, unchanged>} for a good value as it stands, "
               <> "or {\"verdict\": \"improved\", \"value\": <the corrected whole value>}.\n"
-          check VerdictFine = violatedProperties original
-          check (VerdictImproved v) = violatedProperties v
+          check VerdictFine = failedDescriptions (typeProperties @b) original
+          check (VerdictImproved v) = failedDescriptions (typeProperties @b) v
       let (toolDefs, dispatch, maxSteps) = noTools
       (verdict, rawTxt) <-
         attemptLoop toolDefs dispatch maxSteps (ctx <> [ask]) typeDesc (improveSchema prx) check (maxRetries promptCfg) (maxRetries promptCfg)
@@ -419,7 +422,7 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
       let prx = Proxy @b
           typeDesc = description prx
           schema = schemaWithDefs prx
-          checkProps = violatedProperties @b
+          checkProps = failedDescriptions (typeProperties @b)
       (a, rawTxt) <- attemptLoop toolDefs dispatch maxSteps ctx typeDesc schema checkProps (maxRetries promptCfg) (maxRetries promptCfg)
       put (ctx <> [AssistantMessage rawTxt])
       pure a
@@ -441,7 +444,7 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
       [ContextItem] ->
       Text ->
       Value ->
-      (c -> [Text]) ->
+      (c -> [Maybe Text]) ->
       Int ->
       Int ->
       Eff es (c, Text)
@@ -511,8 +514,11 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
                              ]
                   retry retryCtx typeDesc schema checkProps totalRetries (retriesLeft - 1)
             Right a ->
-              let failDescs = checkProps a
-               in if null failDescs
+              let failed = checkProps a
+                  -- what the model is told: the failed described properties as they
+                  -- are worded, then one line if any undescribed property failed
+                  failDescs = catMaybes failed <> [undescribedViolation | any isNothing failed]
+               in if null failed
                     then do
                       logDebug $ "✓ " <> rawTxt
                       pure (a, rawTxt)

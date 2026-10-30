@@ -41,7 +41,10 @@ data PropertyCheck a = PropertyCheck
   { description :: Maybe Text
   {- ^ What the model is told about this property, to help it create values
   that satisfy it, e.g. @Just "The number should be even"@. 'Nothing':
-  left out of the prompt's property list.
+  left out of the prompt's property list, but the property is still
+  checked: a reply that breaks it is retried and finally refused, with a
+  repair message that says a property without a description
+  was violated.
   -}
   , holds :: a -> Bool
   -- ^ Whether the property holds of a value, e.g. 'even'.
