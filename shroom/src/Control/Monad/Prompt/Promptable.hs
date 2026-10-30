@@ -144,6 +144,10 @@ gives 'Surveyable' instances: 'Text', 'Int', 'Integer', 'Int64', 'Word', 'Natura
 @'NonEmpty' a@, @'Set' a@ and @'Maybe' a@. Each uses the default 'prompt', so a bare value
 is requested like any other type, from its 'description'.
 
+A container instance needs @'Surveyable' a@ (not just 'Describable'): a bare prompt of a
+@[a]@ or @'Maybe' a@ tells the model the element's properties, with a label, and
+checks them on every element.
+
 They live in this module, next to the class, so they are not orphans.
 
 __Schema keywords Anthropic rejects.__ @openapi3@ renders some of these types
@@ -180,10 +184,10 @@ instance Promptable UTCTime
 
 instance Promptable Day
 
-instance (Describable a, ToSchema a, FromJSON a) => Promptable [a]
+instance (Surveyable a, ToSchema a, FromJSON a) => Promptable [a]
 
-instance (Describable a, ToSchema a, FromJSON a) => Promptable (NonEmpty a)
+instance (Surveyable a, ToSchema a, FromJSON a) => Promptable (NonEmpty a)
 
-instance (Describable a, ToSchema a, FromJSON a, Ord a) => Promptable (Set a)
+instance (Surveyable a, ToSchema a, FromJSON a, Ord a) => Promptable (Set a)
 
-instance (Describable a, ToSchema a, FromJSON a) => Promptable (Maybe a)
+instance (Surveyable a, ToSchema a, FromJSON a) => Promptable (Maybe a)

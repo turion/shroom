@@ -140,19 +140,22 @@ its measurements, where the cue and the earlier fields steer the later ones.
 
 A field of type @[a]@, @'NonEmpty' a@, @'Set' a@ or @'Maybe' a@ is prompted whole, in one
 request for the container (issue #24), through its flat 'Promptable' instance;
-the strategy does not go element by element. The properties of the elements are
-therefore not checked, nor told to the model, as for any container field (issue
-#18, see "Data.Shroom.Class").
+the strategy does not go element by element. The container still has the element's
+properties ('Surveyable'): the model is told them, labelled ("Every element: …", or
+"If present: …" for 'Maybe'), and the container's value is checked on every element.
+The instances need @'Surveyable' a@ for the element.
 
 == Recursive types hang, and fail against Claude
 
 A directly or mutually recursive type (@data Expr = Lit Int | Neg Expr@: a field
-of its own type that is not under a list, 'NonEmpty', 'Set' or 'Maybe', or one that
-reaches itself through another type's bare instance) with a bare
+of its own type, also under a list, 'NonEmpty', 'Set' or 'Maybe', since a container
+carries its element's properties; or one that reaches itself through another
+type's bare instance) with a bare
 @instance Surveyable@ hangs under the structural default, on every backend and
 before any request is sent: enumerating its structural 'Property' never ends.
 Such a type must opt out of the default with @type Property X = Void@ (or a custom
-'Property'), see 'Surveyable'.
+'Property'), see 'Surveyable', which also shows how to keep the other properties of a
+recursive type.
 
 Independently of that, Anthropic's structured outputs do not support recursive
 schemas. A type that mentions itself (a tree whose children are trees, say)

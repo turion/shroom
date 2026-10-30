@@ -112,13 +112,19 @@
     `generics-sop` instances. Or give that field type, or a newtype around it, its own instances.
 * **Breaking: a directly or mutually recursive type with a bare `instance Surveyable X` hangs.**
   With the structural default, `universe @(Structural X)` never ends for a type with a field of its
-  own type that is not under a list, `NonEmpty` or `Maybe` (`data Expr = Lit Int | Neg Expr`), or
-  that reaches itself through another type's bare instance. `description` and shroom's retry loop
-  (which enumerate the properties) then run forever, in `shroom` before
+  own type, also under a list, `NonEmpty`, `Set` or `Maybe` (`data Expr = Lit Int | Neg Expr`,
+  `data Tree = Node [Tree]`: a container carries its element's `Property`, see "Container fields"
+  below), or that reaches itself through another type's bare instance. `description` and shroom's
+  retry loop (which enumerate the properties) then run forever, in `shroom` before
   any request is sent and on every backend; under the old `Void` default such a type worked. Opt out
   on the recursive type with `instance Surveyable X where type Property X = Void`, or give it a
-  custom `Property` that does not contain `Structural X`. No attempt is made to make `Universe`
-  terminate.
+  custom `Property` that does not contain `Structural X`. To keep the type's other properties, name
+  the properties of its non-recursive fields and check the recursive field with `everyHolds`: for
+  `data Section = Section {heading :: Title, subsections :: [Section]}`, write
+  `type Property Section = Property Title` (which needs `UndecidableInstances`; the concrete
+  `TitleProperty` does not) with
+  `propertyHolds s p = propertyHolds (heading s) p && everyHolds (subsections s) p`; the `Surveyable`
+  Haddock shows it. No attempt is made to make `Universe` terminate.
 * **Breaking: the new base-type instances can overlap yours.** `Describable` and `Surveyable`
   instances now exist for `Text`, `Int`, `Integer`, `Natural`, `Double`, `Float`, `Bool`, `Char`,
   `UTCTime`, `Day`, `[a]`, `NonEmpty a` and `Maybe a`. A downstream package that already defines one
@@ -142,12 +148,24 @@
   to a type silently drops its fields' properties from the prompt and from validation. To keep both,
   combine them: `type Property X = Either XProperty (Structural X)`, with `structuralHolds` and
   `describeStructural` on the `Right` side; the `Surveyable` Haddock has the four equations.
-* **Container fields contribute no properties.** `[a]`, `NonEmpty a` and `Maybe a` have
-  `Property = Void` whatever `a` is, so under a bare instance the element properties of a `[Speaker]`
-  or `Maybe Name` field stay unchecked, and are not told to the model either, until container
-  lifting is derivable (<https://github.com/turion/shroom/issues/18>). Until then lift them with
-  `everyHolds`/`describeEvery` in a custom `Property` combined with `Structural X`, as the `Speakers`
-  example in `everyHolds`'s Haddock does.
+* **Breaking: container fields have their elements' properties, and the container instances need
+  `Surveyable a`.** The `Surveyable` instances of `[a]`, `NonEmpty a`, `Set a` and `Maybe a` now have
+  `Property (f a) = Property a`: each property of the element is told to the model under a label
+  ("Every element: …", for `Maybe` "If present: …") and checked on every element, vacuously for
+  `Nothing` and an empty container. So under a bare instance (the structural default), a
+  `[Speaker]` or `Maybe Name` field now contributes its element's properties to the type's
+  `description` and checks, as `Field speakers: Every element: …`. **A reply that was accepted
+  before can now fail a property of an element and get a repair turn.** The instances' context is
+  now `Surveyable a` instead of `Describable a`, so an element type that has only a `Describable`
+  instance (the field of a type with a bare `Surveyable` instance, or a bare `[Foo]`) needs a
+  `Surveyable` instance as well (`type Property Foo = Void` is enough). One definition, `everyHolds`
+  with `describeEvery` over any `Foldable`, backs the four, and a container of your own can call the
+  same two from its instance (`propertyHolds = everyHolds`, `describeProperties _ = describeEvery
+  "Every entry" (Proxy @a)`, with `type Property (Roster a) = Property a`). Nothing needs lifting by
+  hand any more: a hand-written lift of such a field combined with `Structural X` would tell and
+  check each element property twice. A type recursive through a
+  container needs the opt-out of the recursion entry above. Part of
+  <https://github.com/turion/shroom/issues/18>.
 * New: `Structural a` (with `structuralHolds`, `describeStructural`) and `PropertyOf`;
   `Describable`/`Surveyable` instances for `Text`, `Int`, `Integer`, `Natural`, `Double`, `Float`,
   `Bool`, `Char`, `UTCTime`, `Day`, `[a]`, `NonEmpty a` and `Maybe a`, so these can be fields of a

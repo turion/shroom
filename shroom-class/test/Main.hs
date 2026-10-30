@@ -7,7 +7,7 @@ module Main (main) where
 
 -- base
 import Data.Int (Int64)
-import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Maybe (fromMaybe)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable, typeRep)
@@ -209,6 +209,48 @@ instance Surveyable Registration where
   propertyHolds r (Right p) = structuralHolds r p
   describeProperties _ (Left RegistrationEmailMentionsName) = Just "The email address must contain the registrant's name."
   describeProperties px (Right p) = describeStructural px p
+
+-- | A guest list: a record with container fields, surveyed structurally by the default.
+data Guests = Guests
+  { guestsHost :: Name
+  , guestsInvited :: [Name]
+  , guestsPlusOne :: Maybe Name
+  }
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Guests where
+  describeType _ = "A guest list."
+
+instance Surveyable Guests
+
+-- | A 'Foldable' container of a user, which has the properties of its elements through 'everyHolds' and 'describeEvery'.
+newtype Roster a = Roster [a]
+  deriving stock (Eq, Ord, Show, Generic, Foldable)
+  deriving anyclass (ToJSON)
+
+instance (Describable a) => Describable (Roster a) where
+  describeType _ = "A roster."
+
+instance (Surveyable a) => Surveyable (Roster a) where
+  type Property (Roster a) = Property a
+  propertyHolds = everyHolds
+  describeProperties _ = describeEvery "Every entry" (Proxy @a)
+
+{- | A recursive type that opts out of the structural default and keeps the
+properties of its heading, checked on every subsection too.
+-}
+data Section = Section {heading :: Name, subsections :: [Section]}
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON)
+
+instance Describable Section where
+  describeType _ = "A section."
+
+instance Surveyable Section where
+  type Property Section = NameProperty
+  propertyHolds s p = propertyHolds (heading s) p && everyHolds (subsections s) p
+  describeProperties _ = describeProperties (Proxy @Name)
 
 -- * Reachable types
 
@@ -718,6 +760,59 @@ main =
           , violations "a valid value violates nothing" 0 (Registration (Name "Ada") (Email "ada@example.org"))
           , violations "an own property violation is found" 1 (Registration (Name "Ada") (Email "bob@example.org"))
           , violations "a field property violation is found" 1 (Registration (Name "") (Email "ada@example.org"))
+          ]
+      , testGroup
+          "containers have the properties of their elements"
+          [ testCase "Maybe: the element's property is told with the label \"If present\"" $
+              describeProperties (Proxy @(Maybe Name)) NameNotEmpty @?= Just "If present: The name must not be empty."
+          , testCase "Maybe: an undescribed element property stays undescribed" $
+              describeProperties (Proxy @(Maybe Name)) NameIsReal @?= Nothing
+          , testCase "Maybe: the property holds vacuously on Nothing, and on a Just where it holds" $ do
+              propertyHolds (Nothing :: Maybe Name) NameNotEmpty @?= True
+              propertyHolds (Just (Name "Ada")) NameNotEmpty @?= True
+          , testCase "Maybe: the property fails on a Just that violates it" $
+              propertyHolds (Just (Name "")) NameNotEmpty @?= False
+          , testCase "list: the element's property is told with the label \"Every element\"" $
+              describeProperties (Proxy @[Name]) NameNotEmpty @?= Just "Every element: The name must not be empty."
+          , testCase "list: the property holds vacuously on [], and when it holds for every element" $ do
+              propertyHolds ([] :: [Name]) NameNotEmpty @?= True
+              propertyHolds [Name "Ada", Name "Alan"] NameNotEmpty @?= True
+          , testCase "list: the property fails when one element fails" $
+              propertyHolds [Name "Ada", Name "", Name "Alan"] NameNotEmpty @?= False
+          , testCase "NonEmpty and Set use the same label and check every element" $ do
+              describeProperties (Proxy @(NonEmpty Name)) NameNotEmpty @?= Just "Every element: The name must not be empty."
+              describeProperties (Proxy @(S.Set Name)) NameNotEmpty @?= Just "Every element: The name must not be empty."
+              propertyHolds (Name "Ada" :| [Name ""]) NameNotEmpty @?= False
+              propertyHolds (S.fromList [Name "Ada", Name "Alan"]) NameNotEmpty @?= True
+              propertyHolds (S.fromList [Name "Ada", Name ""]) NameNotEmpty @?= False
+          , testCase "the properties of a container are its element's, in the same universe" $ do
+              universe @(Property (Maybe Name)) @?= universe @(Property Name)
+              universe @(Property [Name]) @?= universe @(Property Name)
+          , testCase "a container of an element without properties has none" $ do
+              length (typeProperties @[Int]) @?= 0
+              length (typeProperties @(Maybe Int)) @?= 0
+          , contains "a container field under the structural default lists the host's property" (description (Proxy @Guests)) "- Field guestsHost: The name must not be empty."
+          , contains "a list field under the structural default lists the element's property" (description (Proxy @Guests)) "- Field guestsInvited: Every element: The name must not be empty."
+          , contains "a Maybe field under the structural default lists the element's property" (description (Proxy @Guests)) "- Field guestsPlusOne: If present: The name must not be empty."
+          , testCase "a type with container fields and the structural default checks every element" $ do
+              let guests = Guests (Name "Ada") [Name "Alan", Name "Grace"] (Just (Name "Edsger"))
+                  violated g = length [() | c <- typeProperties @Guests, not (c.holds g)]
+              violated guests @?= 0
+              violated guests {guestsInvited = [Name "Alan", Name ""]} @?= 1
+              violated guests {guestsPlusOne = Just (Name "")} @?= 1
+              violated guests {guestsInvited = [], guestsPlusOne = Nothing} @?= 0
+              violated guests {guestsHost = Name ""} @?= 1
+          , testCase "a Foldable container of one's own uses everyHolds and describeEvery the same way" $ do
+              describeProperties (Proxy @(Roster Name)) NameNotEmpty @?= Just "Every entry: The name must not be empty."
+              propertyHolds (Roster [] :: Roster Name) NameNotEmpty @?= True
+              propertyHolds (Roster [Name "Ada", Name ""]) NameNotEmpty @?= False
+          , testCase "a recursive type opting out of the structural default keeps its heading's properties on every subsection" $ do
+              let ok = Section (Name "Intro") [Section (Name "Background") [], Section (Name "Method") [Section (Name "Data") []]]
+                  bad = Section (Name "Intro") [Section (Name "Method") [Section (Name "") []]]
+              length (typeProperties @Section) @?= 2
+              propertyLines (typeProperties @Section) @?= ["- The name must not be empty."]
+              propertyHolds ok NameNotEmpty @?= True
+              propertyHolds bad NameNotEmpty @?= False
           ]
       , testGroup
           "PropertyCheck"
