@@ -84,14 +84,17 @@ with no program layer attached, to feed shikumi's own instruction and
 validation machinery. Keep it that way: an import of @Control.Monad.Prompt@
 here would put the program layer back in C3's way.
 -}
-module Data.Shroom.Class (module Data.Shroom.Class) where
+module Data.Shroom.Class (
+  module Data.Shroom.Class,
+  PropertyCheck (..),
+  propertyLines,
+) where
 
 -- base
 
 import Data.Int (Int64)
 import Data.Kind (Type)
 import Data.List.NonEmpty (NonEmpty)
-import Data.Maybe (mapMaybe)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (TypeRep, Typeable, typeRep)
 import Data.Void (Void, absurd)
@@ -126,6 +129,9 @@ import Data.Universe.Class (Universe, universe)
 
 -- generics-sop
 import Generics.SOP (All, All2, Code, ConstructorInfo (..), FieldInfo (..), Generic, HasDatatypeInfo (..), I (..), K (..), NP (..), NS (..), SList (..), constructorInfo, constructorName, from, hcollapse, hmap, lengthSList, sList, unSOP)
+
+-- shroom-class
+import Data.Shroom.Class.PropertyCheck (PropertyCheck (..), propertyLines)
 
 -- * Describable
 
@@ -327,7 +333,7 @@ default. \"Directly recursive\" means a field of its own type that is not under 
 list, 'NonEmpty' or 'Maybe', like the @Neg Expr@ in @data Expr = Lit Int | Neg
 Expr@; \"mutually recursive\" means the same through another type's bare
 instance. Enumerating the structural 'Property' (its 'Universe') of such a type
-never ends, and 'description' and @violatedProperties@ (in @shroom@) enumerate
+never ends, and 'description' and shroom's retry loop enumerate
 it, so with a bare @instance Surveyable Expr@ they run forever, in @shroom@
 before any request is sent and on every backend. (Under the former @Void@
 default this worked.) Opt out on the recursive type with
@@ -384,6 +390,13 @@ class (Describable a, Universe (Property a)) => Surveyable a where
   -}
   examples :: Proxy a -> Set a
   examples _ = S.empty
+
+{- | Every property of @a@ as a 'PropertyCheck': one entry per element of
+'universe' of 'Property', in its order, with the description
+'describeProperties' gives and the check 'propertyHolds' makes.
+-}
+typeProperties :: forall a. (Surveyable a) => [PropertyCheck a]
+typeProperties = [PropertyCheck (describeProperties (Proxy @a) p) (`propertyHolds` p) | p <- universe @(Property a)]
 
 -- * Base types
 
@@ -791,7 +804,7 @@ a type without references renders as before. Types with 'hasOwnSection' 'False'
 (the base types and the containers) get no entry, and a hand-written instance
 that does not write 'referencedTypes' contributes none.
 -}
-description :: (Surveyable a, ToSchema a) => Proxy a -> Text
+description :: forall a. (Surveyable a, ToSchema a) => Proxy a -> Text
 description p =
   T.unlines $
     [ ""
@@ -808,12 +821,10 @@ description p =
       | otherwise =
           "The types above refer to the following types:"
             : concatMap (\(Described q) -> ["", T.pack (show (typeRep q)) <> ":", describeType q]) reachable
-    propDescs = mapMaybe (describeProperties p) universe
+    propLines = propertyLines (typeProperties @a)
     propSection
-      | null propDescs = []
-      | otherwise =
-          "The following properties MUST hold in your response:"
-            : fmap ("- " <>) propDescs
+      | null propLines = []
+      | otherwise = "The following properties MUST hold in your response:" : propLines
     examplesSection
       | S.null (examples p) = []
       | otherwise =
