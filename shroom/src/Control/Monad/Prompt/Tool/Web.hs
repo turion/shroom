@@ -45,7 +45,6 @@ import GHC.Generics (Generic)
 import Data.Vector qualified as V
 
 -- containers
-import Data.Set qualified as S
 
 -- openapi3
 import Data.OpenApi (ToSchema)
@@ -114,10 +113,9 @@ instance Surveyable WebFetch where
   propertyHolds (WebFetch url) WebFetchUrlSafeChars =
     T.all (\c -> isAlphaNum c || c `elem` ("-._~:/?#[]@!$&'()*+,;=%" :: String)) url
   examples _ =
-    S.fromList
-      [ WebFetch "https://example.com"
-      , WebFetch "https://en.wikipedia.org/wiki/Haskell_%28programming_language%29"
-      ]
+    [ WebFetch "https://en.wikipedia.org/wiki/Haskell_%28programming_language%29"
+    , WebFetch "https://example.com"
+    ]
 
 instance Promptable WebFetch
 
@@ -208,10 +206,9 @@ instance Surveyable DuckDuckGoSearch where
   propertyHolds (DuckDuckGoSearch q) DuckDuckGoSearchQuerySafeChars =
     T.all (\c -> isAlphaNum c || c `elem` (" .,'-" :: String)) q
   examples _ =
-    S.fromList
-      [ DuckDuckGoSearch "Haskell programming language"
-      , DuckDuckGoSearch "Simon Peyton Jones"
-      ]
+    [ DuckDuckGoSearch "Haskell programming language"
+    , DuckDuckGoSearch "Simon Peyton Jones"
+    ]
 
 instance Promptable DuckDuckGoSearch
 
@@ -297,10 +294,9 @@ instance Surveyable WikipediaSearch where
   propertyHolds (WikipediaSearch q) WikipediaSearchQuerySafeChars =
     T.all (\c -> isAlphaNum c || c `elem` (" .,'-" :: String)) q
   examples _ =
-    S.fromList
-      [ WikipediaSearch "Haskell monad tutorial"
-      , WikipediaSearch "functional programming"
-      ]
+    [ WikipediaSearch "Haskell monad tutorial"
+    , WikipediaSearch "functional programming"
+    ]
 
 instance Promptable WikipediaSearch
 

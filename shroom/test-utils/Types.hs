@@ -21,7 +21,6 @@ import Data.OpenApi (ToSchema)
 import Generics.SOP qualified as SOP
 
 -- containers
-import Data.Set qualified as S
 
 -- universe-base
 import Data.Universe.Class (Universe)
@@ -74,7 +73,7 @@ instance Promptable User
 $(deriveDescribable ''Counter)
 
 instance Surveyable Counter where
-  examples _ = S.singleton (Counter 0)
+  examples _ = [Counter 0]
 
 instance Promptable Counter
 

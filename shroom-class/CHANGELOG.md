@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+* **Breaking: `examples` returns a list, `examples :: Proxy a -> [a]` (it was `Set a`).** Migrate
+  each definition by dropping the `Set`: `S.fromList xs` becomes `xs` and `S.singleton x` becomes
+  `[x]`. The examples are now shown in the order given, neither sorted nor deduplicated (a `Set`
+  sorted them by `Ord`; keep that order to leave the rendered prompt as it was), and they need no
+  `Ord`. Why: a `Set` is nominal in its element and cannot be coerced, so a newtype's `Surveyable`
+  instance could not be derived by `deriving via`; a list can. It is also the first half of
+  connect's R7, the request of one example at a time, which is still to come.
 * **`Data.Shroom.Class` is split into a module per class; it still exports everything.** The new
   `Data.Shroom.Class.Describable` holds the class `Describable`, its helpers (`Described`, `reach`,
   `reachableTypes`) and every `Describable` instance; `Data.Shroom.Class.Surveyable` holds the class

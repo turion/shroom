@@ -27,7 +27,6 @@ import Numeric.Natural (Natural)
 
 -- containers
 import Data.Set (Set)
-import Data.Set qualified as S
 
 -- text
 import Data.Text (Text)
@@ -234,11 +233,12 @@ class (Describable a, Universe (Property a)) => Surveyable a where
   default describeProperties :: (PropertyDefault (Property a) a) => Proxy a -> Property a -> Maybe Text
   describeProperties = defaultDescribe
 
-  {- | Representative example values.  Included in the prompt when non-empty.
-    Defaults to the empty set.
+  {- | Representative example values.  Included in the prompt when non-empty, in the
+    order given: they are neither sorted nor deduplicated, and need no 'Ord'.
+    Defaults to none.
   -}
-  examples :: Proxy a -> Set a
-  examples _ = S.empty
+  examples :: Proxy a -> [a]
+  examples _ = []
 
 {- | Every property of @a@ as a 'PropertyCheck': one entry per element of
 'universe' of 'Property', in its order, with the description
@@ -338,7 +338,7 @@ instance (Surveyable a, ToJSON (Generically a)) => Surveyable (Generically a) wh
   type Property (Generically a) = Property a
   propertyHolds (Generically x) = propertyHolds x
   describeProperties _ = describeProperties (Proxy @a)
-  examples _ = S.mapMonotonic Generically (examples (Proxy @a))
+  examples _ = Generically <$> examples (Proxy @a)
 
 -- * Property machinery
 
@@ -609,10 +609,10 @@ description p =
       | null propLines = []
       | otherwise = "The following properties MUST hold in your response:" : propLines
     examplesSection
-      | S.null (examples p) = []
+      | null (examples p) = []
       | otherwise =
           "Example valid JSON responses:"
-            : (toStrict . decodeUtf8 . encode <$> S.toList (examples p))
+            : (toStrict . decodeUtf8 . encode <$> examples p)
 
 {- | For each @"- fieldName: doc"@ line in the type description, look up
 @fieldName@ in the OpenAPI schema's @properties@ map and insert the JSON

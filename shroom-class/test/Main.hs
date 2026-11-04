@@ -114,7 +114,7 @@ instance Surveyable Email where
   propertyHolds email EmailHasAtSign = T.elem '@' (emailAddress email)
   describeProperties _ EmailNotEmpty = Just "The email address is not empty."
   describeProperties _ EmailHasAtSign = Just "The email address must contain an '@' character."
-  examples _ = S.fromList [Email "ada@example.org", Email "alan@example.com"]
+  examples _ = [Email "ada@example.org", Email "alan@example.com"]
 
 $(deriveDescribable ''Delivery)
 
@@ -301,7 +301,7 @@ instance Describable Address where
 
 instance Surveyable Address where
   type Property Address = Void
-  examples _ = S.singleton (Address (Street "Main Street") "Hull")
+  examples _ = [Address (Street "Main Street") "Hull"]
 
 -- No 'referencedTypes': a hand-written instance contributes no reachable types unless it says so.
 instance Describable Mood where describeType _ = "A mood."
