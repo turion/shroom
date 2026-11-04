@@ -41,7 +41,7 @@ import Data.OpenApi (ToSchema)
 import Generics.SOP qualified as SOP
 
 -- universe-base
-import Data.Universe.Class (Universe, universe)
+import Data.Universe.Class (Finite (..), Universe)
 
 -- shroom
 import Control.Monad.Prompt.Generic ()
@@ -102,7 +102,7 @@ newtype Banana = Banana
 -- | A property of a name that should hold.
 data NameProperty = NameNotEmpty
   deriving stock (Eq, Ord, Show, Bounded, Enum)
-  deriving anyclass (Universe)
+  deriving anyclass (Universe, Finite)
 
 $(deriveDescribable ''Name)
 
@@ -149,4 +149,4 @@ deriving via Generically Fruit instance Promptable Fruit
 
 -- | Whether every property of a value holds.
 allPropertiesHold :: (Surveyable a) => a -> Bool
-allPropertiesHold x = all (propertyHolds x) universe
+allPropertiesHold x = all (propertyHolds x) universeF

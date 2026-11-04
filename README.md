@@ -27,7 +27,7 @@ import Data.OpenApi (ToSchema)
 import Data.Shroom.Class (Surveyable (..))
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Universe.Class (Universe)
+import Data.Universe.Class (Finite, Universe)
 import GHC.Generics (Generic)
 import System.Environment (getEnv)
 
@@ -38,7 +38,7 @@ data User = User { userName :: Text, userEmail :: Text }
 $(deriveDescribable ''User)
 
 data UserProperty = UserEmailHasAtSign
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
 
 instance Surveyable User where
   type Property User = UserProperty
@@ -475,10 +475,10 @@ data T = T { ... }
 A type that wants no properties from its fields says `type Property T = Void` in its `Surveyable`
 instance instead, and needs neither `generics-sop` class.
 
-A type that declares a `Property` for `Surveyable` also needs a `Universe` instance for it, which
-makes `universe-base` a further `build-depends` entry, and then has to write both `propertyHolds`
-and `describeProperties`. Then only the one-line `instance Promptable T` has
-to live where `shroom` is a dependency, typically the package that runs the prompts.
+A type that declares a `Property` for `Surveyable` also needs a `Universe` and a `Finite` instance for it (`Finite` declares that
+its properties end), which makes `universe-base` a further `build-depends` entry, and then has to
+write both `propertyHolds` and `describeProperties`. Then only the one-line `instance Promptable T`
+has to live where `shroom` is a dependency, typically the package that runs the prompts.
 
 ### Building from source
 

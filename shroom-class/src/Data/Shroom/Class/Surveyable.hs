@@ -50,7 +50,7 @@ import Data.OpenApi (ToSchema, toSchema)
 import Data.Time (Day, UTCTime)
 
 -- universe-base
-import Data.Universe.Class (Universe, universe)
+import Data.Universe.Class (Finite (..), Universe (..))
 
 -- generics-sop
 import Generics.SOP (All, All2, Code, ConstructorInfo (..), FieldInfo (..), Generic, HasDatatypeInfo (..), I (..), K (..), NP (..), NS (..), SList (..), constructorInfo, constructorName, from, hcollapse, hmap, lengthSList, sList, unSOP)
@@ -128,6 +128,8 @@ instance Surveyable X where
 @
 
 All four equations are needed, or the instance is an incomplete pattern match.
+'Either' lists the type's own properties (@Left@) before those of the fields
+(@Right@), in the prompt and in the order of repair.
 Writing this combination by hand is interim: a derived \"Combined\" property
 source, which adds a type's own properties to its structural ones, is planned in
 <https://github.com/turion/shroom/issues/18 issue #18>.
@@ -156,7 +158,8 @@ list, 'NonEmpty', 'Set' or 'Maybe': like the @Neg Expr@ in @data Expr = Lit Int 
 Neg Expr@ and the @[Tree]@ in @data Tree = Node [Tree]@, since a container
 carries its element's 'Property'. \"Mutually recursive\" means the same through
 another type's bare instance. Enumerating the structural 'Property' (its
-'Universe') of such a type never ends, and 'description' and shroom's retry
+'Universe') of such a type never ends, although its 'Finite' instance claims
+it does, and 'description' and shroom's retry
 loop enumerate it, so with a bare @instance Surveyable Expr@ they run forever,
 in @shroom@ before any request is sent and on every backend. (Under the former
 @Void@ default this worked.) Opt out on the recursive type with
@@ -171,8 +174,8 @@ For
 data Section = Section { heading :: Title, subsections :: [Section] }
 @
 
-the properties of the @Title@ are the properties of the @Section@, with a finite
-'Universe', and they are checked on the heading and, recursively, on every
+the properties of the @Title@ are the properties of the @Section@, with a
+'Finite' instance, and they are checked on the heading and, recursively, on every
 subsection:
 
 @
@@ -197,8 +200,8 @@ third-party type. Either write the opt-out above on the enclosing type, or give
 the field type — or a @newtype@ around it, to avoid an orphan instance — its own
 instances.
 -}
-class (Describable a, Universe (Property a)) => Surveyable a where
-  {- | The type of properties for @a@.  Must have a 'Universe'
+class (Describable a, Finite (Property a)) => Surveyable a where
+  {- | The type of properties for @a@.  Must have a 'Finite'
     instance.  Defaults to @'Structural' a@, the properties of @a@'s fields;
     write @type Property a = Void@ for no properties at all.
   -}
@@ -243,11 +246,11 @@ class (Describable a, Universe (Property a)) => Surveyable a where
   examples _ = []
 
 {- | Every property of @a@ as a 'PropertyCheck': one entry per element of
-'universe' of 'Property', in its order, with the description
+'universeF' of 'Property', in its order, with the description
 'describeProperties' gives and the check 'propertyHolds' makes.
 -}
 typeProperties :: forall a. (Surveyable a) => [PropertyCheck a]
-typeProperties = [PropertyCheck (describeProperties (Proxy @a) p) (`propertyHolds` p) | p <- universe @(Property a)]
+typeProperties = [PropertyCheck (describeProperties (Proxy @a) p) (`propertyHolds` p) | p <- universeF @(Property a)]
 
 -- * Base types
 
@@ -475,6 +478,11 @@ deriving instance (Show (NS (NS PropertyOf) (Code a))) => Show (Structural a)
 instance (All2 Surveyable (Code a)) => Universe (Structural a) where
   universe = Structural <$> universeConstructors
 
+{- | The structural properties are finitely many, as each field's 'Property' is
+'Finite' (a superclass of 'Surveyable').
+-}
+instance (All2 Surveyable (Code a)) => Finite (Structural a)
+
 universeConstructors :: forall xss. (All2 Surveyable xss) => [NS (NS PropertyOf) xss]
 universeConstructors = case sList :: SList xss of
   SNil -> []
@@ -483,7 +491,7 @@ universeConstructors = case sList :: SList xss of
 universeFields :: forall xs. (All Surveyable xs) => [NS PropertyOf xs]
 universeFields = case sList :: SList xs of
   SNil -> []
-  SCons -> (Z . PropertyOf <$> universe) ++ (S <$> universeFields)
+  SCons -> (Z . PropertyOf <$> universeF) ++ (S <$> universeFields)
 
 {- | Check a structural property of a value.
 

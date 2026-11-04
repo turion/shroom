@@ -33,7 +33,7 @@ import Data.Aeson (FromJSON, ToJSON)
 import Data.OpenApi (ToSchema)
 
 -- universe-base
-import Data.Universe.Class (Universe)
+import Data.Universe.Class (Finite, Universe)
 
 -- effectful
 import Effectful (Eff, (:>))
@@ -60,7 +60,7 @@ newtype CelebrityList = CelebrityList
 
 -- | A property of a 'CelebrityList' that should hold.
 data CelebrityListProperty = CelebrityListHasThree
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
 
 -- | A single celebrity trivia fact.
 data CelebrityFact = CelebrityFact
@@ -76,7 +76,7 @@ data CelebrityFact = CelebrityFact
 data CelebrityFactProperty
   = CelebrityFactNameNotEmpty
   | CelebrityFactTriviaNotEmpty
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
 
 $(deriveDescribable ''CelebrityList)
 

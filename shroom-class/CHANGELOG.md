@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+* **Breaking: a `Property` type must be `Finite`, not only `Universe`.** `Surveyable`'s superclass
+  is now `Finite (Property a)` (from `Data.Universe.Class`, `universe-base`) instead of `Universe
+  (Property a)`, and `typeProperties` enumerates with `universeF`. Migrate each property type by
+  adding `Finite` to its deriving clause beside `Universe` (`deriving (Bounded, Enum, Universe,
+  Finite, Eq, Ord, Show)`, or `deriving anyclass (Universe, Finite)`); `Finite` needs no method, as
+  `cardinality` has a default. `Void` and `Either` already have one, and `Structural` gets one
+  beside its `Universe`. Why: a `Finite` instance is a declaration that the universe eventually
+  ends, which is what shroom assumes when it tells and checks every property; a type recursive
+  through a container whose properties never end is the case this is meant to make visible. One
+  visible change: universe-base's `Finite (Either a b)` lists every `Left` before every `Right`,
+  where `universe` interleaves them, so for the documented `Either XProperty (Structural X)`
+  property type a type's own properties now come before those of its fields (for
+  `ConferenceSchedule`, its "Every slot" line moves from second to last), in the prompt and in the
+  order of repair. Every other order is unchanged.
 * **Breaking: `examples` returns a list, `examples :: Proxy a -> [a]` (it was `Set a`).** Migrate
   each definition by dropping the `Set`: `S.fromList xs` becomes `xs` and `S.singleton x` becomes
   `[x]`. The examples are now shown in the order given, neither sorted nor deduplicated (a `Set`
@@ -26,7 +40,7 @@
   Record construction next to the `description` function needs `GHC2024` or
   `DisambiguateRecordFields`; under `Haskell2010` or `GHC2021` build it positionally,
   `PropertyCheck (Just "…") check`. Also new: `typeProperties :: Surveyable a => [PropertyCheck a]`,
-  one entry per element of `universe @(Property a)` with `describeProperties`'s description and the
+  one entry per element of `universeF @(Property a)` with `describeProperties`'s description and the
   check `propertyHolds`, and `propertyLines :: [PropertyCheck a] -> [Text]`, the `"- <description>"`
   lines of a list of properties, leaving out an undescribed one. `description` draws its property
   section from `propertyLines typeProperties`; its output is unchanged.

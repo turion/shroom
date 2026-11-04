@@ -23,7 +23,7 @@ import Generics.SOP qualified as SOP
 -- containers
 
 -- universe-base
-import Data.Universe.Class (Universe)
+import Data.Universe.Class (Finite, Universe)
 
 -- shroom
 
@@ -57,7 +57,7 @@ data Coordinate = Coordinate
 
 -- | A property of a user that should hold.
 data UserProperty = UserEmailNotEmpty | UserEmailHasAtSign
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
 
 $(deriveDescribable ''User)
 

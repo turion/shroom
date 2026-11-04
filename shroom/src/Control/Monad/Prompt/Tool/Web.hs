@@ -72,7 +72,7 @@ import Network.HTTP.Req (
 import Network.HTTP.Req qualified as Req
 
 -- universe-base
-import Data.Universe.Class (Universe)
+import Data.Universe.Class (Finite, Universe)
 
 -- shroom
 
@@ -98,7 +98,7 @@ data WebFetchProperty
     WebFetchUrlScheme
   | -- | Must contain only URL-safe characters
     WebFetchUrlSafeChars
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
 
 $(deriveDescribable ''WebFetch)
 
@@ -194,7 +194,7 @@ data DuckDuckGoSearchProperty
     DuckDuckGoSearchQueryNotEmpty
   | -- | Only alphanumerics, spaces, basic punctuation
     DuckDuckGoSearchQuerySafeChars
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
 
 instance Surveyable DuckDuckGoSearch where
   type Property DuckDuckGoSearch = DuckDuckGoSearchProperty
@@ -280,7 +280,7 @@ data WikipediaSearchProperty
     WikipediaSearchQueryNotEmpty
   | -- | Only alphanumerics, spaces, basic punctuation
     WikipediaSearchQuerySafeChars
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
 
 $(deriveDescribable ''WikipediaSearch)
 

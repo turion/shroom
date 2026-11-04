@@ -38,7 +38,7 @@ import Data.OpenApi (ToSchema)
 import Data.SOP (All, K (..), NP, SListI, hcollapse, hcpure)
 
 -- universe-base
-import Data.Universe.Class (Universe)
+import Data.Universe.Class (Finite, Universe)
 
 -- effectful
 import Effectful (Eff, (:>))
@@ -86,7 +86,7 @@ toolResults r = (\tr -> (resultToolName tr, resultStatus tr)) <$> results r
 -- | The only enforced property: every expected tool must appear in the results.
 data AllToolsTested = AllToolsTested
   deriving stock (Bounded, Enum, Eq, Ord, Show)
-  deriving anyclass (Universe)
+  deriving anyclass (Universe, Finite)
 
 instance (SListI tools, All Toolable tools, Typeable tools) => Describable (WebToolReport tools) where
   describeType _ =

@@ -53,7 +53,7 @@ import Data.OpenApi (ToSchema)
 import Generics.SOP qualified as SOP
 
 -- universe-base
-import Data.Universe.Class (Universe)
+import Data.Universe.Class (Finite, Universe)
 
 -- effectful
 import Effectful (Eff, (:>))
@@ -97,7 +97,7 @@ data SpeakerProperty
   = SpeakerFirstNameNotEmpty
   | SpeakerLastNameNotEmpty
   | SpeakerAffiliationNotEmpty
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
 
 -- | A list of speakers at the conference. Must contain between 3 and 10 speakers.
 newtype Speakers = Speakers
@@ -108,7 +108,7 @@ newtype Speakers = Speakers
 
 -- | A property of a speakers list that should hold.
 data SpeakersProperty = SpeakersBetween3And10
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
 
 {- | A GHC language extension that may be required to understand or appreciate a talk.
 If your talk requires all of these, please also bring a whiteboard.
@@ -122,7 +122,7 @@ data GhcExtension
     ImpredicativeTypes
   | -- | Use each value exactly once. No, you can't have it back.
     LinearTypes
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show, Generic, ToJSON, FromJSON, ToSchema)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show, Generic, ToJSON, FromJSON, ToSchema)
 
 -- | A talk submitted to a conference session, with title, abstract, speaker, and required GHC extensions.
 data Talk = Talk
@@ -141,7 +141,7 @@ data Talk = Talk
 data TalkProperty
   = TalkTitleNotEmpty
   | TalkSpeakerNameNotEmpty
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
 
 -- | A timetable slot at the conference, containing a single talk with its start and end time.
 data Slot = Slot
@@ -157,7 +157,7 @@ data Slot = Slot
 -- | A property of a slot that should hold.
 data SlotProperty
   = SlotStartBeforeEnd
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
 
 -- | A full day's schedule for the conference, listing all timetable slots in order.
 data ConferenceSchedule = ConferenceSchedule
@@ -176,7 +176,7 @@ data ScheduleProperty
   | ScheduleSlotsAreContiguous
   | ScheduleEachTalkOccursOnce
   | ScheduleStartsAtNine
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
 
 $(deriveDescribable ''SpeakerName)
 

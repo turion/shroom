@@ -53,7 +53,7 @@ import Network.Socket (
 import Data.OpenApi (ToSchema, toSchema)
 
 -- universe-base
-import Data.Universe.Class (Universe)
+import Data.Universe.Class (Finite, Universe)
 
 -- sop-core
 import Data.SOP (NP (..))
@@ -286,7 +286,7 @@ deriving via Generically Band instance Promptable Band
 -- | A property of a 'Profile' that should hold.
 data ProfileProperty = ProfileEmailNotEmpty
   deriving stock (Bounded, Enum, Eq, Show)
-  deriving anyclass (Universe)
+  deriving anyclass (Universe, Finite)
 
 -- | A profile with a name and an email address, whose email must not be empty.
 data Profile = Profile
@@ -306,7 +306,7 @@ deriving via Generically Profile instance Promptable Profile
 -- | The property of a 'Voucher' that should hold, which the model is not told about.
 data VoucherProperty = VoucherCodeNotEmpty
   deriving stock (Bounded, Enum, Eq, Show)
-  deriving anyclass (Universe)
+  deriving anyclass (Universe, Finite)
 
 {- | A voucher with a code, whose code must not be empty. The property has no
 description ('Nothing'), so the model is not told about it, but it is checked.

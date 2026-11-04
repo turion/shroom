@@ -33,7 +33,7 @@ import Data.Aeson (ToJSON)
 import Data.OpenApi (ToSchema)
 
 -- universe-base
-import Data.Universe.Class (Universe, universe)
+import Data.Universe.Class (Finite (..), Universe, universe)
 
 -- generics-sop
 import Generics.SOP qualified as SOP
@@ -71,7 +71,7 @@ newtype Email = Email
 
 -- | A property of an 'Email' that should hold.
 data EmailProperty = EmailNotEmpty | EmailHasAtSign
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
 
 -- | How a message should be delivered.
 data Delivery
@@ -133,7 +133,7 @@ newtype Name = Name Text
 
 -- | A property of a 'Name' that should hold; the second one is informal and undescribed.
 data NameProperty = NameNotEmpty | NameIsReal
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
 
 instance Describable Name where
   describeType _ = "A name."
@@ -200,7 +200,7 @@ data Registration = Registration
 
 -- | A property of a whole 'Registration' that should hold.
 data RegistrationProperty = RegistrationEmailMentionsName
-  deriving (Bounded, Enum, Universe, Eq, Ord, Show)
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
 
 instance Describable Registration where
   describeType _ = "A registration."
@@ -785,8 +785,8 @@ main =
               propertyHolds (S.fromList [Name "Ada", Name "Alan"]) NameNotEmpty @?= True
               propertyHolds (S.fromList [Name "Ada", Name ""]) NameNotEmpty @?= False
           , testCase "the properties of a container are its element's, in the same universe" $ do
-              universe @(Property (Maybe Name)) @?= universe @(Property Name)
-              universe @(Property [Name]) @?= universe @(Property Name)
+              universeF @(Property (Maybe Name)) @?= universeF @(Property Name)
+              universeF @(Property [Name]) @?= universeF @(Property Name)
           , testCase "a container of an element without properties has none" $ do
               length (typeProperties @[Int]) @?= 0
               length (typeProperties @(Maybe Int)) @?= 0
@@ -815,7 +815,7 @@ main =
           ]
       , testGroup
           "PropertyCheck"
-          [ testCase "description lists the described properties in universe order and leaves the undescribed one out" $ do
+          [ testCase "description lists the described properties in the order of universeF and leaves the undescribed one out" $ do
               let propertySection = takeWhile (T.isPrefixOf "- ") $ drop 1 $ dropWhile (/= "The following properties MUST hold in your response:") $ T.lines $ description (Proxy @Registration)
               propertySection
                 @?= [ "- The email address must contain the registrant's name."
@@ -826,10 +826,10 @@ main =
           , testCase "typeProperties has one entry per element of the universe, described and checked like it" $ do
               let checks = typeProperties @Registration
                   values = [Registration (Name "Ada") (Email "ada@example.org"), Registration (Name "") (Email "ada@example.org"), Registration (Name "Ada") (Email "bob")]
-              length checks @?= length (universe @(Property Registration))
+              length checks @?= length (universeF @(Property Registration))
               length checks @?= 5
-              [c.description | c <- checks] @?= [describeProperties (Proxy @Registration) p | p <- universe]
-              mapM_ (\v -> [c.holds v | c <- checks] @?= [propertyHolds v p | p <- universe]) values
+              [c.description | c <- checks] @?= [describeProperties (Proxy @Registration) p | p <- universeF]
+              mapM_ (\v -> [c.holds v | c <- checks] @?= [propertyHolds v p | p <- universeF]) values
           , testCase "propertyLines gives a line per described property, in order, and none for an undescribed one" $ do
               propertyLines [PropertyCheck {description = Just "The number should be even", holds = even}, PropertyCheck Nothing (const True), PropertyCheck (Just "The number should be positive") (> (0 :: Int))]
                 @?= ["- The number should be even", "- The number should be positive"]
@@ -845,7 +845,7 @@ main =
   where
     violations name expected v =
       testCase name $
-        length (filter (not . propertyHolds v) (universe @(Property Registration))) @?= expected
+        length (filter (not . propertyHolds v) (universeF @(Property Registration))) @?= expected
     contains name rendered needle =
       testCase name $
         assertBool ("expected " <> show needle <> " in " <> show rendered) (needle `T.isInfixOf` rendered)
