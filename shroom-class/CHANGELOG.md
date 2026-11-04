@@ -165,12 +165,13 @@
   before can now fail a property of an element and get a repair turn.** The instances' context is
   now `Surveyable a` instead of `Describable a`, so an element type that has only a `Describable`
   instance (the field of a type with a bare `Surveyable` instance, or a bare `[Foo]`) needs a
-  `Surveyable` instance as well (`type Property Foo = Void` is enough). One definition, `everyHolds`
-  with `describeEvery` over any `Foldable`, backs the four, and a container of your own can call the
-  same two from its instance (`propertyHolds = everyHolds`, `describeProperties _ = describeEvery
-  "Every entry" (Proxy @a)`, with `type Property (Roster a) = Property a`). Nothing needs lifting by
-  hand any more: a hand-written lift of such a field combined with `Structural X` would tell and
-  check each element property twice. A type recursive through a
+  `Surveyable` instance as well (`type Property Foo = Void` is enough). One definition, the newtype
+  `Every label f a` over any `Foldable` `f` (with `everyHolds` and `describeEvery`), backs the four
+  by `deriving via`, and a container of your own gets its element's properties with one line,
+  `deriving via (Every "Every entry" Roster a) instance (Surveyable a) => Surveyable (Roster a)`
+  (needs `DerivingVia` and `UndecidableInstances`, as the associated `Property` is a type family
+  application). Nothing needs lifting by hand any more: a hand-written lift of such a field combined
+  with `Structural X` would tell and check each element property twice. A type recursive through a
   container needs the opt-out of the recursion entry above. Part of
   <https://github.com/turion/shroom/issues/18>.
 * New: `Structural a` (with `structuralHolds`, `describeStructural`) and `PropertyOf`;

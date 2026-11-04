@@ -1,7 +1,9 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Main (main) where
 
@@ -224,7 +226,7 @@ instance Describable Guests where
 
 instance Surveyable Guests
 
--- | A 'Foldable' container of a user, which has the properties of its elements through 'everyHolds' and 'describeEvery'.
+-- | A 'Foldable' container of a user, which has the properties of its elements through 'Every'.
 newtype Roster a = Roster [a]
   deriving stock (Eq, Ord, Show, Generic, Foldable)
   deriving anyclass (ToJSON)
@@ -232,10 +234,7 @@ newtype Roster a = Roster [a]
 instance (Describable a) => Describable (Roster a) where
   describeType _ = "A roster."
 
-instance (Surveyable a) => Surveyable (Roster a) where
-  type Property (Roster a) = Property a
-  propertyHolds = everyHolds
-  describeProperties _ = describeEvery "Every entry" (Proxy @a)
+deriving via (Every "Every entry" Roster a) instance (Surveyable a) => Surveyable (Roster a)
 
 {- | A recursive type that opts out of the structural default and keeps the
 properties of its heading, checked on every subsection too.
@@ -802,7 +801,7 @@ main =
               violated guests {guestsPlusOne = Just (Name "")} @?= 1
               violated guests {guestsInvited = [], guestsPlusOne = Nothing} @?= 0
               violated guests {guestsHost = Name ""} @?= 1
-          , testCase "a Foldable container of one's own uses everyHolds and describeEvery the same way" $ do
+          , testCase "a Foldable container of one's own derives its instance via Every the same way" $ do
               describeProperties (Proxy @(Roster Name)) NameNotEmpty @?= Just "Every entry: The name must not be empty."
               propertyHolds (Roster [] :: Roster Name) NameNotEmpty @?= True
               propertyHolds (Roster [Name "Ada", Name ""]) NameNotEmpty @?= False

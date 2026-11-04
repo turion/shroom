@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 {- | The 'Surveyable' class: the properties and example values of a type, with
@@ -20,9 +21,10 @@ import Data.Int (Int64)
 import Data.Kind (Type)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Proxy (Proxy (..))
-import Data.Typeable (typeRep)
+import Data.Typeable (Typeable, typeRep)
 import Data.Void (Void, absurd)
 import GHC.Generics (Generically (..))
+import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 import Numeric.Natural (Natural)
 
 -- containers
@@ -139,8 +141,8 @@ element, vacuously for 'Nothing' and an empty container. So under a bare
 instance the properties of the elements of a @[Speaker]@ or of a @Maybe Name@
 field are described in the prompt and checked like those of any other field,
 as @Field speakers: Every element: …@. This needs @Surveyable a@, not only
-'Describable'. See 'everyHolds' for the definition, which a 'Foldable'
-container of your own can use the same way.
+'Describable'. See 'Every' for the definition, which a 'Foldable'
+container of your own can use the same way, in one @deriving via@ line.
 
 A reply that passed under the old behaviour (when the properties of container
 elements were not checked) can therefore now fail a property of an element and
@@ -302,34 +304,22 @@ instance Surveyable Day where
 {- | The properties of @a@, checked on every element and told as \"Every
 element: …\".
 -}
-instance (Surveyable a) => Surveyable [a] where
-  type Property [a] = Property a
-  propertyHolds = everyHolds
-  describeProperties _ = describeEvery "Every element" (Proxy @a)
+deriving via (Every "Every element" [] a) instance (Surveyable a) => Surveyable [a]
 
 {- | The properties of @a@, checked on every element and told as \"Every
 element: …\".
 -}
-instance (Surveyable a) => Surveyable (NonEmpty a) where
-  type Property (NonEmpty a) = Property a
-  propertyHolds = everyHolds
-  describeProperties _ = describeEvery "Every element" (Proxy @a)
+deriving via (Every "Every element" NonEmpty a) instance (Surveyable a) => Surveyable (NonEmpty a)
 
 {- | The properties of @a@, checked on every element and told as \"Every
 element: …\".
 -}
-instance (Surveyable a) => Surveyable (Set a) where
-  type Property (Set a) = Property a
-  propertyHolds = everyHolds
-  describeProperties _ = describeEvery "Every element" (Proxy @a)
+deriving via (Every "Every element" Set a) instance (Surveyable a) => Surveyable (Set a)
 
 {- | The properties of @a@, checked on the value if there is one and told as
 \"If present: …\". Vacuously true for 'Nothing'.
 -}
-instance (Surveyable a) => Surveyable (Maybe a) where
-  type Property (Maybe a) = Property a
-  propertyHolds = everyHolds
-  describeProperties _ = describeEvery "If present" (Proxy @a)
+deriving via (Every "If present" Maybe a) instance (Surveyable a) => Surveyable (Maybe a)
 
 -- ** Generically
 
@@ -344,22 +334,21 @@ instance (Surveyable a, ToJSON (Generically a)) => Surveyable (Generically a) wh
 
 -- ** Lifting element properties into containers
 
-{- | Check that one of an element type's properties holds for every element
-of a container, vacuously for an empty one (and for 'Nothing'). Together with
-'describeEvery' this is the one definition, over any 'Foldable', behind the
-'Surveyable' instances of @[a]@, @'NonEmpty' a@, @'Set' a@ and @'Maybe' a@: a
-container @f a@ has the properties of @a@, so @Property (f a) = Property a@,
-each one told to the model under a label and checked on every element.
+{- | A container @f a@ with the properties of its element @a@, told to the model
+under the label @label@ and checked on every element: @'Property' ('Every'
+label f a) = 'Property' a@. This is the one definition, over any 'Foldable',
+behind the 'Surveyable' instances of @[a]@, @'NonEmpty' a@, @'Set' a@ and
+@'Maybe' a@, each one @deriving via@ this type with its label (\"Every element\",
+for 'Maybe' \"If present\"): a container is checked vacuously when empty (and
+for 'Nothing').
 
-A 'Foldable' container of your own gets the same by calling the pair from
-three lines of its instance, here for a @Roster@ that wraps a list (and has a
-'Describable' instance of its own):
+A 'Foldable' container of your own gets the same with one line (and the
+language extensions @DerivingVia@ and @UndecidableInstances@, the latter
+because the associated 'Property' is a type family application), here for a
+@Roster@ that wraps a list (and has a 'Describable' instance of its own):
 
 @
-instance (Surveyable a) => Surveyable (Roster a) where
-  type Property (Roster a) = Property a
-  propertyHolds = everyHolds
-  describeProperties _ = describeEvery \"Every entry\" (Proxy \@a)
+deriving via (Every \"Every entry\" Roster a) instance (Surveyable a) => Surveyable (Roster a)
 @
 
 A field of type @Roster X@ then contributes @X@'s properties, under that label,
@@ -368,9 +357,9 @@ to the structural default of the type that holds it. Enumerating the
 does, so a type recursive through it needs the opt-out of the recursion
 section in 'Surveyable'.
 
-The same pair also serves a hand-written lift into a custom 'Property', as one
-side of an 'Either', when a container has properties of its own besides those
-of its elements:
+'everyHolds' and 'describeEvery' are the pair behind it, and also serve a
+hand-written lift into a custom 'Property', as one side of an 'Either', when a
+container has properties of its own besides those of its elements:
 
 @
 instance Surveyable Speakers where
@@ -394,6 +383,31 @@ top-level value, and 'description' only lists those: the properties of a
 container's elements are told and checked because the container's own
 'Property' is the element's.
 -}
+newtype Every (label :: Symbol) (f :: Type -> Type) (a :: Type) = Every (f a)
+
+{- | Transparent: it describes the container @f a@, but is never shown to the
+model, since only the type a 'description' is asked for (here the derived
+instance's own type) is described. It exists as the superclass of the
+'Surveyable' instance.
+-}
+instance (Describable (f a), Typeable label, Typeable f, Typeable a) => Describable (Every label f a) where
+  describeType _ = describeType (Proxy @(f a))
+  referencedTypes _ = referencedTypes (Proxy @(f a))
+  hasOwnSection _ = False
+  describedIdentity _ = describedIdentity (Proxy @(f a))
+
+deriving newtype instance (ToJSON (f a)) => ToJSON (Every label f a)
+
+-- | The properties of @a@ for each element, vacuously true for an empty container.
+instance (KnownSymbol label, Foldable f, Surveyable a, Describable (Every label f a)) => Surveyable (Every label f a) where
+  type Property (Every label f a) = Property a
+  propertyHolds (Every xs) = everyHolds xs
+  describeProperties _ = describeEvery (T.pack (symbolVal (Proxy @label))) (Proxy @a)
+
+{- | Check that one of an element type's properties holds for every element
+of a container, vacuously for an empty one (and for 'Nothing'). The partner of
+'describeEvery', and what 'Every' uses.
+-}
 everyHolds :: (Foldable f, Surveyable a) => f a -> Property a -> Bool
 everyHolds xs p = all (`propertyHolds` p) xs
 
@@ -406,7 +420,7 @@ empty.\" into \"Every speaker: The speaker's last name must not be empty.\".
 Returns 'Nothing' when the element has no description for the property, so a
 container tells nothing where the element tells nothing. The 'Surveyable'
 instances of the containers use the label \"Every element\" and, for 'Maybe',
-\"If present\".
+\"If present\", through 'Every'.
 -}
 describeEvery :: (Surveyable a) => Text -> Proxy a -> Property a -> Maybe Text
 describeEvery label p prop = (\d -> label <> ": " <> d) <$> describeProperties p prop
