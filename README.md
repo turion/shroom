@@ -295,6 +295,13 @@ if all (\c -> c.holds x) ps
   else fromMaybe x <$> improveChecked ps x   -- fromMaybe from Data.Maybe
 ```
 
+Without the extension, match `PropertyCheck` positionally instead; the same test, and it needs no
+extension (as when building the value positionally above):
+
+```haskell
+if all (\(PropertyCheck _ ok) -> ok x) ps
+```
+
 It costs one `improve` turn (plus its repairs, if the reply breaks a property) only when the
 strategy's value breaks a call-site property. In that branch `x` breaks a property, so
 `improveChecked` answers `Nothing` ("`x` is good as it is") only when `x` satisfies every property,
@@ -475,10 +482,11 @@ data T = T { ... }
 A type that wants no properties from its fields says `type Property T = Void` in its `Surveyable`
 instance instead, and needs neither `generics-sop` class.
 
-A type that declares a `Property` for `Surveyable` also needs a `Universe` and a `Finite` instance for it (`Finite` declares that
-its properties end), which makes `universe-base` a further `build-depends` entry, and then has to
-write both `propertyHolds` and `describeProperties`. Then only the one-line `instance Promptable T`
-has to live where `shroom` is a dependency, typically the package that runs the prompts.
+A type that declares a `Property` for `Surveyable` also needs a `Universe` and a `Finite` instance
+for it (`Finite` declares that its properties end), which makes `universe-base` a further
+`build-depends` entry, and then has to write both `propertyHolds` and `describeProperties`. Then
+only the one-line `instance Promptable T` has to live where `shroom` is a dependency, typically the
+package that runs the prompts.
 
 ### Building from source
 
