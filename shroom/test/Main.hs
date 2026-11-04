@@ -412,7 +412,7 @@ data Chain = Chain
 
 $(deriveDescribable ''Chain)
 
--- A bare instance would hang: 'Chain' is directly recursive.
+-- A bare instance would not compile: 'Chain' is directly recursive.
 instance Surveyable Chain where type Property Chain = Void
 deriving via Promptable.DescriptionPrompt Chain instance Promptable Chain
 

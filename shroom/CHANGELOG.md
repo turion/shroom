@@ -100,13 +100,15 @@ type.
   own properties. `promptSingle`, `promptTools` and `improve` are now their `…Checked []` and send
   the same requests as before. The `Checked` variants are flat like `promptSingle`: a type's own
   `Promptable` strategy does not see the extra properties.
-* **Breaking: a directly or mutually recursive type with a bare `instance Surveyable X` hangs**
-  before any request is sent, on every backend, because the structural default enumerates its
+* **Breaking: a directly or mutually recursive type with a bare `instance Surveyable X` is rejected
+  at compile time, with a message naming the opt-out.** It used to hang, before any request was
+  sent and on every backend, because the structural default enumerates its
   properties forever (e.g. `data Expr = Lit Int | Neg Expr`, or `data Tree = Node [Tree]`: a
   container carries its element's properties, so recursion under a list, `NonEmpty`, `Set` or
   `Maybe` counts as direct recursion). Opt out with
   `type Property X = Void` or a custom `Property`; `shroom-class`'s changelog has the details, and
-  the pattern that keeps the type's other properties. (A
+  the pattern that keeps the type's other properties. Code that is generic over `Structural a`
+  and enumerates it now asks for `Finite (Structural a)` in its context. (A
   recursive schema is in any case rejected by Claude.)
 * **Breaking: the new base-type `Promptable` instances can overlap yours.** `Promptable` now has
   instances for `Text`, `Int`, `Integer`, `Natural`, `Double`, `Float`, `Bool`, `Char`, `UTCTime`,

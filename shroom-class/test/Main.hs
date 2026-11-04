@@ -51,6 +51,9 @@ import Test.Tasty.HUnit (assertBool, testCase, (@?=))
 import Control.Monad.Prompt.TH (deriveDescribable)
 import Data.Shroom.Class
 
+-- shroom-class-test
+import Rejection (rejectionTests)
+
 -- | A person with a name and an age.
 data Person = Person
   { personName :: Text
@@ -250,6 +253,39 @@ instance Surveyable Section where
   type Property Section = NameProperty
   propertyHolds s p = propertyHolds (heading s) p && everyHolds (subsections s) p
   describeProperties _ = describeProperties (Proxy @Name)
+
+{- | A polymorphic product with a bare instance. The recursion check cannot see
+through the type variable here, and passes: it is made where the type variable is
+instantiated.
+-}
+data PolyPair a = PolyPair a a
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance (Describable a) => Describable (PolyPair a) where
+  describeType _ = "Two values of one type."
+
+instance (Surveyable a) => Surveyable (PolyPair a)
+
+-- | Two fields of one structural type: a diamond, not a cycle, so accepted.
+data Booking = Booking Contact Contact
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance Describable Booking where
+  describeType _ = "A booking."
+
+instance Surveyable Booking
+
+-- | The polymorphic half of a recursion through a polymorphic type: a bare instance, accepted.
+data Branch c g = Branch [c] (Maybe g)
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (ToJSON, SOP.Generic, SOP.HasDatatypeInfo)
+
+instance (Describable c, Describable g) => Describable (Branch c g) where
+  describeType _ = "A branch."
+
+instance (Surveyable c, Surveyable g) => Surveyable (Branch c g)
 
 -- * Reachable types
 
@@ -570,7 +606,7 @@ given value whether each property holds.
 -}
 structuralReport ::
   forall a.
-  (Show a, Show (Structural a), SOP.Generic a, SOP.HasDatatypeInfo a, SOP.All2 Surveyable (SOP.Code a)) =>
+  (Show a, Show (Structural a), Finite (Structural a), SOP.Generic a, SOP.HasDatatypeInfo a, SOP.All2 Surveyable (SOP.Code a)) =>
   Proxy a ->
   [a] ->
   Text
@@ -840,6 +876,16 @@ main =
               assertBool "even 4 holds" (c.holds 4)
               assertBool "even 3 does not hold" (not (c.holds 3))
               assertBool "the description function is still callable" ("A whole number." `T.isInfixOf` description (Proxy @Int64))
+          ]
+      , testGroup
+          "recursion check"
+          [ testCase "a polymorphic bare instance is accepted, and enumerates the properties of both fields" $
+              length (universeF @(Property (PolyPair Contact))) @?= 2 * length (universeF @(Property Contact))
+          , testCase "two fields of one structural type are accepted" $
+              length (universeF @(Property Booking)) @?= 2 * length (universeF @(Property Contact))
+          , testCase "a polymorphic type is accepted, with the properties of its list and its Maybe element" $
+              length (universeF @(Property (Branch Name Contact))) @?= length (universeF @NameProperty) + length (universeF @(Property Contact))
+          , rejectionTests
           ]
       ]
   where
