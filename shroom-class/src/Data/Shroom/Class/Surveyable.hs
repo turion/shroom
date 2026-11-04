@@ -236,7 +236,10 @@ class (Describable a, Finite (Property a)) => Surveyable a where
 
   {- | Human-readable description of a property, used in the prompt.
     May be 'Nothing' if you don't wish to describe it; the property is
-    still checked by 'propertyHolds'.
+    still checked by 'propertyHolds'. A checked but undescribed property is
+    enforced without the model being told what to aim at, so it can meet it
+    only by chance, and the error does not say which property broke: describe
+    every property you check, unless the model meets it anyway.
 
     Defaults like 'propertyHolds': for the 'Structural' properties of the fields
     if 'Property' is its default, for no property at all if it is 'Void', and

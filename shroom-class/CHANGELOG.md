@@ -176,8 +176,10 @@
   ```
 
   (`$dmpropertyHolds` when `propertyHolds` is the one missing). Write the method; for an informal
-  property, `propertyHolds _ _ = True` or `describeProperties _ _ = Nothing` is the old default.
-  `PropertyDefault` is the dispatch class behind those defaults, exported for its name's sake.
+  property, `propertyHolds _ _ = True` switches it off. `describeProperties _ _ = Nothing` only keeps
+  it out of the prompt, and `shroom` still enforces it (see its changelog's behaviour-change entry on
+  undescribed properties). `PropertyDefault` is the dispatch class behind those defaults, exported
+  for its name's sake.
 * **A custom `Property` replaces the structural default entirely.** Adding one property of your own
   to a type silently drops its fields' properties from the prompt and from validation. To keep both,
   combine them: `type Property X = Either XProperty (Structural X)`, with `structuralHolds` and

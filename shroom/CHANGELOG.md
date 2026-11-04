@@ -77,7 +77,8 @@ type.
   label ("Every element: …", "If present: …") and checks them on every element, so a reply that was
   accepted before can get a repair turn. An element type that has only a `Describable` instance
   needs a `Surveyable` one (`type Property X = Void` is enough). A type recursive through a
-  container now needs the opt-out of the next entry. `shroom-class`'s changelog has the details.
+  container is now rejected at compile time and needs the opt-out of the recursion entry below.
+  `shroom-class`'s changelog has the details.
 * **Behaviour change: a property whose `describeProperties` is `Nothing` is now enforced.** Until
   now the retry loop and `improve` checked a reply against the described properties only, so a
   property without a description was never enforced, whatever its `propertyHolds` said. Every
