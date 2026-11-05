@@ -29,7 +29,8 @@ data User = User { userName :: Text, userEmail :: Text }
 
 \$(deriveDescribable ''User)   -- generates instance Describable User from Haddock
 
-instance Surveyable User      -- the properties of 'Text' fields: there are none
+instance Surveyable User where  -- the properties of 'Text' fields: there are none
+  type Property User = Structural User
 
 instance Promptable User  -- from Control.Monad.Prompt.Promptable; uses the
                           -- default description-based prompt rendering

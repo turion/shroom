@@ -180,7 +180,8 @@ data ScheduleProperty
 
 $(deriveDescribable ''SpeakerName)
 
-instance Surveyable SpeakerName
+instance Surveyable SpeakerName where
+  type Property SpeakerName = Structural SpeakerName
 
 instance Promptable SpeakerName
 
@@ -348,7 +349,8 @@ newtype SpeakerLookup = SpeakerLookup
 
 $(deriveDescribable ''SpeakerLookup)
 
-instance Surveyable SpeakerLookup
+instance Surveyable SpeakerLookup where
+  type Property SpeakerLookup = Structural SpeakerLookup
 
 instance Promptable SpeakerLookup
 

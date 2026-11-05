@@ -34,7 +34,8 @@ newtype Name = Name Text
 
 \$(deriveDescribable ''Name)
 
-instance Surveyable Name   -- or a custom Property, e.g. \"not empty\"
+instance Surveyable Name where  -- or a custom Property, e.g. \"not empty\"
+  type Property Name = Structural Name
 
 instance Promptable Name   -- flat: one request
 
@@ -50,7 +51,8 @@ data Musician = Musician
 
 \$(deriveDescribable ''Musician)
 
-instance Surveyable Musician
+instance Surveyable Musician where
+  type Property Musician = Structural Musician
 
 deriving via Generically Musician instance Promptable Musician
 @

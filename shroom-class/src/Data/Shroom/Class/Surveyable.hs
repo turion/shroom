@@ -79,7 +79,8 @@ data Booking = Booking { bookingGuest :: Guest, bookingNights :: Int }
   deriving stock (Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
-instance Surveyable Booking
+instance Surveyable Booking where
+  type Property Booking = Structural Booking
 @
 
 every property of @Guest@ is a property of @Booking@: it is described in the

@@ -13,7 +13,8 @@ data MySearch = MySearch { query :: Text }
   deriving (Generic, ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 \$(deriveDescribable ''MySearch)
-instance Surveyable MySearch
+instance Surveyable MySearch where
+  type Property MySearch = Structural MySearch
 
 instance Toolable MySearch where
   toolDescription _ = Just "Returns results from the search API."

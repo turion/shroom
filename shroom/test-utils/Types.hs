@@ -73,12 +73,14 @@ instance Promptable User
 $(deriveDescribable ''Counter)
 
 instance Surveyable Counter where
+  type Property Counter = Structural Counter
   examples _ = [Counter 0]
 
 instance Promptable Counter
 
 $(deriveDescribable ''Coordinate)
 
-instance Surveyable Coordinate
+instance Surveyable Coordinate where
+  type Property Coordinate = Structural Coordinate
 
 instance Promptable Coordinate

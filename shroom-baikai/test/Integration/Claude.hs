@@ -39,7 +39,7 @@ import Control.Monad.Prompt.Tool.Web (
   wikipediaSearchHandler,
  )
 
-import Data.Shroom.Class (Describable (..), Surveyable (..))
+import Data.Shroom.Class (Describable (..), Structural, Surveyable (..))
 
 -- test
 import Integration.Cases (backendIntegrationTests)
@@ -54,7 +54,8 @@ newtype FakeBrokenSearch = FakeBrokenSearch {brokenQuery :: Text}
 instance Describable FakeBrokenSearch where
   describeType _ = "A search query that always fails with a 404 error."
 
-instance Surveyable FakeBrokenSearch
+instance Surveyable FakeBrokenSearch where
+  type Property FakeBrokenSearch = Structural FakeBrokenSearch
 
 instance Promptable FakeBrokenSearch
 

@@ -106,7 +106,8 @@ data Fruit
 
 $(deriveDescribable ''Person)
 
-instance Surveyable Person
+instance Surveyable Person where
+  type Property Person = Structural Person
 
 $(deriveDescribable ''Email)
 
@@ -120,11 +121,13 @@ instance Surveyable Email where
 
 $(deriveDescribable ''Delivery)
 
-instance Surveyable Delivery
+instance Surveyable Delivery where
+  type Property Delivery = Structural Delivery
 
 $(deriveDescribable ''Fruit)
 
-instance Surveyable Fruit
+instance Surveyable Fruit where
+  type Property Fruit = Structural Fruit
 
 -- | A name.
 newtype Name = Name Text
@@ -145,7 +148,7 @@ instance Surveyable Name where
   describeProperties _ NameNotEmpty = Just "The name must not be empty."
   describeProperties _ NameIsReal = Nothing
 
--- | A hand-written product, surveyed structurally by the default.
+-- | A hand-written product, whose 'Property' is 'Structural'.
 data Contact = Contact
   { contactName :: Name
   , contactEmail :: Email
@@ -156,7 +159,8 @@ data Contact = Contact
 instance Describable Contact where
   describeType _ = "A contact."
 
-instance Surveyable Contact
+instance Surveyable Contact where
+  type Property Contact = Structural Contact
 
 -- | A hand-written product with positional fields, surveyed with the structural property written out by hand.
 data Pair = Pair Name Email
@@ -212,7 +216,7 @@ instance Surveyable Registration where
   describeProperties _ (Left RegistrationEmailMentionsName) = Just "The email address must contain the registrant's name."
   describeProperties px (Right p) = describeStructural px p
 
--- | A guest list: a record with container fields, surveyed structurally by the default.
+-- | A guest list: a record with container fields, whose 'Property' is 'Structural'.
 data Guests = Guests
   { guestsHost :: Name
   , guestsInvited :: [Name]
@@ -224,7 +228,8 @@ data Guests = Guests
 instance Describable Guests where
   describeType _ = "A guest list."
 
-instance Surveyable Guests
+instance Surveyable Guests where
+  type Property Guests = Structural Guests
 
 -- | A 'Foldable' container of a user, which has the properties of its elements through 'Every'.
 newtype Roster a = Roster [a]
@@ -236,7 +241,7 @@ instance (Describable a) => Describable (Roster a) where
 
 deriving via (Every "Every entry" Roster a) instance (Surveyable a) => Surveyable (Roster a)
 
-{- | A recursive type that opts out of the structural default and keeps the
+{- | A recursive type that states a custom 'Property' instead of 'Structural' and keeps the
 properties of its heading, checked on every subsection too.
 -}
 data Section = Section {heading :: Name, subsections :: [Section]}
@@ -790,10 +795,10 @@ main =
           , testCase "a container of an element without properties has none" $ do
               length (typeProperties @[Int]) @?= 0
               length (typeProperties @(Maybe Int)) @?= 0
-          , contains "a container field under the structural default lists the host's property" (description (Proxy @Guests)) "- Field guestsHost: The name must not be empty."
-          , contains "a list field under the structural default lists the element's property" (description (Proxy @Guests)) "- Field guestsInvited: Every element: The name must not be empty."
-          , contains "a Maybe field under the structural default lists the element's property" (description (Proxy @Guests)) "- Field guestsPlusOne: If present: The name must not be empty."
-          , testCase "a type with container fields and the structural default checks every element" $ do
+          , contains "a container field with a Structural property lists the host's property" (description (Proxy @Guests)) "- Field guestsHost: The name must not be empty."
+          , contains "a list field with a Structural property lists the element's property" (description (Proxy @Guests)) "- Field guestsInvited: Every element: The name must not be empty."
+          , contains "a Maybe field with a Structural property lists the element's property" (description (Proxy @Guests)) "- Field guestsPlusOne: If present: The name must not be empty."
+          , testCase "a type with container fields and a Structural property checks every element" $ do
               let guests = Guests (Name "Ada") [Name "Alan", Name "Grace"] (Just (Name "Edsger"))
                   violated g = length [() | c <- typeProperties @Guests, not (c.holds g)]
               violated guests @?= 0
@@ -805,7 +810,7 @@ main =
               describeProperties (Proxy @(Roster Name)) NameNotEmpty @?= Just "Every entry: The name must not be empty."
               propertyHolds (Roster [] :: Roster Name) NameNotEmpty @?= True
               propertyHolds (Roster [Name "Ada", Name ""]) NameNotEmpty @?= False
-          , testCase "a recursive type opting out of the structural default keeps its heading's properties on every subsection" $ do
+          , testCase "a recursive type with a custom property instead of Structural keeps its heading's properties on every subsection" $ do
               let ok = Section (Name "Intro") [Section (Name "Background") [], Section (Name "Method") [Section (Name "Data") []]]
                   bad = Section (Name "Intro") [Section (Name "Method") [Section (Name "") []]]
               length (typeProperties @Section) @?= 2

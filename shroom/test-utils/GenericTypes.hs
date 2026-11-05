@@ -116,22 +116,27 @@ $(deriveDescribable ''Banana)
 
 $(deriveDescribable ''Fruit)
 
--- A property for the structural default of 'Musician' to find.
+-- A property for the structural properties of 'Musician' to find.
 instance Surveyable Name where
   type Property Name = NameProperty
   describeProperties _ NameNotEmpty = Just "The name is not empty."
   propertyHolds (Name t) NameNotEmpty = not (T.null t)
 
-instance Surveyable City
+instance Surveyable City where
+  type Property City = Structural City
 
-instance Surveyable Apple
+instance Surveyable Apple where
+  type Property Apple = Structural Apple
 
-instance Surveyable Banana
+instance Surveyable Banana where
+  type Property Banana = Structural Banana
 
--- No @Property@, no methods: the properties of the fields, 'Name''s included.
-instance Surveyable Musician
+-- A 'Structural' instance: the properties of the fields, 'Name''s included.
+instance Surveyable Musician where
+  type Property Musician = Structural Musician
 
-instance Surveyable Fruit
+instance Surveyable Fruit where
+  type Property Fruit = Structural Fruit
 
 -- Leaves are flat: a single request each.
 instance Promptable Name

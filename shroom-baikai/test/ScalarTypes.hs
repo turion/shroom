@@ -37,7 +37,7 @@ import Data.OpenApi (ToSchema)
 
 -- shroom
 import Control.Monad.Prompt.Promptable (Promptable)
-import Data.Shroom.Class (Describable (..), Surveyable)
+import Data.Shroom.Class (Describable (..), Structural, Surveyable (..))
 
 -- | A bare top-level integer response.
 newtype ScalarInt = ScalarInt Int
@@ -47,7 +47,8 @@ newtype ScalarInt = ScalarInt Int
 instance Describable ScalarInt where
   describeType _ = "An integer."
 
-instance Surveyable ScalarInt
+instance Surveyable ScalarInt where
+  type Property ScalarInt = Structural ScalarInt
 
 instance Promptable ScalarInt
 
@@ -59,7 +60,8 @@ newtype ScalarText = ScalarText Text
 instance Describable ScalarText where
   describeType _ = "A short string."
 
-instance Surveyable ScalarText
+instance Surveyable ScalarText where
+  type Property ScalarText = Structural ScalarText
 
 instance Promptable ScalarText
 
@@ -71,6 +73,7 @@ newtype ScalarIntList = ScalarIntList [Int]
 instance Describable ScalarIntList where
   describeType _ = "A JSON array of integers."
 
-instance Surveyable ScalarIntList
+instance Surveyable ScalarIntList where
+  type Property ScalarIntList = Structural ScalarIntList
 
 instance Promptable ScalarIntList

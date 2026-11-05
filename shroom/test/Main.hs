@@ -81,7 +81,7 @@ import Control.Monad.Prompt.Promptable qualified as Promptable
 import Control.Monad.Prompt.TH (deriveDescribable)
 import Control.Monad.Prompt.Tool (Tool, ToolHandler (..), Toolable, runTool, toolBinding, toolDefsRaw, toolName)
 import Control.Monad.Prompt.Tool.Web
-import Data.Shroom.Class (Describable (..), Surveyable (..), description, reach)
+import Data.Shroom.Class (Describable (..), Structural, Surveyable (..), description, reach)
 
 -- test
 import TestUtils
@@ -225,23 +225,27 @@ newtype Quexnorbs = Quexnorbs {quexnorbs :: [Quexnorb]}
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 instance Describable Zblorf where describeType _ = "A record with two unguessable-name fields."
-instance Surveyable Zblorf
+instance Surveyable Zblorf where
+  type Property Zblorf = Structural Zblorf
 instance Promptable Zblorf
 
 instance Describable Quexnorb where describeType _ = "A record containing another record."
-instance Surveyable Quexnorb
+instance Surveyable Quexnorb where
+  type Property Quexnorb = Structural Quexnorb
 instance Promptable Quexnorb
 
 instance Describable Quexnorbs where describeType _ = "A list of records, each containing another record."
-instance Surveyable Quexnorbs
+instance Surveyable Quexnorbs where
+  type Property Quexnorbs = Structural Quexnorbs
 instance Promptable Quexnorbs
 
 instance Toolable Quexnorbs
 
--- * A bare instance over a field that carries properties
+-- * A 'Structural' instance over a field that carries properties
 
-{- | A guest: a label and a registered user. The bare 'Surveyable' instance below
-surveys the fields, so the 'User''s email properties are properties of the guest.
+{- | A guest: a label and a registered user. Its 'Surveyable' instance states
+@type Property Guest = Structural Guest@, so it surveys the fields and the
+'User''s email properties are properties of the guest.
 -}
 data Guest = Guest
   { guestLabel :: Text
@@ -251,7 +255,8 @@ data Guest = Guest
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 instance Describable Guest where describeType _ = "A guest with a label and a registered user."
-instance Surveyable Guest
+instance Surveyable Guest where
+  type Property Guest = Structural Guest
 instance Promptable Guest
 
 -- * An override that scopes context
@@ -265,7 +270,8 @@ newtype Metric = Metric {metricText :: Text}
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 instance Describable Metric where describeType _ = "A measurement written out in text."
-instance Surveyable Metric
+instance Surveyable Metric where
+  type Property Metric = Structural Metric
 instance Promptable Metric where
   prompt = Eff.withContext "Always prefer metric units." Eff.promptSingle
 
@@ -280,7 +286,8 @@ data Band = Band
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 instance Describable Band where describeType _ = "A band with a name and a head count."
-instance Surveyable Band
+instance Surveyable Band where
+  type Property Band = Structural Band
 deriving via Generically Band instance Promptable Band
 
 -- | A property of a 'Profile' that should hold.
@@ -330,7 +337,8 @@ data Measurement = Measurement
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 instance Describable Measurement where describeType _ = "A measured length with a note."
-instance Surveyable Measurement
+instance Surveyable Measurement where
+  type Property Measurement = Structural Measurement
 deriving via Generically Measurement instance Promptable Measurement
 
 -- | A pair with positional fields.
@@ -339,7 +347,8 @@ data Pair = Pair Text Int
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 instance Describable Pair where describeType _ = "A text and a number."
-instance Surveyable Pair
+instance Surveyable Pair where
+  type Property Pair = Structural Pair
 deriving via Generically Pair instance Promptable Pair
 
 -- | A gig: a band, which is itself prompted field by field, and a venue.
@@ -351,7 +360,8 @@ data Gig = Gig
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 instance Describable Gig where describeType _ = "A gig at a venue."
-instance Surveyable Gig
+instance Surveyable Gig where
+  type Property Gig = Structural Gig
 deriving via Generically Gig instance Promptable Gig
 
 -- | A treat on offer.
@@ -371,7 +381,8 @@ data Treat
 -- The constructors' Haddock comes from the splice, so the description is not written by hand.
 $(deriveDescribable ''Treat)
 
-instance Surveyable Treat
+instance Surveyable Treat where
+  type Property Treat = Structural Treat
 deriving via Generically Treat instance Promptable Treat
 
 -- * Reachable types through 'DescriptionPrompt'
@@ -391,13 +402,15 @@ data Outer = Outer
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
 instance Describable Inner where describeType _ = "An inner record."
-instance Surveyable Inner
+instance Surveyable Inner where
+  type Property Inner = Structural Inner
 
 instance Describable Outer where
   describeType _ = "An outer record."
   referencedTypes _ = reach @Inner <> reach @Int <> reach @[Text]
 
-instance Surveyable Outer
+instance Surveyable Outer where
+  type Property Outer = Structural Outer
 deriving via Promptable.DescriptionPrompt Outer instance Promptable Outer
 
 -- | A chain of links, each holding the next: a recursive type promoted through 'Promptable.DescriptionPrompt'.
@@ -538,7 +551,7 @@ main =
               let d = description (Proxy @User)
               assertContains "The following properties MUST hold in your response:" d
               assertContains "The email address is not empty." d
-          , testCase "a bare instance describes the properties of its fields (Guest)" $ do
+          , testCase "a Structural instance describes the properties of its fields (Guest)" $ do
               let d = description (Proxy @Guest)
               assertContains "The following properties MUST hold in your response:" d
               assertContains "- Field guestUser: The email address is not empty." d
@@ -1296,7 +1309,7 @@ main =
                   seen <- readIORef seenContexts
                   assertContains "The email address is not empty." (seen !! 1)
                   assertContains "Generate a new, corrected JSON response" (seen !! 1)
-              , testCase "a field's violated property is rejected and named in the correction (bare instance)" $ do
+              , testCase "a field's violated property is rejected and named in the correction (Structural instance)" $ do
                   responses <-
                     newIORef
                       [ "{\"guestLabel\":\"vip\",\"guestUser\":{\"userName\":\"Alice\",\"userEmail\":\"\"}}"
