@@ -16,7 +16,6 @@ maintainer: programming@manuelbaerenz.de
 build-type: Simple
 extra-doc-files: CHANGELOG.md
 extra-source-files:
-  test/fixtures/*.hs
   test/golden/*.golden
 
 tested-with:
@@ -59,13 +58,8 @@ test-suite shroom-class-test
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: Main.hs
-  other-modules:
-    PackageFlags
-    Rejection
-
   default-language: GHC2024
   build-depends:
-    process ^>=1.6,
     shroom-class,
     tasty >=1.4 && <1.6,
     tasty-golden ^>=2.3,

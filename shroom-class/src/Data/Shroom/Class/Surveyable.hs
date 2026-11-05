@@ -18,15 +18,13 @@ module Data.Shroom.Class.Surveyable where
 
 -- base
 import Data.Int (Int64)
-import Data.Kind (Constraint, Type)
+import Data.Kind (Type)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Proxy (Proxy (..))
-import Data.Type.Bool (type (||))
-import Data.Type.Equality (type (==))
 import Data.Typeable (Typeable, typeRep)
 import Data.Void (Void, absurd)
 import GHC.Generics (Generically (..))
-import GHC.TypeLits (ErrorMessage (..), KnownSymbol, Symbol, TypeError, symbolVal)
+import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 import Numeric.Natural (Natural)
 
 -- containers
@@ -152,27 +150,22 @@ A reply that passed under the old behaviour (when the properties of container
 elements were not checked) can therefore now fail a property of an element and
 get a repair turn.
 
-== A recursive type with a bare instance is rejected
+== A type recursive through its structural properties never ends under 'Structural'
 
-A type that is directly or mutually recursive must not use the structural
-default, and the compiler does not let it: a bare @instance Surveyable Expr@ is a
-compile error that names the type and the opt-out. \"Directly recursive\" means a
-field of its own type, also under a list, 'NonEmpty', 'Set' or 'Maybe': like the
-@Neg Expr@ in @data Expr = Lit Int | Neg Expr@ and the @[Tree]@ in @data Tree =
-Node [Tree]@, since a container carries its element's 'Property'. \"Mutually
-recursive\" means the same through another type's bare instance, or through a
-polymorphic type instantiated at the recursive one, like the @Branch Cond
-Grouping@ in @data Grouping = Grouping (NonEmpty (Branch Cond Grouping))@.
-Enumerating the structural 'Property' (its 'Universe') of such a type would never
-end, and 'description' and shroom's retry loop enumerate it, so the instance is
-refused where it is written instead of running forever on every request. (It used
-to hang, in @shroom@ before any request was sent and on every backend; under the
-former @Void@ default it worked.) Opt out on the recursive type with
-@type Property Expr = Void@, as above, which drops the properties of its other
-fields too, or give it a custom 'Property' that does not contain
-@'Structural' Expr@. Only a cycle is rejected: two fields of one type are fine.
-'NoStructuralLoop' is the check. Code that is generic over @'Structural' a@ and
-enumerates it needs @'Finite' ('Structural' a)@ in its context.
+A type that is directly or mutually recursive must not have @'Structural'@ as its
+'Property': enumerating the structural 'Property' (its 'Universe') of such a type
+never ends, although its 'Finite' instance claims it does, and 'description' and
+shroom's retry loop enumerate it. They run forever, in @shroom@ before any request
+is sent and on every backend. \"Directly recursive\" means a field of its own type,
+also under a list, 'NonEmpty', 'Set' or 'Maybe': like the @Neg Expr@ in @data Expr =
+Lit Int | Neg Expr@ and the @[Tree]@ in @data Tree = Node [Tree]@, since a
+container carries its element's 'Property'. \"Mutually recursive\" means the same
+through another type whose 'Property' is 'Structural', or through a polymorphic
+type instantiated at the recursive one. Nothing in the types prevents it, so
+choose another 'Property' for the recursive type: @type Property Expr = Void@, as
+above, which drops the properties of its other fields too, or a custom 'Property'
+that does not contain @'Structural' Expr@. A cycle is what never ends: two
+fields of one type are fine.
 
 To keep the other properties of a recursive type, name the properties of its
 non-recursive fields and check the recursive field by hand with 'everyHolds'.
@@ -368,9 +361,9 @@ deriving via (Every \"Every entry\" Roster a) instance (Surveyable a) => Surveya
 A field of type @Roster X@ then contributes @X@'s properties, under that label,
 to the structural default of the type that holds it. Enumerating the
 'Universe' of such a container's 'Property' ends exactly when the element's
-does, so a type recursive through it needs the opt-out of the recursion
-section in 'Surveyable', and the compiler asks for it: the bare instance is
-rejected.
+does, so a type recursive through it must not have 'Structural' as its
+'Property': see the recursion section in 'Surveyable', which also says what to
+write instead.
 
 'everyHolds' and 'describeEvery' are the pair behind it, and also serve a
 hand-written lift into a custom 'Property', as one side of an 'Either', when a
@@ -481,11 +474,12 @@ Its 'Universe' lists every field property of every constructor, in
 constructor and then field order. A constructor without fields, and a field
 whose own 'Property' is empty, contribute nothing.
 
-A type recursive through its own structural properties has no finite
-'Universe': its 'Universe' and 'Finite' instances (and so a bare
-@instance Surveyable@ for it) are rejected at compile time, see
-'NoStructuralLoop'. Code generic over @'Structural' a@ needs
-@'Finite' ('Structural' a)@ in its context.
+A type recursive through its own structural properties (a field of its own
+type, also under a container, or through another type's structural properties)
+has no finite 'Universe', although the 'Finite' instance claims one: with
+'Structural' as its 'Property', 'description' and shroom's retry loop run forever
+before any request is sent. See the recursion section in 'Surveyable' for what
+to write instead.
 -}
 newtype Structural a = Structural (NS (NS PropertyOf) (Code a))
 
@@ -493,14 +487,14 @@ deriving instance (Eq (NS (NS PropertyOf) (Code a))) => Eq (Structural a)
 
 deriving instance (Show (NS (NS PropertyOf) (Code a))) => Show (Structural a)
 
-instance (All2 Surveyable (Code a), NoStructuralLoop a) => Universe (Structural a) where
+instance (All2 Surveyable (Code a)) => Universe (Structural a) where
   universe = Structural <$> universeConstructors
 
 {- | The structural properties are finitely many, as each field's 'Property' is
-'Finite' (a superclass of 'Surveyable'), and the type does not recur through
-them, see 'NoStructuralLoop'.
+'Finite' (a superclass of 'Surveyable'), unless the type recurs through them: see
+'Structural'.
 -}
-instance (All2 Surveyable (Code a), NoStructuralLoop a) => Finite (Structural a)
+instance (All2 Surveyable (Code a)) => Finite (Structural a)
 
 universeConstructors :: forall xss. (All2 Surveyable xss) => [NS (NS PropertyOf) xss]
 universeConstructors = case sList :: SList xss of
@@ -574,83 +568,6 @@ fieldNameAt i (Record _ fields) = case drop i (hcollapse (hmap (\(FieldInfo name
   name : _ -> Just name
   [] -> Nothing
 fieldNameAt _ _ = Nothing
-
--- ** The recursion check
-
-{- | Rejects, at compile time, a type @a@ whose structural 'Property' would
-enumerate itself: the constraint of the 'Universe' and 'Finite' instances of
-@'Structural' a@, so that a bare @instance Surveyable a@ for such a type does not
-compile. See the recursion section in 'Surveyable' for what to write instead.
-
-It walks 'Code' of @a@: for each field type @x@ it looks at @'Property' x@ and,
-at each @'Structural' y@ in it (both sides of an 'Either', and a container's
-'Property' is its element's), walks @y@ in turn. Meeting a type that is already
-on the path from the root to the field being looked at is a 'TypeError'. The
-path is extended on descent and not shared between sibling fields, so two fields
-of one structural type (a diamond) are accepted and only a real cycle is not. A
-'Property' holding no @'Structural' y@ ('Void', an enumeration, a custom type)
-ends the walk, which is what the opt-out @type Property X = Void@ relies on.
-
-Generic code over @'Structural' a@ needs the constraint in its context: write
-@'Finite' ('Structural' a)@ (or just this constraint) next to @'All2' 'Surveyable'
-('Code' a)@.
--}
-type NoStructuralLoop (a :: Type) = NotOnPath '[] a
-
-{- | The walk below @a@, given the types on the path from the root to @a@'s
-parent, in the order they were met.
--}
-type family NotOnPath (path :: [Type]) (a :: Type) :: Constraint where
-  NotOnPath path a = NotOnPathIf (ElemOf a path) path a
-
--- | Whether a type is in a list of types, by type equality.
-type family ElemOf (x :: Type) (xs :: [Type]) :: Bool where
-  ElemOf x '[] = 'False
-  ElemOf x (y ': ys) = (x == y) || ElemOf x ys
-
-type family NotOnPathIf (onPath :: Bool) (path :: [Type]) (a :: Type) :: Constraint where
-  NotOnPathIf 'True path a =
-    TypeError
-      ( 'ShowType a
-          ':<>: 'Text " is recursive through its structural properties, which would never end."
-          ':$$: 'Text "Give it `type Property "
-          ':<>: 'ShowType a
-          ':<>: 'Text " = Void`, which drops the properties of its other fields too,"
-          ':$$: 'Text "or a `Property` that does not contain `Structural "
-          ':<>: 'ShowType a
-          ':<>: 'Text "`."
-          ':$$: 'Text "The recursion section of `Surveyable` shows how to keep the properties of its other fields."
-      )
-  NotOnPathIf 'False path a = ConstructorsNotOnPath (a ': path) (Code a)
-
-type family ConstructorsNotOnPath (path :: [Type]) (xss :: [[Type]]) :: Constraint where
-  ConstructorsNotOnPath path '[] = ()
-  ConstructorsNotOnPath path (xs ': xss) = (FieldsNotOnPath path xs, ConstructorsNotOnPath path xss)
-
-type family FieldsNotOnPath (path :: [Type]) (xs :: [Type]) :: Constraint where
-  FieldsNotOnPath path '[] = ()
-  FieldsNotOnPath path (x ': xs) = (PropertyNotOnPath path (Property x), FieldsNotOnPath path xs)
-
-{- | The step of the walk at one field's 'Property' @p@: at a @'Structural' y@
-(and on both sides of an 'Either') the walk goes on, anywhere else it ends.
-
-A class with an incoherent catch-all instance rather than a closed type family
-with a catch-all equation, because @p@ is often @'Property' b@ for a type
-variable @b@, as in @instance ('Surveyable' c, 'Surveyable' g) => 'Surveyable'
-(Node c g)@. A type family equation does not fire on such a stuck argument, so
-the instance would not compile, while the incoherent instance is picked there. It
-cannot be picked wrongly for a concrete @p@: for @'Structural' y@ and @'Either' l
-r@ the more specific instances win, and for a stuck @p@ there is nothing to
-check yet. The check is made where the type variable is instantiated, as the
-walk goes on from the instance of the instantiated type.
--}
-class PropertyNotOnPath (path :: [Type]) (p :: Type)
-
-instance {-# INCOHERENT #-} PropertyNotOnPath path p
-
-instance (NotOnPath path y) => PropertyNotOnPath path (Structural y)
-
-instance (PropertyNotOnPath path l, PropertyNotOnPath path r) => PropertyNotOnPath path (Either l r)
 
 -- ** Defaults of 'Surveyable''s methods
 

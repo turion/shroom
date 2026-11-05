@@ -77,7 +77,7 @@ type.
   label ("Every element: …", "If present: …") and checks them on every element, so a reply that was
   accepted before can get a repair turn. An element type that has only a `Describable` instance
   needs a `Surveyable` one (`type Property X = Void` is enough). A type recursive through a
-  container is now rejected at compile time and needs the opt-out of the recursion entry below.
+  container must not have `Structural` as its `Property`, see the recursion entry below.
   `shroom-class`'s changelog has the details.
 * **Behaviour change: a property whose `describeProperties` is `Nothing` is now enforced.** Until
   now the retry loop and `improve` checked a reply against the described properties only, so a
@@ -101,16 +101,14 @@ type.
   own properties. `promptSingle`, `promptTools` and `improve` are now their `…Checked []` and send
   the same requests as before. The `Checked` variants are flat like `promptSingle`: a type's own
   `Promptable` strategy does not see the extra properties.
-* **Breaking: a directly or mutually recursive type with a bare `instance Surveyable X` is rejected
-  at compile time, with a message naming the opt-out.** It used to hang, before any request was
-  sent and on every backend, because the structural default enumerates its
-  properties forever (e.g. `data Expr = Lit Int | Neg Expr`, or `data Tree = Node [Tree]`: a
-  container carries its element's properties, so recursion under a list, `NonEmpty`, `Set` or
-  `Maybe` counts as direct recursion). Opt out with
-  `type Property X = Void` or a custom `Property`; `shroom-class`'s changelog has the details, and
-  the pattern that keeps the type's other properties. Code that is generic over `Structural a`
-  and enumerates it now asks for `Finite (Structural a)` in its context. (A
-  recursive schema is in any case rejected by Claude.)
+* **A directly or mutually recursive type must not have `Structural X` as its `Property`: it
+  hangs.** Before any request is sent and on every backend, `description` and the retry loop
+  enumerate its properties forever, because the structural properties of such a type never end
+  (e.g. `data Expr = Lit Int | Neg Expr`, or `data Tree = Node [Tree]`: a container carries its
+  element's properties, so recursion under a list, `NonEmpty`, `Set` or `Maybe` counts as direct
+  recursion). Use `type Property X = Void` or a custom `Property` instead; `shroom-class`'s
+  changelog has the details, and the pattern that keeps the type's other properties. (A recursive
+  schema is in any case rejected by Claude.)
 * **Breaking: the new base-type `Promptable` instances can overlap yours.** `Promptable` now has
   instances for `Text`, `Int`, `Integer`, `Natural`, `Double`, `Float`, `Bool`, `Char`, `UTCTime`,
   `Day`, `[a]`, `NonEmpty a` and `Maybe a` (listed under "New" below), and `shroom-class` gives the

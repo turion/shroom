@@ -145,17 +145,17 @@ properties ('Surveyable'): the model is told them, labelled ("Every element: …
 "If present: …" for 'Maybe'), and the container's value is checked on every element.
 The instances need @'Surveyable' a@ for the element.
 
-== Recursive types are rejected, and fail against Claude
+== Recursive types hang under 'Structural', and fail against Claude
 
 A directly or mutually recursive type (@data Expr = Lit Int | Neg Expr@: a field
 of its own type, also under a list, 'NonEmpty', 'Set' or 'Maybe', since a container
 carries its element's properties; or one that reaches itself through another
-type's bare instance) with a bare
-@instance Surveyable@ is rejected at compile time under the structural default,
-with an error that names the type and the opt-out: enumerating its structural
-'Property' would never end, on every backend and before any request is sent.
-Such a type must opt out of the default with @type Property X = Void@ (or a custom
-'Property'), see 'Surveyable', which also shows how to keep the other properties of a
+type whose 'Property' is 'Structural') must not have 'Structural' as its
+'Property': enumerating its structural properties never ends, although its
+'Finite' instance claims they do, so 'description' and the retry loop run forever,
+on every backend and before any request is sent.
+Give such a type @type Property X = Void@ (or a custom 'Property') instead, see
+'Surveyable', which also shows how to keep the other properties of a
 recursive type.
 
 Independently of that, Anthropic's structured outputs do not support recursive

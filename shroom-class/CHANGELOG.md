@@ -131,34 +131,25 @@
     Use this for a field of a type you do not own, which has no `Describable`/`Surveyable`
     instance (a bare instance fails with an `All2 Surveyable` error), or when you do not want the
     `generics-sop` instances. Or give that field type, or a newtype around it, its own instances.
-* **Breaking: a directly or mutually recursive type with a bare `instance Surveyable X` is
-  rejected at compile time, with a message naming the opt-out.**
-  With the structural default, `universe @(Structural X)` would never end for a type with a field of its
-  own type, also under a list, `NonEmpty`, `Set` or `Maybe` (`data Expr = Lit Int | Neg Expr`,
-  `data Tree = Node [Tree]`: a container carries its element's `Property`, see "Container fields"
-  below), or that reaches itself through another type's bare instance, or through a polymorphic type
-  instantiated at the recursive one (`data Grouping = Grouping (NonEmpty (Branch Cond Grouping))`).
-  `description` and shroom's retry loop (which enumerate the properties) would then run forever, in
-  `shroom` before any request is sent and on every backend, which is what such an instance used to
-  do; under the old `Void` default such a type worked. Now the `Universe` and `Finite` instances of
-  `Structural X` carry a check, `NoStructuralLoop X`, that walks the field types' structural
-  properties and fails with a `TypeError` when it meets a type again on its way down, so the bare
-  instance itself does not compile; the error names the type and says to give it
-  `type Property X = Void`, which drops the properties of its other fields too, or a `Property` that
-  does not contain `Structural X`. Two fields of one structural type are no recursion, and a
-  polymorphic bare instance such as `instance (Surveyable a) => Surveyable (Pair a)` is accepted, its
-  check being made where `a` is instantiated. Code that is generic over `Structural a` and
-  enumerates it, like a function `(All2 Surveyable (Code a)) => … universe @(Structural a)`, now asks
-  for `Finite (Structural a)` (or `NoStructuralLoop a`) in its context. Opt out
-  on the recursive type with `instance Surveyable X where type Property X = Void`, or give it a
-  custom `Property` that does not contain `Structural X`. To keep the type's other properties, name
-  the properties of its non-recursive fields and check the recursive field with `everyHolds`: for
+* **A directly or mutually recursive type must not have `Structural X` as its `Property`: its
+  `universe` never ends.**
+  `universe @(Structural X)` has no end for a type with a field of its own type, also under a list,
+  `NonEmpty`, `Set` or `Maybe` (`data Expr = Lit Int | Neg Expr`, `data Tree = Node [Tree]`: a
+  container carries its element's `Property`, see "Container fields" below), or that reaches itself
+  through another type whose `Property` is `Structural`, or through a polymorphic type instantiated
+  at the recursive one (`data Grouping = Grouping (NonEmpty (Branch Cond Grouping))`), although the
+  `Finite (Structural X)` instance claims it is finite. `description` and shroom's retry loop (which
+  enumerate the properties) then run forever, in `shroom` before any request is sent and on every
+  backend. Nothing in the types stops it. Instead give the recursive type
+  `type Property X = Void`, which drops the properties of its other fields too, or a custom `Property`
+  that does not contain `Structural X`. Two fields of one structural type are no recursion. To keep
+  the type's other properties, name the properties of its non-recursive fields and check the
+  recursive field with `everyHolds`: for
   `data Section = Section {heading :: Title, subsections :: [Section]}`, write
   `type Property Section = Property Title` (which needs `UndecidableInstances`; the concrete
   `TitleProperty` does not) with
   `propertyHolds s p = propertyHolds (heading s) p && everyHolds (subsections s) p`; the `Surveyable`
-  Haddock shows it. The test suite checks the rejection by compiling the fixtures in `test/fixtures`
-  with `ghc -fno-code`.
+  Haddock shows it.
 * **Breaking: the new base-type instances can overlap yours.** `Describable` and `Surveyable`
   instances now exist for `Text`, `Int`, `Integer`, `Natural`, `Double`, `Float`, `Bool`, `Char`,
   `UTCTime`, `Day`, `[a]`, `NonEmpty a` and `Maybe a`. A downstream package that already defines one
@@ -201,7 +192,7 @@
   (needs `DerivingVia` and `UndecidableInstances`, as the associated `Property` is a type family
   application). Nothing needs lifting by hand any more: a hand-written lift of such a field combined
   with `Structural X` would tell and check each element property twice. A type recursive through a
-  container needs the opt-out of the recursion entry above. Part of
+  container must not have `Structural X` as its `Property`, see the recursion entry above. Part of
   <https://github.com/turion/shroom/issues/18>.
 * New: `Structural a` (with `structuralHolds`, `describeStructural`) and `PropertyOf`;
   `Describable`/`Surveyable` instances for `Text`, `Int`, `Integer`, `Natural`, `Double`, `Float`,
