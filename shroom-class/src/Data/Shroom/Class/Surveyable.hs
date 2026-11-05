@@ -5,7 +5,7 @@
 
 {- | The 'Surveyable' class: the properties and example values of a type, with
 the 'Surveyable' instances for the base types, the containers and
-'Generically', the structural default of the properties and the helpers that
+'Generically', the structural properties and the helpers that
 lift an element's properties into a container.
 
 Also here is 'description', which renders a type for the model and needs both
@@ -63,16 +63,60 @@ import Data.Shroom.Class.PropertyCheck (PropertyCheck (..), propertyLines)
 
 {- | Attach properties and example values to a type.
 
-This is the main user-filled class. A bare @instance Surveyable X@ needs no
-method at all: the type's properties are those of its fields, see below.
+This is the main user-filled class. Every instance states its 'Property' type:
+there is __no default__, and an instance that leaves @type Property@ out does not
+compile. 'propertyHolds' and 'describeProperties' are then filled in for the two
+property types that need nothing written, @'Void'@ and @'Structural' X@, so an
+instance of either writes only its @type Property@ (and, if it wants them,
+'examples').
 
 Superclass: 'Describable'.
 
-== The default: the properties of the fields
+== There is no default for 'Property'
 
-'Property' defaults to @'Structural' X@, and 'propertyHolds' and
-'describeProperties' default to 'structuralHolds' and 'describeStructural'. So
-in
+An instance that does not state it, as in
+
+@
+instance Surveyable X where
+  examples _ = [...]
+@
+
+is rejected with these errors (GHC 9.12.3; the second one twice, once for
+'propertyHolds' and once for 'describeProperties'):
+
+@
+No instance for ‘Finite (Property X)’
+  arising from the superclasses of an instance declaration
+No instance for ‘StandardProperties (Property X) X’
+  arising from a use of ‘Data.Shroom.Class.Surveyable.$dmpropertyHolds’
+@
+
+Neither says so, but the fix is to write @type Property X = …@ in the instance:
+@Property X@ stays unreduced in both messages because the instance names no
+type for it. Pick one of the common choices below; migrating an instance that
+used to be bare, @type Property X = 'Structural' X@ keeps the properties of its
+fields as before and @type Property X = 'Void'@ drops them. (Compare the error
+that names a concrete property type, @No instance for ‘StandardProperties
+XProperty X’@: that one is a custom 'Property' whose instance leaves a method
+out, see below and 'StandardProperties'.)
+
+=== @type Property X = Void@: no properties
+
+A type that wants no properties — a base type, a type whose fields are not
+'Surveyable', or one that simply does not want the @generics-sop@ instances —
+writes
+
+@
+instance Surveyable X where
+  type Property X = Void
+@
+
+and nothing else: 'propertyHolds' and 'describeProperties' are filled in
+(vacuously) as well.
+
+=== @type Property X = Structural X@: the properties of the fields
+
+In
 
 @
 data Booking = Booking { bookingGuest :: Guest, bookingNights :: Int }
@@ -84,36 +128,18 @@ instance Surveyable Booking where
 @
 
 every property of @Guest@ is a property of @Booking@: it is described in the
-prompt (as @Field bookingGuest: …@) and checked on the parsed value. The
-default needs the @generics-sop@ classes @SOP.Generic@ and @SOP.HasDatatypeInfo@
-for the type, both derivable (@deriving anyclass@) from "GHC.Generics"'s
-@Generic@, and a @Surveyable@ instance for every field type; 'Text', the number
-types, 'Bool', 'Char', 'UTCTime' and 'Day' have them here.
+prompt (as @Field bookingGuest: …@) and checked on the parsed value, by
+'structuralHolds' and 'describeStructural', which 'propertyHolds' and
+'describeProperties' default to for this property type. The caveats:
 
-== Opting out: @type Property X = Void@
+* It needs the @generics-sop@ classes @SOP.Generic@ and @SOP.HasDatatypeInfo@
+  for the type, both derivable (@deriving anyclass@) from "GHC.Generics"'s
+  @Generic@, and a @Surveyable@ instance for every field type; 'Text', the number
+  types, 'Bool', 'Char', 'UTCTime' and 'Day' have them here.
+* A type recursive through its own structural properties never ends, see the
+  recursion section below.
 
-A type that wants no properties — a base type, a type whose fields are not
-'Surveyable', or one that simply does not want the @generics-sop@ instances —
-writes
-
-@
-instance Surveyable X where
-  type Property X = Void
-@
-
-and nothing else: 'propertyHolds' and 'describeProperties' are then filled in
-(vacuously) as well.
-
-== A custom 'Property' replaces the default
-
-Naming a 'Property' type of your own, say @type Property X = XProperty@, replaces
-the default entirely: the properties of the fields are neither described nor
-checked any more. (A @Slot@ with a @Talk@ field and a property of its own
-loses the @Talk@'s properties this way.) A custom 'Property' also needs
-__both__ 'propertyHolds' and 'describeProperties' written out; leaving one out
-is a compile error (@No instance for ‘PropertyDefault XProperty X’ arising from a
-use of ‘Data.Shroom.Class.Surveyable.$dmdescribeProperties’@, see 'PropertyDefault'), not a
-silent default of 'True' or 'Nothing'.
+=== @type Property X = Either XProperty (Structural X)@: both
 
 To keep the properties of the fields next to your own, combine the two with
 'Either' and hand the structural half to 'structuralHolds' and
@@ -128,22 +154,89 @@ instance Surveyable X where
   describeProperties px (Right p) = describeStructural px p
 @
 
-All four equations are needed, or the instance is an incomplete pattern match.
-'Either' lists the type's own properties (@Left@) before those of the fields
-(@Right@), in the prompt and in the order of repair.
+The caveat is that this is written by hand, and all four equations are needed, or
+the instance is an incomplete pattern match. It has the needs and the recursion
+caveat of 'Structural'. 'Either' lists the type's own properties (@Left@) before
+those of the fields (@Right@), in the prompt and in the order of repair.
 Writing this combination by hand is interim: a derived \"Combined\" property
 source, which adds a type's own properties to its structural ones, is planned in
 <https://github.com/turion/shroom/issues/18 issue #18>.
+
+=== An enumeration of your own
+
+A type with properties of its own and no use for those of its fields names an
+enumeration, which needs @Bounded@, @Enum@, @Universe@ and @Finite@
+(@universe-base@'s @Data.Universe.Class@), and writes both methods:
+
+@
+data XProperty = XNotEmpty | XIsReal
+  deriving (Bounded, Enum, Universe, Finite, Eq, Ord, Show)
+
+instance Surveyable X where
+  type Property X = XProperty
+  propertyHolds x XNotEmpty = …
+  propertyHolds _ XIsReal = True  -- informal: told to the model, not checked
+  describeProperties _ XNotEmpty = Just \"…\"
+  describeProperties _ XIsReal = Just \"…\"
+@
+
+The caveat is that this __replaces__ the properties of the fields: they are
+neither described nor checked any more. (A @Slot@ with a @Talk@ field and a
+property of its own loses the @Talk@'s properties this way; the 'Either' form
+above keeps them.) Both methods are needed: leaving one out is the error that
+names @StandardProperties XProperty X@, see below.
+
+=== Forwarding a field's properties
+
+A type whose properties are those of one of its fields names that field's
+'Property', and writes the methods by hand, handing over to the field's:
+
+@
+instance Surveyable Section where
+  type Property Section = Property Title
+  propertyHolds s p = propertyHolds (heading s) p
+  describeProperties _ p = describeProperties (Proxy \@Title) p
+@
+
+The caveat is that @type Property Section = Property Title@ needs
+@UndecidableInstances@ in your module, as the type family application is no
+smaller than the left-hand side; naming @Title@'s concrete property type
+instead, say @type Property Section = TitleProperty@, does not. The recursion
+section below uses this form for a recursive type.
+
+=== A 'Foldable' container: 'Every'
+
+A container of your own that wraps a 'Foldable' has its element's properties with
+one @deriving via@ line:
+
+@
+deriving via (Every \"Every entry\" Roster a) instance (Surveyable a) => Surveyable (Roster a)
+@
+
+The caveats: it needs @Surveyable a@ for the element, @DerivingVia@ and
+@UndecidableInstances@ in your module, and a 'Describable' instance of your own
+for the container. See 'Every' for the definition, which also tells how a
+container with properties of its own besides its elements' lifts them by hand.
+
+== A custom 'Property' needs both methods
+
+A 'Property' type of your own, say @type Property X = XProperty@, needs
+__both__ 'propertyHolds' and 'describeProperties' written out; leaving one out
+is a compile error (@No instance for ‘StandardProperties XProperty X’ arising from a
+use of ‘Data.Shroom.Class.Surveyable.$dmdescribeProperties’@, see
+'StandardProperties'), not a silent default of 'True' or 'Nothing'. Note the
+difference to the error of a missing @type Property@ above: there the
+'Property' is unreduced, here it is your concrete type.
 
 == Container fields have their elements' properties
 
 A field of type @[a]@, @'NonEmpty' a@, @'Set' a@ or @'Maybe' a@ has the
 properties of @a@: the container's 'Property' is @a@'s, told to the model under
 a label (\"Every element: …\", for 'Maybe' \"If present: …\") and checked on every
-element, vacuously for 'Nothing' and an empty container. So under a bare
-instance the properties of the elements of a @[Speaker]@ or of a @Maybe Name@
-field are described in the prompt and checked like those of any other field,
-as @Field speakers: Every element: …@. This needs @Surveyable a@, not only
+element, vacuously for 'Nothing' and an empty container. So under
+@'Structural' X@ the properties of the elements of a @[Speaker]@ or of a @Maybe
+Name@ field are described in the prompt and checked like those of any other
+field, as @Field speakers: Every element: …@. This needs @Surveyable a@, not only
 'Describable'. See 'Every' for the definition, which a 'Foldable'
 container of your own can use the same way, in one @deriving via@ line.
 
@@ -196,20 +289,53 @@ the concrete property type of @Title@ instead, say
 
 == A field of a type you do not own
 
-A bare instance fails with an @All2 Surveyable@ error if one of the fields has
-no 'Describable' and 'Surveyable' instance, as happens for a field of a
-third-party type. Either write the opt-out above on the enclosing type, or give
-the field type — or a @newtype@ around it, to avoid an orphan instance — its own
-instances.
+@type Property X = Structural X@ fails with an @All2 Surveyable@ error if one of
+the fields has no 'Describable' and 'Surveyable' instance, as happens for a field
+of a third-party type. Either give the enclosing type another 'Property', such
+as @Void@ above, or give the field type — or a @newtype@ around it, to avoid an
+orphan instance — its own instances.
 -}
 class (Describable a, Finite (Property a)) => Surveyable a where
   {- | The type of properties for @a@.  Must have a 'Finite'
-    instance.  Defaults to @'Structural' a@, the properties of @a@'s fields;
-    write @type Property a = Void@ for no properties at all.
+    instance.  __There is no default: every instance states its @type Property@__,
+    and leaving it out is a compile error (see the header of 'Surveyable' for the
+    errors GHC gives). The common choices:
+
+    * @type Property X = Void@: no properties at all. Nothing else to write, and
+      no @generics-sop@ instances needed.
+
+    * @type Property X = 'Structural' X@: the properties of @X@'s fields, each
+      field type's own 'Property'. Nothing else to write. Needs @SOP.Generic@ and
+      @SOP.HasDatatypeInfo@ for @X@ and a 'Surveyable' instance for every field
+      type. Caveat: a type recursive through its own structural properties never
+      ends, see the recursion section of the header.
+
+    * @type Property X = Either XProperty ('Structural' X)@: a type's own
+      properties next to those of its fields. Caveat: 'propertyHolds' and
+      'describeProperties' are written by hand, four equations in all, the
+      @Right@ ones handing over to 'structuralHolds' and 'describeStructural'.
+      The same caveat about recursion as for 'Structural'.
+
+    * An enumeration of your own, @data XProperty = … deriving (Bounded, Enum,
+      Universe, Finite, Eq, Ord, Show)@, with @type Property X = XProperty@.
+      Caveat: the fields' properties are not included, and both methods are
+      written by hand.
+
+    * Forwarding a field's properties, @type Property Section = Property Title@.
+      Caveat: it needs @UndecidableInstances@ (naming @Title@'s concrete property
+      type does not), and the methods are written by hand, @propertyHolds@
+      checking the field (and, for a recursive type, the recursive fields with
+      'everyHolds').
+
+    * A 'Foldable' container: @deriving via ('Every' \"Every entry\" Roster a)@,
+      which has the element's 'Property'. Caveat: it needs @Surveyable a@ for the
+      element, and @DerivingVia@ and @UndecidableInstances@.
+
+    An instance that only wants 'examples' writes @type Property@ and @examples@,
+    the methods coming from 'StandardProperties' as long as 'Property' is 'Void'
+    or 'Structural'.
   -}
   type Property a :: Type
-
-  type Property a = Structural a
 
   {- | Check whether the property holds.
 
@@ -217,7 +343,7 @@ class (Describable a, Finite (Property a)) => Surveyable a where
     violated.  Used for validation after parsing.
 
     Defaults to checking the 'Structural' properties of the fields if 'Property'
-    is its default, and to nothing at all if it is 'Void'. For any other
+    is @'Structural' a@, and to nothing at all if it is 'Void'. For any other
     'Property' there is no default, and the method must be written.
 
     Hint: If you have an "informal" property (like "is an english name")
@@ -225,7 +351,7 @@ class (Describable a, Finite (Property a)) => Surveyable a where
     you can still include it in 'describeProperties' and return 'True' here.
   -}
   propertyHolds :: a -> Property a -> Bool
-  default propertyHolds :: (PropertyDefault (Property a) a) => a -> Property a -> Bool
+  default propertyHolds :: (StandardProperties (Property a) a) => a -> Property a -> Bool
   propertyHolds = defaultHolds
 
   {- | Human-readable description of a property, used in the prompt.
@@ -236,11 +362,11 @@ class (Describable a, Finite (Property a)) => Surveyable a where
     every property you check, unless the model meets it anyway.
 
     Defaults like 'propertyHolds': for the 'Structural' properties of the fields
-    if 'Property' is its default, for no property at all if it is 'Void', and
-    otherwise the method must be written.
+    if 'Property' is @'Structural' a@, for no property at all if it is 'Void',
+    and otherwise the method must be written.
   -}
   describeProperties :: Proxy a -> Property a -> Maybe Text
-  default describeProperties :: (PropertyDefault (Property a) a) => Proxy a -> Property a -> Maybe Text
+  default describeProperties :: (StandardProperties (Property a) a) => Proxy a -> Property a -> Maybe Text
   describeProperties = defaultDescribe
 
   {- | Representative example values.  Included in the prompt when non-empty, in the
@@ -360,7 +486,8 @@ deriving via (Every \"Every entry\" Roster a) instance (Surveyable a) => Surveya
 @
 
 A field of type @Roster X@ then contributes @X@'s properties, under that label,
-to the structural default of the type that holds it. Enumerating the
+to the structural properties of the type that holds it, if its 'Property' is
+'Structural'. Enumerating the
 'Universe' of such a container's 'Property' ends exactly when the element's
 does, so a type recursive through it must not have 'Structural' as its
 'Property': see the recursion section in 'Surveyable', which also says what to
@@ -384,7 +511,7 @@ writing @Property Speaker@ in the instance head: GHC rejects the latter without
 @UndecidableInstances@, as a type family application is no smaller than the
 instance's own left-hand side. Do not combine a lift like this with
 @'Structural' X@ for a container field of @X@ whose element properties it
-lifts: the structural default already tells and checks them, so they would be
+lifts: the structural properties already tell and check them, so they would be
 told and checked twice.
 
 @runPrompt@ (from the @shroom@ package) only checks the properties of the
@@ -457,16 +584,14 @@ without writing out any property:
 @
 instance Surveyable Person where
   type Property Person = Structural Person
-  propertyHolds = structuralHolds
-  describeProperties = describeStructural
 @
+
+'propertyHolds' and 'describeProperties' then default to 'structuralHolds' and
+'describeStructural', so nothing else is written; they are only named by hand as
+the @Right@ half of an 'Either' (see 'Surveyable').
 
 (For this the type needs the @generics-sop@ classes 'Generic' and
 'HasDatatypeInfo', both derivable from "GHC.Generics"'s own @Generic@.)
-
-A bare @instance Surveyable Person@ now does exactly this by default, so the
-explicit form above is only needed when spelling it out, for example as the
-@Right@ half of an 'Either' (see 'Surveyable').
 
 It is a newtype, not a type family, so that naming it as a 'Property' needs
 no @UndecidableInstances@ in the user's module.
@@ -572,19 +697,26 @@ fieldNameAt _ _ = Nothing
 
 -- ** Defaults of 'Surveyable''s methods
 
-{- | What 'propertyHolds' and 'describeProperties' do when an instance does not
-write them, chosen by the instance's 'Property' type @p@: nothing for 'Void',
-the structural properties of the fields for @'Structural' a@.
+{- | The property types whose 'propertyHolds' and 'describeProperties' an
+instance need not write, chosen by the instance's 'Property' type @p@: nothing
+for 'Void', the structural properties of the fields for @'Structural' a@. For any
+other 'Property' there is no instance, and both methods must be written.
 
 This class is an implementation detail of 'Surveyable''s method defaults, and is
-exported only because its name shows up in a compile error. __If GHC complains
-that there is no instance of @PropertyDefault p a@, the instance of
-'Surveyable' for @a@ names a custom 'Property' @p@ and leaves 'propertyHolds' or
-'describeProperties' out: a custom 'Property' must define both
-'propertyHolds' and 'describeProperties'.__ Do not write instances of this
-class.
+exported only because its name shows up in compile errors, of two kinds:
+
+* @No instance for ‘StandardProperties (Property X) X’@, with @Property X@
+  __unreduced__ (and, next to it, @No instance for ‘Finite (Property X)’@): the
+  instance of 'Surveyable' for @X@ states no @type Property@. Write one, see the
+  common choices in 'Property' and in the header of 'Surveyable'.
+* @No instance for ‘StandardProperties XProperty X’@, with a concrete custom type
+  as the first argument: the instance names its own @type Property X =
+  XProperty@ and leaves 'propertyHolds' or 'describeProperties' out. A custom
+  'Property' must define both.
+
+Do not write instances of this class.
 -}
-class PropertyDefault p a where
+class StandardProperties p a where
   -- | The default 'propertyHolds'.
   defaultHolds :: a -> p -> Bool
 
@@ -592,12 +724,12 @@ class PropertyDefault p a where
   defaultDescribe :: Proxy a -> p -> Maybe Text
 
 -- | No properties: nothing to check, nothing to describe.
-instance PropertyDefault Void a where
+instance StandardProperties Void a where
   defaultHolds _ = absurd
   defaultDescribe _ = absurd
 
 -- | The properties of the fields, see 'Structural'.
-instance (Generic a, HasDatatypeInfo a, All2 Surveyable (Code a)) => PropertyDefault (Structural a) a where
+instance (Generic a, HasDatatypeInfo a, All2 Surveyable (Code a)) => StandardProperties (Structural a) a where
   defaultHolds = structuralHolds
   defaultDescribe = describeStructural
 

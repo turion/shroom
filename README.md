@@ -113,7 +113,7 @@ shroom uses three typeclasses that form a hierarchy:
 
 ```
 Describable          — describeType: one sentence (auto-derived from Haddock)
-    └── Surveyable   — Property, propertyHolds, describeProperties, examples (by default the fields' properties)
+    └── Surveyable   — Property, propertyHolds, describeProperties, examples (`Property` has no default)
             └── Promptable (+ ToSchema, FromJSON)  — prompt: the program that requests a value
 ```
 
@@ -127,12 +127,14 @@ Describable          — describeType: one sentence (auto-derived from Haddock)
   migration steps are in [`shroom-class/CHANGELOG.md`](shroom-class/CHANGELOG.md).  Check what a
   type sends with `T.putStrLn (description (Proxy @MyType))` in `cabal repl`.
 
-- **`Surveyable`** — properties and examples of a type. A bare `instance Surveyable MyType`
-  already describes and checks the properties of `MyType`'s fields (its `Property` defaults to
-  `Structural MyType`), for which `MyType` derives the `generics-sop` classes
-  `SOP.Generic` and `SOP.HasDatatypeInfo`. Override what you need:
-  - `Property` — an enumeration of properties (default: the properties of the fields, `Structural a`;
-    `type Property MyType = Void` opts out, with no methods to write)
+- **`Surveyable`** — properties and examples of a type. Every instance states its `Property`;
+  there is no default, and an instance without `type Property` does not compile. Write
+  `type Property MyType = Structural MyType` to describe and check the properties of `MyType`'s
+  fields (`MyType` derives the `generics-sop` classes `SOP.Generic` and `SOP.HasDatatypeInfo`), or
+  `type Property MyType = Void` for no properties; both need no methods. The rest of the instance:
+  - `Property` — an enumeration of properties: `Void`, `Structural a`, or a type of your own.
+    The `Surveyable` Haddock lists the common choices with their caveats and quotes the errors a
+    missing `type Property` gives
   - `propertyHolds` / `describeProperties` — properties to validate after parsing; a custom
     `Property` must define **both**. It replaces the fields' properties, unless you combine them as
     `Either MyProperty (Structural MyType)`, see `Data.Shroom.Class`
@@ -467,9 +469,9 @@ still has to be listed: cabal hides a package that is only a transitive dependen
 Every field type of a derived type needs a `Describable` instance too, from an earlier or the same
 splice; see the migration note in [`shroom-class/CHANGELOG.md`](shroom-class/CHANGELOG.md).
 
-A bare `instance Surveyable T` surveys the fields of `T`: their properties become properties of
-`T`. That needs the two `generics-sop` classes next to the others, which is why `generics-sop` is
-listed above (again, cabal hides it otherwise):
+`type Property T = Structural T` in `T`'s `Surveyable` instance surveys the fields of `T`: their
+properties become properties of `T`. That needs the two `generics-sop` classes next to the others,
+which is why `generics-sop` is listed above (again, cabal hides it otherwise):
 
 ```haskell
 import Generics.SOP qualified as SOP
@@ -479,8 +481,9 @@ data T = T { ... }
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 ```
 
-A type that wants no properties from its fields says `type Property T = Void` in its `Surveyable`
-instance instead, and needs neither `generics-sop` class.
+A type that wants no properties says `type Property T = Void` in its `Surveyable` instance
+instead, and needs neither `generics-sop` class. There is no default: an instance that states
+no `type Property` does not compile.
 
 A type that declares a `Property` for `Surveyable` also needs a `Universe` and a `Finite` instance
 for it (`Finite` declares that its properties end), which makes `universe-base` a further

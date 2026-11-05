@@ -8,18 +8,18 @@ model — can understand what it should produce.
 @
 Describable          — 'describeType': one sentence from Haddock (auto-derived)
     └── Surveyable   — 'Property', 'propertyHolds', 'describeProperties', 'examples'
-                       (by default the properties of the type's own fields, see below)
+                       ('Property' has no default: every instance states it, see below)
 @
 
 @Promptable@, which builds on 'Surveyable' to render a full prompt, lives on
 the far side of the pure\/effectful boundary — in the @shroom@ package, as
 @Control.Monad.Prompt.Promptable@ — see below.
 
-Typical usage. A bare 'Surveyable' instance surveys the type's fields: the
-properties of every field's own type become properties of the whole value (see
-'Structural'). It needs the @generics-sop@ classes @SOP.Generic@ and
-@SOP.HasDatatypeInfo@ (with @import qualified Generics.SOP as SOP@, and
-@generics-sop@ among the package's @build-depends@):
+Typical usage. Every 'Surveyable' instance states its @type Property@; there is
+no default. The common choice is 'Structural': the properties of every field's
+own type become properties of the whole value. It needs the @generics-sop@
+classes @SOP.Generic@ and @SOP.HasDatatypeInfo@ (with @import qualified
+Generics.SOP as SOP@, and @generics-sop@ among the package's @build-depends@):
 
 @
 -- | A user with a name and an email address.
@@ -36,8 +36,16 @@ instance Promptable User  -- from Control.Monad.Prompt.Promptable; uses the
                           -- default description-based prompt rendering
 @
 
-A type that has properties of its own states them instead, and then needs both
-'propertyHolds' and 'describeProperties':
+A type that wants no properties at all, and no @generics-sop@ instances, says so in
+one line, with no methods:
+
+@
+instance Surveyable User where
+  type Property User = Void
+@
+
+A type that has properties of its own states them instead (and not those of its
+fields), and then needs both 'propertyHolds' and 'describeProperties':
 
 @
 instance Surveyable User where
@@ -49,8 +57,7 @@ instance Surveyable User where
 To keep the field properties alongside its own, combine the two with 'Either'
 (all four equations are needed). Writing this by hand is interim: a derived
 \"Combined\" property source is planned in
-<https://github.com/turion/shroom/issues/18 issue #18>. See the 'Surveyable'
-Haddock for details:
+<https://github.com/turion/shroom/issues/18 issue #18>:
 
 @
 instance Surveyable User where
@@ -61,13 +68,10 @@ instance Surveyable User where
   describeProperties pu (Right p) = describeStructural pu p
 @
 
-A type that wants no properties at all, and no @generics-sop@ instances, opts out
-in one line, with no methods:
-
-@
-instance Surveyable User where
-  type Property User = Void
-@
+An instance that leaves @type Property@ out does not compile. The 'Surveyable'
+Haddock lists the common choices with their caveats (also an enumeration of your
+own, forwarding a field's properties and a 'Foldable' container through 'Every'),
+and quotes the errors a missing one gives.
 
 == Pure\/effectful boundary
 

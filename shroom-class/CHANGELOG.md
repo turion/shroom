@@ -27,7 +27,7 @@
   `Data.Shroom.Class.Describable` holds the class `Describable`, its helpers (`Described`, `reach`,
   `reachableTypes`) and every `Describable` instance; `Data.Shroom.Class.Surveyable` holds the class
   `Surveyable`, `typeProperties`, every `Surveyable` instance, `everyHolds` and `describeEvery`,
-  `Structural` and its machinery, `PropertyDefault`, and `description`. `Data.Shroom.Class` now
+  `Structural` and its machinery, `StandardProperties`, and `description`. `Data.Shroom.Class` now
   defines nothing and re-exports these two modules and `Data.Shroom.Class.PropertyCheck`, so
   every name it exported before is still exported from it and no import has to change. Nothing
   behaves differently. One visible difference: the name in the compile error for a custom
@@ -116,21 +116,35 @@
   the `[a]` and `NonEmpty a` ones: described through the element type, with no section of its own,
   so `reach @(Set X)` is `X`'s entry. No `Ord a` is needed here; only `shroom`'s `Promptable` instance
   asks for it.
-* **Breaking: `Surveyable`'s `Property` now defaults to `Structural a`, not `Void`.** A bare
-  `instance Surveyable X` used to have no properties; it now has the properties of `X`'s fields —
-  each field type's own `Property` — described in the prompt as `Field name: …` and checked on the
-  parsed value, by default `propertyHolds`/`describeProperties` (`structuralHolds`,
-  `describeStructural`). The default needs `SOP.Generic` and `SOP.HasDatatypeInfo` for `X` and a
-  `Surveyable` instance for every field type, so an existing bare instance stops compiling until you
-  take one of two ways out:
-  - **Derive the `generics-sop` classes**, next to your other `deriving anyclass`:
-    `deriving anyclass (…, SOP.Generic, SOP.HasDatatypeInfo)` (with
-    `import Generics.SOP qualified as SOP`, and `generics-sop` in your `build-depends`). The
-    instance then surveys the fields; if none of them has properties, nothing in the prompt changes.
-  - **Opt out** with one line and no methods: `instance Surveyable X where type Property X = Void`.
-    Use this for a field of a type you do not own, which has no `Describable`/`Surveyable`
-    instance (a bare instance fails with an `All2 Surveyable` error), or when you do not want the
-    `generics-sop` instances. Or give that field type, or a newtype around it, its own instances.
+* **Breaking: `Surveyable`'s `Property` has no default; state it.** It used to default to `Void`, so
+  a bare `instance Surveyable X` had no properties. Now an instance that leaves out `type Property`
+  does not compile, with these errors (the second one for each of `propertyHolds` and
+  `describeProperties`):
+
+  ```
+  No instance for ‘Finite (Property X)’
+    arising from the superclasses of an instance declaration
+  No instance for ‘StandardProperties (Property X) X’
+    arising from a use of ‘Data.Shroom.Class.Surveyable.$dmpropertyHolds’
+  ```
+
+  `Property X` stays unreduced in both. Migrate each such instance by writing its `Property`:
+  - **`type Property X = Void`** keeps the old behaviour (no properties), with no methods to write and
+    no `generics-sop` classes. Use this for a field of a type you do not own, which has no
+    `Describable`/`Surveyable` instance, or when you do not want the `generics-sop` instances.
+  - **`type Property X = Structural X`** gives `X` the properties of its fields — each field type's
+    own `Property` — described in the prompt as `Field name: …` and checked on the parsed value;
+    `propertyHolds`/`describeProperties` default to `structuralHolds`/`describeStructural`, so no
+    methods are written either. It needs `SOP.Generic` and `SOP.HasDatatypeInfo` for `X`
+    (`deriving anyclass (…, SOP.Generic, SOP.HasDatatypeInfo)`, with
+    `import Generics.SOP qualified as SOP` and `generics-sop` in your `build-depends`) and a
+    `Surveyable` instance for every field type (otherwise an `All2 Surveyable` error); if none of
+    the fields has properties, nothing in the prompt changes.
+
+  The `Property` Haddock and the `Surveyable` header list the other common choices with their
+  caveats: `Either XProperty (Structural X)` with hand-written methods, an enumeration of your own
+  (`deriving (Bounded, Enum, Universe, Finite)`), forwarding a field's properties (`type Property
+  Section = Property Title`) and a `Foldable` container through `Every`.
 * **A directly or mutually recursive type must not have `Structural X` as its `Property`: its
   `universe` never ends.**
   `universe @(Structural X)` has no end for a type with a field of its own type, also under a list,
@@ -162,29 +176,32 @@
   compile, for example with
 
   ```
-  No instance for ‘PropertyDefault XProperty X’
+  No instance for ‘StandardProperties XProperty X’
     arising from a use of ‘Data.Shroom.Class.Surveyable.$dmdescribeProperties’
   ```
 
-  (`$dmpropertyHolds` when `propertyHolds` is the one missing). Write the method; for an informal
-  property, `propertyHolds _ _ = True` switches it off. `describeProperties _ _ = Nothing` only keeps
-  it out of the prompt, and `shroom` still enforces it (see its changelog's behaviour-change entry on
-  undescribed properties). `PropertyDefault` is the dispatch class behind those defaults, exported
-  for its name's sake.
-* **A custom `Property` replaces the structural default entirely.** Adding one property of your own
-  to a type silently drops its fields' properties from the prompt and from validation. To keep both,
-  combine them: `type Property X = Either XProperty (Structural X)`, with `structuralHolds` and
-  `describeStructural` on the `Right` side; the `Surveyable` Haddock has the four equations.
+  (`$dmpropertyHolds` when `propertyHolds` is the one missing; note the concrete `XProperty`, where
+  a missing `type Property` leaves `Property X` unreduced, see the entry above). Write the method;
+  for an informal property, `propertyHolds _ _ = True` switches it off. `describeProperties _ _ =
+  Nothing` only keeps it out of the prompt, and `shroom` still enforces it (see its changelog's
+  behaviour-change entry on undescribed properties). `StandardProperties` is the class behind those
+  defaults, exported for its name's sake (renamed from `PropertyDefault`, which was never
+  released).
+* **A custom `Property` does not include the fields' properties.** Adding one property of your own
+  to a type that had `Structural X` silently drops its fields' properties from the prompt and from
+  validation. To keep both, combine them: `type Property X = Either XProperty (Structural X)`, with
+  `structuralHolds` and `describeStructural` on the `Right` side; the `Surveyable` Haddock has the
+  four equations.
 * **Breaking: container fields have their elements' properties, and the container instances need
   `Surveyable a`.** The `Surveyable` instances of `[a]`, `NonEmpty a`, `Set a` and `Maybe a` now have
   `Property (f a) = Property a`: each property of the element is told to the model under a label
   ("Every element: …", for `Maybe` "If present: …") and checked on every element, vacuously for
-  `Nothing` and an empty container. So under a bare instance (the structural default), a
+  `Nothing` and an empty container. So under `Structural X`, a
   `[Speaker]` or `Maybe Name` field now contributes its element's properties to the type's
   `description` and checks, as `Field speakers: Every element: …`. **A reply that was accepted
   before can now fail a property of an element and get a repair turn.** The instances' context is
   now `Surveyable a` instead of `Describable a`, so an element type that has only a `Describable`
-  instance (the field of a type with a bare `Surveyable` instance, or a bare `[Foo]`) needs a
+  instance (the field type of a `Structural` type, or the element of a `[Foo]` field) needs a
   `Surveyable` instance as well (`type Property Foo = Void` is enough). One definition, the newtype
   `Every label f a` over any `Foldable` `f` (with `everyHolds` and `describeEvery`), backs the four
   by `deriving via`, and a container of your own gets its element's properties with one line,

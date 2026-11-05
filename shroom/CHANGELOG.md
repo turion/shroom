@@ -63,17 +63,18 @@ type.
   through `shroom` are unchanged. A `cabal.project` that lists shroom's packages by path, or a
   `source-repository-package` with `subdir:`, must now also list `shroom-class`. `shroom`'s `text`
   lower bound is now 2.1.2.
-* **Breaking: a bare `instance Surveyable X` now surveys `X`'s fields.** `shroom` re-exports
-  `Data.Shroom.Class`, and `Surveyable`'s `Property` now defaults to `Structural a`, not `Void`: a
-  bare instance needs `SOP.Generic` and `SOP.HasDatatypeInfo` for `X` (and `generics-sop` in your
-  `build-depends`) or the one-line opt-out `type Property X = Void`, and a custom `Property` must now
-  write both `propertyHolds` and `describeProperties`. `shroom-class`'s changelog has the migration
-  note, the compile error to search for, and what container fields do (they now have their
-  elements' properties, see the next entry).
+* **Breaking: `Surveyable`'s `Property` has no default; state it.** `shroom` re-exports
+  `Data.Shroom.Class`, where `Property` used to default to `Void`: a bare `instance Surveyable X`
+  now does not compile. Write `type Property X = Void` for no properties (as before), or
+  `type Property X = Structural X` for the properties of `X`'s fields, which needs `SOP.Generic` and
+  `SOP.HasDatatypeInfo` for `X` (and `generics-sop` in your `build-depends`). A custom `Property`
+  must now write both `propertyHolds` and `describeProperties`. `shroom-class`'s changelog has the
+  errors a missing `type Property` gives, the migration note, the other common choices, and what
+  container fields do (they now have their elements' properties, see the next entry).
 * **Breaking: container fields have their elements' properties, and `Promptable` of `[a]`,
   `NonEmpty a`, `Set a` and `Maybe a` now needs `Surveyable a`** (it was `Describable a`; the
   `Surveyable` instances of the four need it too). A bare prompt of such a container, and a container
-  field of a type with the structural default, tells the model the element's properties under a
+  field of a `Structural` type, tells the model the element's properties under a
   label ("Every element: …", "If present: …") and checks them on every element, so a reply that was
   accepted before can get a repair turn. An element type that has only a `Describable` instance
   needs a `Surveyable` one (`type Property X = Void` is enough). A type recursive through a

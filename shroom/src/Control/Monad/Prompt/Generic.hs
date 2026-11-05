@@ -113,11 +113,11 @@ The /cue/ is there so that fields asked for one by one still read as one value:
 a tone or a setting that the first field's request would otherwise leave to
 chance, and the later ones inherit. 'improve' is there to catch what a
 field-by-field build cannot see: a pair of fields that do not fit together. It is
-checked against the type's own 'Property', the one 'Surveyable' gives it: the
-structural one (the properties of the fields) by default, and only the custom
-one if the type replaced it (see the @Either … ('Structural' X)@ pattern in
-'Surveyable'). A draft that violates a property is never kept on a @fine@ verdict:
-'improve' retries that.
+checked against the type's own 'Property', the one its 'Surveyable' instance
+states: the properties of the fields if that is @'Structural' X@, and only the
+custom ones if the type names its own (see the @Either … ('Structural' X)@
+pattern in 'Surveyable', which keeps both). A draft that violates a property is
+never kept on a @fine@ verdict: 'improve' retries that.
 
 == Cost
 
@@ -162,8 +162,8 @@ recursive type.
 
 Independently of that, Anthropic's structured outputs do not support recursive
 schemas. A type that mentions itself (a tree whose children are trees, say)
-therefore fails against Claude even with the opt-out, in the generic strategy as
-in a flat request, which sends the same schema.
+therefore fails against Claude even with another 'Property', in the generic
+strategy as in a flat request, which sends the same schema.
 
 == Which types
 
