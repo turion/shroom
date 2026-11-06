@@ -1,0 +1,81 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Control.Monad.Prompt.TH</title><link href="linuwial.css" rel="stylesheet" type="text/css" title="Linuwial" /><link rel="stylesheet" type="text/css" href="quick-jump.css" /><link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=PT+Sans:400,400i,700" /><script src="haddock-bundle.min.js" async="async" type="text/javascript"></script><script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { processClass: "mathjax", ignoreClass: ".*" } });</script><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-AMS-MML_HTMLorMML" type="text/javascript"></script></head><body><div id="package-header"><span class="caption">shroom-class</span><ul class="links" id="page-menu"><li><a href="src/Control.Monad.Prompt.TH.html">Source</a></li><li><a href="index.html">Contents</a></li><li><a href="doc-index.html">Index</a></li></ul></div><div id="content"><div id="module-header"><table class="info"><tr><th>Safe Haskell</th><td>None</td></tr><tr><th>Language</th><td>GHC2024</td></tr></table><p class="caption">Control.Monad.Prompt.TH</p></div><div id="description"><p class="caption">Description</p><div class="doc"><p>Template Haskell utilities for deriving <code><a href="Data-Shroom-Class.html#t:Describable" title="Data.Shroom.Class">Describable</a></code> instances from Haddock
+documentation comments.</p></div></div><div id="synopsis"><details id="syn"><summary>Synopsis</summary><ul class="details-toggle" data-details-id="syn"><li class="src short"><a href="#v:deriveDescribable">deriveDescribable</a> :: <a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/GHC-Internal-TH-Syntax.html#t:Name" title="GHC.Internal.TH.Syntax">Name</a> -&gt; <a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/GHC-Internal-TH-Syntax.html#t:Q" title="GHC.Internal.TH.Syntax">Q</a> [<a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/GHC-Internal-TH-Syntax.html#t:Dec" title="GHC.Internal.TH.Syntax">Dec</a>]</li><li class="src short"><a href="#v:deriveDescribableExp">deriveDescribableExp</a> :: <a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/GHC-Internal-TH-Syntax.html#t:Name" title="GHC.Internal.TH.Syntax">Name</a> -&gt; <a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/GHC-Internal-TH-Syntax.html#t:Q" title="GHC.Internal.TH.Syntax">Q</a> <a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/GHC-Internal-TH-Syntax.html#t:Exp" title="GHC.Internal.TH.Syntax">Exp</a></li></ul></details></div><div id="interface"><h1>Documentation</h1><div class="top"><p class="src"><a id="v:deriveDescribable" class="def">deriveDescribable</a> :: <a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/GHC-Internal-TH-Syntax.html#t:Name" title="GHC.Internal.TH.Syntax">Name</a> -&gt; <a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/GHC-Internal-TH-Syntax.html#t:Q" title="GHC.Internal.TH.Syntax">Q</a> [<a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/GHC-Internal-TH-Syntax.html#t:Dec" title="GHC.Internal.TH.Syntax">Dec</a>] <a href="src/Control.Monad.Prompt.TH.html#deriveDescribable" class="link">Source</a> <a href="#v:deriveDescribable" class="selflink">#</a></p><div class="doc"><p>Generate a complete <code><a href="Data-Shroom-Class.html#t:Describable" title="Data.Shroom.Class">Describable</a></code> instance for a type, deriving
+<code><a href="Data-Shroom-Class.html#v:describeType" title="Data.Shroom.Class">describeType</a></code> from its Haddock documentation comment and
+<code><a href="Data-Shroom-Class.html#v:referencedTypes" title="Data.Shroom.Class">referencedTypes</a></code> from its fields.  Use this when
+you don't need to customise the description:</p><pre>-- | A user with a name and an email address.
+data User = User { userName :: Text, userEmail :: Text }
+
+$(deriveDescribable ''User)
+</pre><p>This generates:</p><pre>instance Describable User where
+  describeType = _ -&gt; pack &quot;A user with a name and an email address.\n...&quot;
+  referencedTypes _ = reach @Text &lt;&gt; (reach @Text &lt;&gt; mempty)
+</pre><p><code><a href="Data-Shroom-Class.html#v:referencedTypes" title="Data.Shroom.Class">referencedTypes</a></code> is the concatenation, in declaration order, of <code class="inline-code">reach @t</code> for
+the type <code class="inline-code">t</code> of every field of every constructor, record and positional alike. So
+the types of the fields reach the model through <code><a href="Data-Shroom-Class.html#v:description" title="Data.Shroom.Class">description</a></code>:
+each is described once, in a section after the examples, however often and however
+deeply it is used.</p><p><strong>Every field type must have a <code><a href="Data-Shroom-Class.html#t:Describable" title="Data.Shroom.Class">Describable</a></code> instance</strong>, from an earlier splice or
+the same one; a field type without one is a compile-time error (&quot;No instance for
+<code><a href="Data-Shroom-Class.html#t:Describable" title="Data.Shroom.Class">Describable</a></code> &#8230;&quot;). Splice order therefore matters. Mutually recursive types
+are derived in a single splice, <code class="inline-code">$(concat &lt;$&gt; traverse deriveDescribable [''A, ''B])</code>; a
+self-recursive type needs nothing special.</p><p>A parameterised type derives too, with one <code class="inline-code"><code><a href="Data-Shroom-Class.html#t:Describable" title="Data.Shroom.Class">Describable</a></code> a</code> constraint for each type
+variable of kind <code class="inline-code">Type</code>:</p><pre>-- | One of two alternatives.
+data Choice a = Pick a | Skip
+
+$(deriveDescribable ''Choice)
+</pre><p>generates <code class="inline-code">instance (<code><a href="Data-Shroom-Class.html#t:Describable" title="Data.Shroom.Class">Describable</a></code> a) =&gt; <code><a href="Data-Shroom-Class.html#t:Describable" title="Data.Shroom.Class">Describable</a></code> (Choice a)</code>, where a field of type
+<code class="inline-code">a</code> contributes <code class="inline-code">reach @a</code>, so that <code class="inline-code">Choice Fuel</code> makes <code class="inline-code">Fuel</code> reachable.</p><p>A type variable of any other kind (a <code class="inline-code">Symbol</code> or <code class="inline-code">Nat</code> unit, a dimension, or an
+unannotated phantom parameter, which GHC2024 makes poly-kinded) can never be the
+type of a field, so it needs no <code><a href="Data-Shroom-Class.html#t:Describable" title="Data.Shroom.Class">Describable</a></code>. It is annotated with its kind in the
+instance head and needs only <code class="inline-code">Typeable</code>, as does each kind variable its kind
+mentions:</p><pre>-- | An amount in some unit.
+newtype Measure (unit :: Symbol) = Measure Double
+
+-- | A value tagged by a phantom parameter.
+newtype Tagged a = Tagged Double
+
+$(deriveDescribable ''Measure)
+$(deriveDescribable ''Tagged)
+</pre><p>generates <code class="inline-code">instance <code><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/base-4.21.2.0-60b9/Data-Dynamic.html#t:Typeable" title="Data.Dynamic">Typeable</a></code> unit =&gt; <code><a href="Data-Shroom-Class.html#t:Describable" title="Data.Shroom.Class">Describable</a></code> (Measure (unit :: Symbol))</code> and
+<code class="inline-code">instance (<code><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/base-4.21.2.0-60b9/Data-Dynamic.html#t:Typeable" title="Data.Dynamic">Typeable</a></code> k, <code><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/base-4.21.2.0-60b9/Data-Dynamic.html#t:Typeable" title="Data.Dynamic">Typeable</a></code> a) =&gt; <code><a href="Data-Shroom-Class.html#t:Describable" title="Data.Shroom.Class">Describable</a></code> (Tagged (a :: k))</code>. The
+generated code uses type applications and the instance head's type
+variables, so the module needs <code class="inline-code">TypeApplications</code> and <code class="inline-code">ScopedTypeVariables</code> (both
+in <code class="inline-code">GHC2021</code> and <code class="inline-code">GHC2024</code>).</p><p>To override <code><a href="Data-Shroom-Class.html#v:describeType" title="Data.Shroom.Class">describeType</a></code> manually, write the <code><a href="Data-Shroom-Class.html#t:Describable" title="Data.Shroom.Class">Describable</a></code> instance by hand.
+You can use <code><a href="Control-Monad-Prompt-TH.html#v:deriveDescribableExp" title="Control.Monad.Prompt.TH">deriveDescribableExp</a></code> for the body, and modify it as needed, but
+then also write <code><a href="Data-Shroom-Class.html#v:referencedTypes" title="Data.Shroom.Class">referencedTypes</a></code>.</p><pre>instance Describable MyType where
+  describeType = $(deriveDescribableExp ''MyType)
+  referencedTypes _ = reach @Inner
+</pre><p>This requires the module to be compiled with the <code class="inline-code">-haddock</code> GHC flag,
+which is set automatically when using this package's build configuration.</p><p><strong>Error</strong>: A compile-time error is raised if no Haddock documentation is found.</p></div></div><div class="top"><p class="src"><a id="v:deriveDescribableExp" class="def">deriveDescribableExp</a> :: <a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/GHC-Internal-TH-Syntax.html#t:Name" title="GHC.Internal.TH.Syntax">Name</a> -&gt; <a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/GHC-Internal-TH-Syntax.html#t:Q" title="GHC.Internal.TH.Syntax">Q</a> <a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/GHC-Internal-TH-Syntax.html#t:Exp" title="GHC.Internal.TH.Syntax">Exp</a> <a href="src/Control.Monad.Prompt.TH.html#deriveDescribableExp" class="link">Source</a> <a href="#v:deriveDescribableExp" class="selflink">#</a></p><div class="doc"><p>Produce the <code><a href="Data-Shroom-Class.html#v:describeType" title="Data.Shroom.Class">describeType</a></code> method body for a type, using its Haddock
+documentation comment.  Use this inside a manually written
+<code><a href="Data-Shroom-Class.html#t:Describable" title="Data.Shroom.Class">Describable</a></code> instance:</p><pre>instance Describable MyType where
+  describeType = $(deriveDescribableExp ''MyType)
+  referencedTypes _ = reach @Inner
+</pre><p><strong>This returns the <code><a href="Data-Shroom-Class.html#v:describeType" title="Data.Shroom.Class">describeType</a></code> body only.</strong> It does not collect the referenced types:
+a hand-written instance must write <code><a href="Data-Shroom-Class.html#v:referencedTypes" title="Data.Shroom.Class">referencedTypes</a></code> itself, or its field types are not
+described to the model. For a wrapper that is <code class="inline-code">referencedTypes _ = reach @a</code>; for a
+record, the <code class="inline-code">reach @t</code> of each of its field types, as <code><a href="Control-Monad-Prompt-TH.html#v:deriveDescribable" title="Control.Monad.Prompt.TH">deriveDescribable</a></code> generates.</p><p>For a type with several constructors, each constructor is listed as
+<code class="inline-code">- Constructor: doc</code> (by name alone if undocumented), followed by its documented
+fields indented beneath it.  For a single-constructor type, the constructor's own
+doc, if any, is a line of its own right after the type's doc, and the documented
+fields are listed directly.  A documented record field is listed as
+<code class="inline-code">- fieldName: doc</code>, a documented positional field as <code class="inline-code">- field N: doc</code> with <code class="inline-code">N</code> counting
+from 1; an undocumented field adds nothing.</p><p>Which Haddock layout documents what, for a constructor with positional fields (GHC's
+rule for H98 constructors):</p><pre>data Shape
+  = -- | Documents the constructor Circle.
+    Circle Double
+  | Square Double -- ^ Documents the constructor Square, not its argument.
+  | -- | Documents the constructor Rect.
+    Rect
+      Double
+      -- ^ Documents the first argument of Rect.
+      Double
+      -- ^ Documents the second argument of Rect.
+</pre><p>A one-line trailing comment after the constructor and all its arguments, as on
+<code class="inline-code">Square</code>, documents the constructor (it renders as <code class="inline-code">- Square: doc</code>). A positional
+argument's doc is collected only when the constructor has a leading Haddock comment
+or each argument stands on a line of its own with its own trailing comment, as on
+<code class="inline-code">Rect</code>, which renders its two arguments as <code class="inline-code">- field 1: &#8230;</code> and <code class="inline-code">- field 2: &#8230;</code>. An
+argument documented in any other way is not collected, because GHC does not attach
+the comment to the argument. A leading comment on each argument (a Haddock comment on
+the line above the argument's type) is collected the same way; this is the layout
+that fourmolu rewrites the trailing comments into, and it renders unchanged.</p><p>Prefer <code><a href="Control-Monad-Prompt-TH.html#v:deriveDescribable" title="Control.Monad.Prompt.TH">deriveDescribable</a></code> for the common case where a full instance is needed.</p></div></div></div></div><div id="footer"><p>Produced by <a href="http://www.haskell.org/haddock/">Haddock</a> version 2.32.0</p></div></body></html>

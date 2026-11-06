@@ -1,0 +1,335 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="annot"><span class="hs-comment">{- | The 'Promptable' typeclass: defines the default way to request a value of
+a type from an LLM backend.
+
+@
+class (Surveyable a, ToSchema a, FromJSON a) =&gt; Promptable a where
+  prompt :: forall es. (Prompt :&gt; es, State [ContextItem] :&gt; es) =&gt; Eff es a
+  prompt = Effect.promptSingle
+@
+
+The default 'prompt' is 'Control.Monad.Prompt.Effect.promptSingle': it sends a
+'Control.Monad.Prompt.Effect.RequestPrompt' effect, which uses 'description'
+to build the prompt text from the type's 'Surveyable' metadata.
+
+Override 'prompt' to add type-specific context, fallback logic, or any other
+custom program. The method has @State [ContextItem]@ in scope, so an override
+can scope context with 'Control.Monad.Prompt.Effect.withContext':
+
+@
+instance Promptable MyType where
+  prompt = withContext &quot;Always prefer metric units.&quot; Effect.promptSingle
+@
+
+Typical usage (no override needed):
+
+@
+\$(deriveDescribable ''MyType)
+
+instance Surveyable MyType where ...
+
+instance Promptable MyType
+@
+
+== Pure\/effectful boundary
+
+This module is the effectful side of the line drawn against &quot;Data.Shroom.Class&quot;,
+and the package boundary coincides with it: &quot;Data.Shroom.Class&quot; lives in
+@shroom-class@, this module in @shroom@.
+'Promptable'\'s method is an 'Eff' program requiring the 'Prompt' effect, so
+anything that names 'Promptable' or 'DescriptionPrompt' depends on the
+program layer and must live under &quot;Control.Monad.Prompt&quot;, never under
+@Data.Shroom.@. Nothing under @Data.Shroom.@ may import this module.
+-}</span></span><span>
+</span><span id="line-43"></span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html"><span class="hs-identifier">Control.Monad.Prompt.Promptable</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html"><span class="hs-identifier">Control.Monad.Prompt.Promptable</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-44"></span><span>
+</span><span id="line-45"></span><span class="hs-comment">-- base</span><span>
+</span><span id="line-46"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/base-4.21.2.0-60b9/src/Data.Int.html"><span class="hs-identifier">Data.Int</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Int.html#Int64"><span class="hs-identifier">Int64</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-47"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/base-4.21.2.0-60b9/src/Data.List.NonEmpty.html"><span class="hs-identifier">Data.List.NonEmpty</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#NonEmpty"><span class="hs-identifier">NonEmpty</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-48"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/base-4.21.2.0-60b9/src/Data.Proxy.html"><span class="hs-identifier">Data.Proxy</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Data.Proxy.html#Proxy"><span class="hs-identifier">Proxy</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-49"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/base-4.21.2.0-60b9/src/Numeric.Natural.html"><span class="hs-identifier">Numeric.Natural</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-bignum-1.3-f895/src/GHC.Num.Natural.html#Natural"><span class="hs-identifier">Natural</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-50"></span><span>
+</span><span id="line-51"></span><span class="hs-comment">-- containers</span><span>
+</span><span id="line-52"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/containers-0.7-eaeb/src/Data.Set.html"><span class="hs-identifier">Data.Set</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/containers-0.7-eaeb/src/Data.Set.Internal.html#Set"><span class="hs-identifier">Set</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-53"></span><span>
+</span><span id="line-54"></span><span class="hs-comment">-- aeson</span><span>
+</span><span id="line-55"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.html"><span class="hs-identifier">Data.Aeson</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.FromJSON.html#FromJSON"><span class="hs-identifier">FromJSON</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.ToJSON.html#ToJSON"><span class="hs-identifier">ToJSON</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-56"></span><span>
+</span><span id="line-57"></span><span class="hs-comment">-- openapi3</span><span>
+</span><span id="line-58"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/openapi3-3.2.5-90f7846cdef3578bc49d250d4f9d260ed239c2e009b59e95b98c0f6867fe6a89/share/doc/html/src/Data.OpenApi.html"><span class="hs-identifier">Data.OpenApi</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/openapi3-3.2.5-90f7846cdef3578bc49d250d4f9d260ed239c2e009b59e95b98c0f6867fe6a89/share/doc/html/src/Data.OpenApi.Internal.Schema.html#ToSchema"><span class="hs-identifier">ToSchema</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-59"></span><span>
+</span><span id="line-60"></span><span class="hs-comment">-- text</span><span>
+</span><span id="line-61"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.html"><span class="hs-identifier">Data.Text</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier">Text</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-62"></span><span>
+</span><span id="line-63"></span><span class="hs-comment">-- time</span><span>
+</span><span id="line-64"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/time-1.14-c3f0/src/Data.Time.html"><span class="hs-identifier">Data.Time</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/time-1.14-c3f0/src/Data.Time.Calendar.Days.html#Day"><span class="hs-identifier">Day</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/time-1.14-c3f0/src/Data.Time.Clock.Internal.UTCTime.html#UTCTime"><span class="hs-identifier">UTCTime</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-65"></span><span>
+</span><span id="line-66"></span><span class="hs-comment">-- effectful</span><span>
+</span><span id="line-67"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/effectful-core-2.7.1.2-957cb6d9d7760371f3e3bb800f63e1f9b381d39e73ae5e3b4ed157ebc2313fba/share/doc/html/src/Effectful.html"><span class="hs-identifier">Effectful</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/effectful-core-2.7.1.2-957cb6d9d7760371f3e3bb800f63e1f9b381d39e73ae5e3b4ed157ebc2313fba/share/doc/html/src/Effectful.Internal.Monad.html#Eff"><span class="hs-identifier">Eff</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/effectful-core-2.7.1.2-957cb6d9d7760371f3e3bb800f63e1f9b381d39e73ae5e3b4ed157ebc2313fba/share/doc/html/src/Effectful.Internal.Effect.html#%3A%3E"><span class="hs-operator">(:&gt;)</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-68"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/effectful-core-2.7.1.2-957cb6d9d7760371f3e3bb800f63e1f9b381d39e73ae5e3b4ed157ebc2313fba/share/doc/html/src/Effectful.State.Static.Local.html"><span class="hs-identifier">Effectful.State.Static.Local</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/effectful-core-2.7.1.2-957cb6d9d7760371f3e3bb800f63e1f9b381d39e73ae5e3b4ed157ebc2313fba/share/doc/html/src/Effectful.State.Static.Local.html#State"><span class="hs-identifier">State</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-69"></span><span>
+</span><span id="line-70"></span><span class="hs-comment">-- shroom</span><span>
+</span><span id="line-71"></span><span>
+</span><span id="line-72"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html"><span class="hs-identifier">Control.Monad.Prompt.Backend</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ContextItem"><span class="hs-identifier">ContextItem</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-73"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Effect.html"><span class="hs-identifier">Control.Monad.Prompt.Effect</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Effect.html#Prompt"><span class="hs-identifier">Prompt</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-74"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Effect.html"><span class="hs-identifier">Control.Monad.Prompt.Effect</span></a></span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Effect</span></span><span>
+</span><span id="line-75"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="../../shroom-class/src/Data.Shroom.Class.html"><span class="hs-identifier">Data.Shroom.Class</span></a></span><span>
+</span><span id="line-76"></span><span>
+</span><span id="line-77"></span><span class="annot"><span class="hs-comment">-- * Promptable</span></span><span>
+</span><span id="line-78"></span><span>
+</span><span id="line-79"></span><span class="annot"><span class="hs-comment">{- | Attach a default prompting strategy to a type.
+
+The single method 'prompt' is an 'Eff' program that requests a value of
+type @a@ from the LLM.  The default implementation sends
+'Control.Monad.Prompt.Effect.RequestPrompt', which builds the prompt from
+'description' (the type description, properties, and examples from the
+'Surveyable' instance).
+
+Superclasses: 'Surveyable', 'ToSchema', 'FromJSON'.
+-}</span></span><span>
+</span><span id="line-89"></span><span class="hs-keyword">class</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="../../shroom-class/src/Data.Shroom.Class.html#Surveyable"><span class="hs-identifier hs-type">Surveyable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253632"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/openapi3-3.2.5-90f7846cdef3578bc49d250d4f9d260ed239c2e009b59e95b98c0f6867fe6a89/share/doc/html/src/Data.OpenApi.Internal.Schema.html#ToSchema"><span class="hs-identifier hs-type">ToSchema</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253632"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.FromJSON.html#FromJSON"><span class="hs-identifier hs-type">FromJSON</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253632"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span id="Promptable"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-var">Promptable</span></a></span></span><span> </span><span id="local-6989586621679253632"><span class="annot"><a href="#local-6989586621679253632"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-90"></span><span>  </span><span class="hs-comment">{- | An 'Eff' program that requests a value of type @a@ from the LLM.
+
+  Override to add type-specific context, fallback logic, parallel sub-prompts,
+  or any other custom behaviour. The @State [ContextItem]@ constraint is what
+  lets an override scope context with 'Control.Monad.Prompt.Effect.withContext'
+  or 'Control.Monad.Prompt.Effect.withContextItem'; it is the same state
+  'Control.Monad.Prompt.Effect.context' adds to, so a caller that already
+  chains prompts has it.
+  -}</span><span>
+</span><span id="line-99"></span><span>  </span><span id="prompt"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#prompt"><span class="hs-identifier hs-type">prompt</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-keyword">forall</span><span> </span><span id="local-6989586621679253639"><span class="annot"><a href="#local-6989586621679253639"><span class="hs-identifier hs-type">es</span></a></span></span><span class="hs-operator">.</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Effect.html#Prompt"><span class="hs-identifier hs-type">Prompt</span></a></span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/effectful-core-2.7.1.2-957cb6d9d7760371f3e3bb800f63e1f9b381d39e73ae5e3b4ed157ebc2313fba/share/doc/html/src/Effectful.Internal.Effect.html#%3A%3E"><span class="hs-operator hs-type">:&gt;</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253639"><span class="hs-identifier hs-type">es</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/effectful-core-2.7.1.2-957cb6d9d7760371f3e3bb800f63e1f9b381d39e73ae5e3b4ed157ebc2313fba/share/doc/html/src/Effectful.State.Static.Local.html#State"><span class="hs-identifier hs-type">State</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ContextItem"><span class="hs-identifier hs-type">ContextItem</span></a></span><span class="hs-special">]</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/effectful-core-2.7.1.2-957cb6d9d7760371f3e3bb800f63e1f9b381d39e73ae5e3b4ed157ebc2313fba/share/doc/html/src/Effectful.Internal.Effect.html#%3A%3E"><span class="hs-operator hs-type">:&gt;</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253639"><span class="hs-identifier hs-type">es</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/effectful-core-2.7.1.2-957cb6d9d7760371f3e3bb800f63e1f9b381d39e73ae5e3b4ed157ebc2313fba/share/doc/html/src/Effectful.Internal.Monad.html#Eff"><span class="hs-identifier hs-type">Eff</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253639"><span class="hs-identifier hs-type">es</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253632"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-100"></span><span>  </span><span id="local-6989586621679253741"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#prompt"><span class="hs-identifier hs-var hs-var">prompt</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Eff es a
+forall a (es :: [Effect]).
+(Prompt :&gt; es, Surveyable a, ToSchema a, FromJSON a) =&gt;
+Eff es a
+</span><a href="Control.Monad.Prompt.Effect.html#promptSingle"><span class="hs-identifier hs-var">Effect.promptSingle</span></a></span></span><span>
+</span><span id="line-101"></span><span>
+</span><span id="line-102"></span><span class="annot"><span class="hs-comment">{- | Helper newtype for using the default description-based prompting strategy
+via @DerivingVia@.
+
+@
+data MyType = MyType { ... }
+
+\$(deriveDescribable ''MyType)
+
+instance Surveyable MyType where ...
+
+-- Must come after TH call, hence standalone deriving:
+deriving via DescriptionPrompt MyType instance Promptable MyType
+@
+-}</span></span><span>
+</span><span id="line-116"></span><span class="hs-keyword">newtype</span><span> </span><span id="DescriptionPrompt"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#DescriptionPrompt"><span class="hs-identifier hs-var">DescriptionPrompt</span></a></span></span><span> </span><span id="local-6989586621679253647"><span class="annot"><a href="#local-6989586621679253647"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="DescriptionPrompt"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#DescriptionPrompt"><span class="hs-identifier hs-var">DescriptionPrompt</span></a></span></span><span> </span><span class="hs-special">{</span><span id="getDescriptionPrompt"><span class="annot"><span class="annottext">forall a. DescriptionPrompt a -&gt; a
+</span><a href="Control.Monad.Prompt.Promptable.html#getDescriptionPrompt"><span class="hs-identifier hs-var hs-var">getDescriptionPrompt</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="#local-6989586621679253647"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">}</span><span>
+</span><span id="line-117"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="annot"><span class="hs-keyword">stock</span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679253755"><span id="local-6989586621679253758"><span class="annot"><span class="annottext">DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool
+(DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool)
+-&gt; (DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool)
+-&gt; Eq (DescriptionPrompt a)
+forall a.
+Eq a =&gt;
+DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: forall a.
+Eq a =&gt;
+DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool
+== :: DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool
+$c/= :: forall a.
+Eq a =&gt;
+DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool
+/= :: DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679253764"><span id="local-6989586621679253769"><span id="local-6989586621679253773"><span class="annot"><span class="annottext">Int -&gt; DescriptionPrompt a -&gt; ShowS
+[DescriptionPrompt a] -&gt; ShowS
+DescriptionPrompt a -&gt; String
+(Int -&gt; DescriptionPrompt a -&gt; ShowS)
+-&gt; (DescriptionPrompt a -&gt; String)
+-&gt; ([DescriptionPrompt a] -&gt; ShowS)
+-&gt; Show (DescriptionPrompt a)
+forall a. Show a =&gt; Int -&gt; DescriptionPrompt a -&gt; ShowS
+forall a. Show a =&gt; [DescriptionPrompt a] -&gt; ShowS
+forall a. Show a =&gt; DescriptionPrompt a -&gt; String
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: forall a. Show a =&gt; Int -&gt; DescriptionPrompt a -&gt; ShowS
+showsPrec :: Int -&gt; DescriptionPrompt a -&gt; ShowS
+$cshow :: forall a. Show a =&gt; DescriptionPrompt a -&gt; String
+show :: DescriptionPrompt a -&gt; String
+$cshowList :: forall a. Show a =&gt; [DescriptionPrompt a] -&gt; ShowS
+showList :: [DescriptionPrompt a] -&gt; ShowS
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Show.html#Show"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></a></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-118"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="annot"><span class="hs-keyword">newtype</span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679253779"><span id="local-6989586621679253783"><span id="local-6989586621679253787"><span id="local-6989586621679253791"><span id="local-6989586621679253795"><span class="annot"><span class="annottext">[DescriptionPrompt a] -&gt; Value
+[DescriptionPrompt a] -&gt; Encoding
+DescriptionPrompt a -&gt; Bool
+DescriptionPrompt a -&gt; Value
+DescriptionPrompt a -&gt; Encoding
+(DescriptionPrompt a -&gt; Value)
+-&gt; (DescriptionPrompt a -&gt; Encoding)
+-&gt; ([DescriptionPrompt a] -&gt; Value)
+-&gt; ([DescriptionPrompt a] -&gt; Encoding)
+-&gt; (DescriptionPrompt a -&gt; Bool)
+-&gt; ToJSON (DescriptionPrompt a)
+forall a. ToJSON a =&gt; [DescriptionPrompt a] -&gt; Value
+forall a. ToJSON a =&gt; [DescriptionPrompt a] -&gt; Encoding
+forall a. ToJSON a =&gt; DescriptionPrompt a -&gt; Bool
+forall a. ToJSON a =&gt; DescriptionPrompt a -&gt; Value
+forall a. ToJSON a =&gt; DescriptionPrompt a -&gt; Encoding
+forall a.
+(a -&gt; Value)
+-&gt; (a -&gt; Encoding)
+-&gt; ([a] -&gt; Value)
+-&gt; ([a] -&gt; Encoding)
+-&gt; (a -&gt; Bool)
+-&gt; ToJSON a
+$ctoJSON :: forall a. ToJSON a =&gt; DescriptionPrompt a -&gt; Value
+toJSON :: DescriptionPrompt a -&gt; Value
+$ctoEncoding :: forall a. ToJSON a =&gt; DescriptionPrompt a -&gt; Encoding
+toEncoding :: DescriptionPrompt a -&gt; Encoding
+$ctoJSONList :: forall a. ToJSON a =&gt; [DescriptionPrompt a] -&gt; Value
+toJSONList :: [DescriptionPrompt a] -&gt; Value
+$ctoEncodingList :: forall a. ToJSON a =&gt; [DescriptionPrompt a] -&gt; Encoding
+toEncodingList :: [DescriptionPrompt a] -&gt; Encoding
+$comitField :: forall a. ToJSON a =&gt; DescriptionPrompt a -&gt; Bool
+omitField :: DescriptionPrompt a -&gt; Bool
+</span><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.ToJSON.html#ToJSON"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">ToJSON</span></a></span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679253807"><span id="local-6989586621679253811"><span id="local-6989586621679253815"><span class="annot"><span class="annottext">Maybe (DescriptionPrompt a)
+Value -&gt; Parser [DescriptionPrompt a]
+Value -&gt; Parser (DescriptionPrompt a)
+(Value -&gt; Parser (DescriptionPrompt a))
+-&gt; (Value -&gt; Parser [DescriptionPrompt a])
+-&gt; Maybe (DescriptionPrompt a)
+-&gt; FromJSON (DescriptionPrompt a)
+forall a. FromJSON a =&gt; Maybe (DescriptionPrompt a)
+forall a. FromJSON a =&gt; Value -&gt; Parser [DescriptionPrompt a]
+forall a. FromJSON a =&gt; Value -&gt; Parser (DescriptionPrompt a)
+forall a.
+(Value -&gt; Parser a)
+-&gt; (Value -&gt; Parser [a]) -&gt; Maybe a -&gt; FromJSON a
+$cparseJSON :: forall a. FromJSON a =&gt; Value -&gt; Parser (DescriptionPrompt a)
+parseJSON :: Value -&gt; Parser (DescriptionPrompt a)
+$cparseJSONList :: forall a. FromJSON a =&gt; Value -&gt; Parser [DescriptionPrompt a]
+parseJSONList :: Value -&gt; Parser [DescriptionPrompt a]
+$comittedField :: forall a. FromJSON a =&gt; Maybe (DescriptionPrompt a)
+omittedField :: Maybe (DescriptionPrompt a)
+</span><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.FromJSON.html#FromJSON"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">FromJSON</span></a></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679253829"><span class="annot"><span class="annottext">Typeable (DescriptionPrompt a)
+Typeable (DescriptionPrompt a) =&gt;
+(Proxy (DescriptionPrompt a)
+ -&gt; Declare (Definitions Schema) NamedSchema)
+-&gt; ToSchema (DescriptionPrompt a)
+Proxy (DescriptionPrompt a)
+-&gt; Declare (Definitions Schema) NamedSchema
+forall a.
+Typeable a =&gt;
+(Proxy a -&gt; Declare (Definitions Schema) NamedSchema) -&gt; ToSchema a
+forall a. ToSchema a =&gt; Typeable (DescriptionPrompt a)
+forall a.
+ToSchema a =&gt;
+Proxy (DescriptionPrompt a)
+-&gt; Declare (Definitions Schema) NamedSchema
+$cdeclareNamedSchema :: forall a.
+ToSchema a =&gt;
+Proxy (DescriptionPrompt a)
+-&gt; Declare (Definitions Schema) NamedSchema
+declareNamedSchema :: Proxy (DescriptionPrompt a)
+-&gt; Declare (Definitions Schema) NamedSchema
+</span><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/openapi3-3.2.5-90f7846cdef3578bc49d250d4f9d260ed239c2e009b59e95b98c0f6867fe6a89/share/doc/html/src/Data.OpenApi.Internal.Schema.html#ToSchema"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var">ToSchema</span></a></span></span><span class="hs-special">)</span><span>
+</span><span id="line-119"></span><span>
+</span><span id="line-120"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253684"><span class="hs-special">(</span><span class="annot"><a href="../../shroom-class/src/Data.Shroom.Class.html#Describable"><span class="hs-identifier hs-type">Describable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253684"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="../../shroom-class/src/Data.Shroom.Class.html#Describable"><span class="hs-identifier hs-type">Describable</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#DescriptionPrompt"><span class="hs-identifier hs-type">DescriptionPrompt</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253684"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-121"></span><span>  </span><span id="local-6989586621679253853"><span class="annot"><span class="annottext">describeType :: Proxy (DescriptionPrompt a) -&gt; Text
+</span><a href="#local-6989586621679253853"><span class="hs-identifier hs-var hs-var hs-var">describeType</span></a></span></span><span> </span><span class="annot"><span class="annottext">Proxy (DescriptionPrompt a)
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Proxy a -&gt; Text
+forall a. Describable a =&gt; Proxy a -&gt; Text
+</span><a href="../../shroom-class/src/Data.Shroom.Class.html#describeType"><span class="hs-identifier hs-var">describeType</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall t. Proxy t
+forall {k} (t :: k). Proxy t
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Data.Proxy.html#Proxy"><span class="hs-identifier hs-var">Proxy</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679253684"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-122"></span><span>
+</span><span id="line-123"></span><span>  </span><span class="hs-comment">-- @description@ runs at @DescriptionPrompt a@ here, so forward what @a@</span><span>
+</span><span id="line-124"></span><span>  </span><span class="hs-comment">-- references. Not @reach @a@: that would list @a@ under itself.</span><span>
+</span><span id="line-125"></span><span>  </span><span class="hs-comment">-- The three methods below are the contract of a transparent wrapper, see</span><span>
+</span><span id="line-126"></span><span>  </span><span class="hs-comment">-- the 'describedIdentity' Haddock; 'Generically' is the other one.</span><span>
+</span><span id="line-127"></span><span>  </span><span id="local-6989586621679253857"><span class="annot"><span class="annottext">referencedTypes :: Proxy (DescriptionPrompt a) -&gt; [Described]
+</span><a href="#local-6989586621679253857"><span class="hs-identifier hs-var hs-var hs-var">referencedTypes</span></a></span></span><span> </span><span class="annot"><span class="annottext">Proxy (DescriptionPrompt a)
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Proxy a -&gt; [Described]
+forall a. Describable a =&gt; Proxy a -&gt; [Described]
+</span><a href="../../shroom-class/src/Data.Shroom.Class.html#referencedTypes"><span class="hs-identifier hs-var">referencedTypes</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall t. Proxy t
+forall {k} (t :: k). Proxy t
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Data.Proxy.html#Proxy"><span class="hs-identifier hs-var">Proxy</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679253684"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-128"></span><span>  </span><span id="local-6989586621679253859"><span class="annot"><span class="annottext">hasOwnSection :: Proxy (DescriptionPrompt a) -&gt; Bool
+</span><a href="#local-6989586621679253859"><span class="hs-identifier hs-var hs-var hs-var">hasOwnSection</span></a></span></span><span> </span><span class="annot"><span class="annottext">Proxy (DescriptionPrompt a)
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Bool
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Types.html#False"><span class="hs-identifier hs-var">False</span></a></span><span>
+</span><span id="line-129"></span><span>  </span><span id="local-6989586621679253862"><span class="annot"><span class="annottext">describedIdentity :: Proxy (DescriptionPrompt a) -&gt; TypeRep
+</span><a href="#local-6989586621679253862"><span class="hs-identifier hs-var hs-var hs-var">describedIdentity</span></a></span></span><span> </span><span class="annot"><span class="annottext">Proxy (DescriptionPrompt a)
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Proxy a -&gt; TypeRep
+forall a. Describable a =&gt; Proxy a -&gt; TypeRep
+</span><a href="../../shroom-class/src/Data.Shroom.Class.html#describedIdentity"><span class="hs-identifier hs-var">describedIdentity</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall t. Proxy t
+forall {k} (t :: k). Proxy t
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Data.Proxy.html#Proxy"><span class="hs-identifier hs-var">Proxy</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679253684"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-130"></span><span>
+</span><span id="line-131"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253692"><span id="local-6989586621679253874"><span class="hs-special">(</span><span class="annot"><a href="../../shroom-class/src/Data.Shroom.Class.html#Surveyable"><span class="hs-identifier hs-type">Surveyable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253692"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="../../shroom-class/src/Data.Shroom.Class.html#Surveyable"><span class="hs-identifier hs-type">Surveyable</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#DescriptionPrompt"><span class="hs-identifier hs-type">DescriptionPrompt</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253692"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-132"></span><span>  </span><span class="hs-keyword">type</span><span> </span><span id="Property"><span class="annot"><a href="../../shroom-class/src/Data.Shroom.Class.html#Property"><span class="hs-identifier hs-var">Property</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#DescriptionPrompt"><span class="hs-identifier hs-type">DescriptionPrompt</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253692"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="../../shroom-class/src/Data.Shroom.Class.html#Property"><span class="hs-identifier hs-type">Property</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253692"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-133"></span><span>  </span><span id="local-6989586621679253881"><span class="annot"><span class="annottext">describeProperties :: Proxy (DescriptionPrompt a)
+-&gt; Property (DescriptionPrompt a) -&gt; Maybe Text
+</span><a href="#local-6989586621679253881"><span class="hs-identifier hs-var hs-var hs-var">describeProperties</span></a></span></span><span> </span><span class="annot"><span class="annottext">Proxy (DescriptionPrompt a)
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Proxy a -&gt; Property a -&gt; Maybe Text
+forall a. Surveyable a =&gt; Proxy a -&gt; Property a -&gt; Maybe Text
+</span><a href="../../shroom-class/src/Data.Shroom.Class.html#describeProperties"><span class="hs-identifier hs-var">describeProperties</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall t. Proxy t
+forall {k} (t :: k). Proxy t
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Data.Proxy.html#Proxy"><span class="hs-identifier hs-var">Proxy</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679253692"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-134"></span><span>  </span><span id="local-6989586621679253884"><span class="annot"><span class="annottext">propertyHolds :: DescriptionPrompt a -&gt; Property (DescriptionPrompt a) -&gt; Bool
+</span><a href="#local-6989586621679253884"><span class="hs-identifier hs-var hs-var hs-var">propertyHolds</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#DescriptionPrompt"><span class="hs-identifier hs-type">DescriptionPrompt</span></a></span><span> </span><span id="local-6989586621679253886"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679253886"><span class="hs-identifier hs-var">x</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a -&gt; Property a -&gt; Bool
+forall a. Surveyable a =&gt; a -&gt; Property a -&gt; Bool
+</span><a href="../../shroom-class/src/Data.Shroom.Class.html#propertyHolds"><span class="hs-identifier hs-var">propertyHolds</span></a></span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679253886"><span class="hs-identifier hs-var">x</span></a></span><span>
+</span><span id="line-135"></span><span>
+</span><span id="line-136"></span><span class="annot"><span class="hs-comment">-- | Uses the default 'prompt' = 'Control.Monad.Prompt.Effect.promptSingle'.</span></span><span>
+</span><span id="line-137"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253695"><span id="local-6989586621679253897"><span class="hs-special">(</span><span class="annot"><a href="../../shroom-class/src/Data.Shroom.Class.html#Surveyable"><span class="hs-identifier hs-type">Surveyable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253695"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/openapi3-3.2.5-90f7846cdef3578bc49d250d4f9d260ed239c2e009b59e95b98c0f6867fe6a89/share/doc/html/src/Data.OpenApi.Internal.Schema.html#ToSchema"><span class="hs-identifier hs-type">ToSchema</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253695"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.FromJSON.html#FromJSON"><span class="hs-identifier hs-type">FromJSON</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253695"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#DescriptionPrompt"><span class="hs-identifier hs-type">DescriptionPrompt</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253695"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-138"></span><span>
+</span><span id="line-139"></span><span class="annot"><span class="hs-comment">-- * Base types</span></span><span>
+</span><span id="line-140"></span><span>
+</span><span id="line-141"></span><span class="annot"><span class="hs-comment">{- | Flat 'Promptable' instances for the base types that &quot;Data.Shroom.Class&quot;
+gives 'Surveyable' instances: 'Text', 'Int', 'Integer', 'Int64', 'Word', 'Natural', 'Double',
+'Float', 'Bool', 'Char', 'UTCTime', 'Day', and the containers @[a]@,
+@'NonEmpty' a@, @'Set' a@ and @'Maybe' a@. Each uses the default 'prompt', so a bare value
+is requested like any other type, from its 'description'.
+
+They live in this module, next to the class, so they are not orphans.
+
+__Schema keywords Anthropic rejects.__ @openapi3@ renders some of these types
+with JSON Schema keywords that Anthropic's structured outputs answer with a
+400, and that @normalizeSchemaForStructuredOutput@
+does not strip: 'Char' carries @minLength@ and @maxLength@, 'Natural' carries
+@exclusiveMinimum@, and 'Double' and 'Float' carry a numeric @format@ (not
+confirmed against the API). A field of one of these types, or a bare
+'prompt' of it, may therefore fail against Claude until the normaliser strips
+those keywords. The container instances pass the element's schema through
+unchanged, so they inherit the same limitation.
+-}</span></span><span>
+</span><span id="line-159"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253915"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span></span><span>
+</span><span id="line-160"></span><span>
+</span><span id="line-161"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253932"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Types.html#Int"><span class="hs-identifier hs-type">Int</span></a></span></span><span>
+</span><span id="line-162"></span><span>
+</span><span id="line-163"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253949"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-bignum-1.3-f895/src/GHC.Num.Integer.html#Integer"><span class="hs-identifier hs-type">Integer</span></a></span></span><span>
+</span><span id="line-164"></span><span>
+</span><span id="line-165"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253966"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Int.html#Int64"><span class="hs-identifier hs-type">Int64</span></a></span></span><span>
+</span><span id="line-166"></span><span>
+</span><span id="line-167"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253983"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Types.html#Word"><span class="hs-identifier hs-type">Word</span></a></span></span><span>
+</span><span id="line-168"></span><span>
+</span><span id="line-169"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679254000"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-bignum-1.3-f895/src/GHC.Num.Natural.html#Natural"><span class="hs-identifier hs-type">Natural</span></a></span></span><span>
+</span><span id="line-170"></span><span>
+</span><span id="line-171"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679254017"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Types.html#Double"><span class="hs-identifier hs-type">Double</span></a></span></span><span>
+</span><span id="line-172"></span><span>
+</span><span id="line-173"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679254034"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Types.html#Float"><span class="hs-identifier hs-type">Float</span></a></span></span><span>
+</span><span id="line-174"></span><span>
+</span><span id="line-175"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679254051"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Types.html#Bool"><span class="hs-identifier hs-type">Bool</span></a></span></span><span>
+</span><span id="line-176"></span><span>
+</span><span id="line-177"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679254068"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Types.html#Char"><span class="hs-identifier hs-type">Char</span></a></span></span><span>
+</span><span id="line-178"></span><span>
+</span><span id="line-179"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679254085"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/time-1.14-c3f0/src/Data.Time.Clock.Internal.UTCTime.html#UTCTime"><span class="hs-identifier hs-type">UTCTime</span></a></span></span><span>
+</span><span id="line-180"></span><span>
+</span><span id="line-181"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679254102"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/time-1.14-c3f0/src/Data.Time.Calendar.Days.html#Day"><span class="hs-identifier hs-type">Day</span></a></span></span><span>
+</span><span id="line-182"></span><span>
+</span><span id="line-183"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253715"><span id="local-6989586621679254122"><span class="hs-special">(</span><span class="annot"><a href="../../shroom-class/src/Data.Shroom.Class.html#Describable"><span class="hs-identifier hs-type">Describable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253715"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/openapi3-3.2.5-90f7846cdef3578bc49d250d4f9d260ed239c2e009b59e95b98c0f6867fe6a89/share/doc/html/src/Data.OpenApi.Internal.Schema.html#ToSchema"><span class="hs-identifier hs-type">ToSchema</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253715"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.FromJSON.html#FromJSON"><span class="hs-identifier hs-type">FromJSON</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253715"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="#local-6989586621679253715"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">]</span></span></span><span>
+</span><span id="line-184"></span><span>
+</span><span id="line-185"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253721"><span id="local-6989586621679254142"><span class="hs-special">(</span><span class="annot"><a href="../../shroom-class/src/Data.Shroom.Class.html#Describable"><span class="hs-identifier hs-type">Describable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253721"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/openapi3-3.2.5-90f7846cdef3578bc49d250d4f9d260ed239c2e009b59e95b98c0f6867fe6a89/share/doc/html/src/Data.OpenApi.Internal.Schema.html#ToSchema"><span class="hs-identifier hs-type">ToSchema</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253721"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.FromJSON.html#FromJSON"><span class="hs-identifier hs-type">FromJSON</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253721"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#NonEmpty"><span class="hs-identifier hs-type">NonEmpty</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253721"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-186"></span><span>
+</span><span id="line-187"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253727"><span id="local-6989586621679254163"><span class="hs-special">(</span><span class="annot"><a href="../../shroom-class/src/Data.Shroom.Class.html#Describable"><span class="hs-identifier hs-type">Describable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253727"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/openapi3-3.2.5-90f7846cdef3578bc49d250d4f9d260ed239c2e009b59e95b98c0f6867fe6a89/share/doc/html/src/Data.OpenApi.Internal.Schema.html#ToSchema"><span class="hs-identifier hs-type">ToSchema</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253727"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.FromJSON.html#FromJSON"><span class="hs-identifier hs-type">FromJSON</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253727"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Ord"><span class="hs-identifier hs-type">Ord</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253727"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/containers-0.7-eaeb/src/Data.Set.Internal.html#Set"><span class="hs-identifier hs-type">Set</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253727"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-188"></span><span>
+</span><span id="line-189"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253733"><span id="local-6989586621679254183"><span class="hs-special">(</span><span class="annot"><a href="../../shroom-class/src/Data.Shroom.Class.html#Describable"><span class="hs-identifier hs-type">Describable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253733"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/openapi3-3.2.5-90f7846cdef3578bc49d250d4f9d260ed239c2e009b59e95b98c0f6867fe6a89/share/doc/html/src/Data.OpenApi.Internal.Schema.html#ToSchema"><span class="hs-identifier hs-type">ToSchema</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253733"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.FromJSON.html#FromJSON"><span class="hs-identifier hs-type">FromJSON</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253733"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Maybe.html#Maybe"><span class="hs-identifier hs-type">Maybe</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253733"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-190"></span></pre></body></html>

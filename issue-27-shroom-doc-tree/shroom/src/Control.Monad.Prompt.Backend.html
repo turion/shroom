@@ -1,0 +1,403 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="annot"><span class="hs-comment">{- | The adapter seam: what an LLM transport must provide for shroom to run a
+'Control.Monad.Prompt.Effect.Prompt' program against it.
+
+A 'Backend' only ever has to make one raw chat call: hand over the conversation
+so far, a description of the expected result type, its JSON schema, and the
+tools currently on offer, and get back either the model's final answer, a
+set of tool calls it wants made, or a 'BackendError'. The loop itself &#8212;
+dispatching each call and feeding the results back in for the next call &#8212;
+belongs to the caller (&quot;Control.Monad.Prompt.Effect&quot;\'s
+'Control.Monad.Prompt.Effect.Prompt' effect, see
+'Control.Monad.Prompt.Effect.promptTools'), one call at a time.
+
+A 'Backend' is a plain record of one function, not a typeclass &#8212; there is no
+instance to declare and so nothing an implementor has to name; constructing a
+value /is/ satisfying the interface. That is deliberate: every argument and
+result type it mentions is one of shroom's own
+('ContextItem', 'ToolCall', 'ToolDef', 'Text', 'Value', 'BackendReply',
+'BackendError') or from a package any adapter depends on anyway ('aeson',
+'text'), and nothing here forces a second dependency on any particular
+transport package. 'schemaWithDefs' is re-exported here too, for the same
+reason: an adapter needs it to turn a 'Data.OpenApi.ToSchema' instance into
+the JSON schema 'Value' a provider's structured-output call expects.
+&quot;Control.Monad.Prompt.Schema&quot; itself stays internal &#8212; its other contents
+(@normalizeSchemaForStructuredOutput@, @inlineSchema@) are quirk-workarounds
+for particular backends' schema formats, not something an adapter has
+business calling directly.
+
+Native provider tool-calling survives through this seam too: a call carries
+the provider's own call id in 'ToolCall'\'s
+@toolCallId@, so an adapter that gets that id back from its provider
+(Anthropic's @tool_use_id@) can still link a result to the call that
+produced it once the exchange has round-tripped through 'ContextItem'\'s
+'ToolCallMessage' \/ 'ToolResultMessage', and a reply may carry more than
+one call so parallel tool calls stay expressible.
+'Control.Monad.Prompt.FileMock' builds a 'Backend' value, as do the mock
+backends in @test-utils@'s @TestUtils@. A package that depends only on
+@shroom@ can build one too; @shroom-baikai@ does exactly that, interpreting
+@baikai-effectful@\'s @Baikai@ effect into a 'Backend' &#8212; that is the worked
+example for anyone weighing whether writing a replacement adapter is a
+weekend or a rescue.
+
+'ContextItem', 'ToolCall' and 'ToolResult' live in this module &#8212; rather than
+under &quot;Data.Shroom.&quot; &#8212; because they name 'Backend', 'BackendReply' and
+'BackendError' throughout their own Haddock, and the reverse is equally
+true: this module cannot be understood without them. None of the three
+depend on @effectful@ or on the program layer, so putting them here does not
+cross the pure\/effectful boundary &quot;Data.Shroom.Class&quot; documents; they simply
+sit on the adapter seam's side of it rather than in the schema/description
+half.
+-}</span></span><span>
+</span><span id="line-51"></span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html"><span class="hs-identifier">Control.Monad.Prompt.Backend</span></a></span><span> </span><span class="hs-special">(</span><span>
+</span><span id="line-52"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#Backend"><span class="hs-identifier">Backend</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-53"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendReply"><span class="hs-identifier">BackendReply</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-54"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendError"><span class="hs-identifier">BackendError</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-55"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Schema.html#ToolDef"><span class="hs-identifier">ToolDef</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-56"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ContextItem"><span class="hs-identifier">ContextItem</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-57"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCall"><span class="hs-identifier">ToolCall</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-58"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResult"><span class="hs-identifier">ToolResult</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-59"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#renderContextItems"><span class="hs-identifier">renderContextItems</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-60"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Schema.html#schemaWithDefs"><span class="hs-identifier">schemaWithDefs</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-61"></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-62"></span><span>
+</span><span id="line-63"></span><span class="hs-comment">-- text</span><span>
+</span><span id="line-64"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.html"><span class="hs-identifier">Data.Text</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier">Text</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-65"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.html"><span class="hs-identifier">Data.Text</span></a></span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">T</span></span><span>
+</span><span id="line-66"></span><span>
+</span><span id="line-67"></span><span class="hs-comment">-- aeson</span><span>
+</span><span id="line-68"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.html"><span class="hs-identifier">Data.Aeson</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.Internal.html#Value"><span class="hs-identifier">Value</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-69"></span><span>
+</span><span id="line-70"></span><span class="hs-comment">-- shroom</span><span>
+</span><span id="line-71"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Schema.html"><span class="hs-identifier">Control.Monad.Prompt.Schema</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Schema.html#ToolDef"><span class="hs-identifier">ToolDef</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Schema.html#schemaWithDefs"><span class="hs-identifier">schemaWithDefs</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-72"></span><span>
+</span><span id="line-73"></span><span class="annot"><span class="hs-comment">-- * Tool calls and results</span></span><span>
+</span><span id="line-74"></span><span>
+</span><span id="line-75"></span><span class="annot"><span class="hs-comment">{- | One tool call a model requested, carried either inside a 'Backend'\'s
+reply ('BackendToolCalls') or, once dispatched, replayed into the
+conversation as part of a 'ToolCallMessage'.
+-}</span></span><span>
+</span><span id="line-79"></span><span class="hs-keyword">data</span><span> </span><span id="ToolCall"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCall"><span class="hs-identifier hs-var">ToolCall</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="ToolCall"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCall"><span class="hs-identifier hs-var">ToolCall</span></a></span></span><span>
+</span><span id="line-80"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="toolCallId"><span class="annot"><span class="annottext">ToolCall -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#toolCallId"><span class="hs-identifier hs-var hs-var">toolCallId</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
+</span><span id="line-81"></span><span>  </span><span class="annot"><span class="hs-comment">{- ^ The provider's own id for this call. A provider that links a tool
+  result back to the call that produced it (e.g. Anthropic's
+  @tool_use_id@) needs this echoed back unchanged in the matching
+  'ToolResult' &#8212; that linking is exactly what widening 'Backend' with a
+  tool channel, instead of flattening tool calls to text, was for.
+  -}</span></span><span>
+</span><span id="line-87"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="toolCallName"><span class="annot"><span class="annottext">ToolCall -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#toolCallName"><span class="hs-identifier hs-var hs-var">toolCallName</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
+</span><span id="line-88"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="toolCallArguments"><span class="annot"><span class="annottext">ToolCall -&gt; Value
+</span><a href="Control.Monad.Prompt.Backend.html#toolCallArguments"><span class="hs-identifier hs-var hs-var">toolCallArguments</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.Internal.html#Value"><span class="hs-identifier hs-type">Value</span></a></span><span>
+</span><span id="line-89"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-90"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252072"><span id="local-6989586621679252079"><span class="annot"><span class="annottext">ToolCall -&gt; ToolCall -&gt; Bool
+(ToolCall -&gt; ToolCall -&gt; Bool)
+-&gt; (ToolCall -&gt; ToolCall -&gt; Bool) -&gt; Eq ToolCall
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: ToolCall -&gt; ToolCall -&gt; Bool
+== :: ToolCall -&gt; ToolCall -&gt; Bool
+$c/= :: ToolCall -&gt; ToolCall -&gt; Bool
+/= :: ToolCall -&gt; ToolCall -&gt; Bool
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252084"><span id="local-6989586621679252093"><span id="local-6989586621679252097"><span class="annot"><span class="annottext">Int -&gt; ToolCall -&gt; ShowS
+[ToolCall] -&gt; ShowS
+ToolCall -&gt; String
+(Int -&gt; ToolCall -&gt; ShowS)
+-&gt; (ToolCall -&gt; String) -&gt; ([ToolCall] -&gt; ShowS) -&gt; Show ToolCall
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; ToolCall -&gt; ShowS
+showsPrec :: Int -&gt; ToolCall -&gt; ShowS
+$cshow :: ToolCall -&gt; String
+show :: ToolCall -&gt; String
+$cshowList :: [ToolCall] -&gt; ShowS
+showList :: [ToolCall] -&gt; ShowS
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Show.html#Show"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></a></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-91"></span><span>
+</span><span id="line-92"></span><span class="annot"><span class="hs-comment">{- | The outcome of dispatching one 'ToolCall', linked back to it by
+'toolResultId'.
+-}</span></span><span>
+</span><span id="line-95"></span><span class="hs-keyword">data</span><span> </span><span id="ToolResult"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResult"><span class="hs-identifier hs-var">ToolResult</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="ToolResult"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResult"><span class="hs-identifier hs-var">ToolResult</span></a></span></span><span>
+</span><span id="line-96"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="toolResultId"><span class="annot"><span class="annottext">ToolResult -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#toolResultId"><span class="hs-identifier hs-var hs-var">toolResultId</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
+</span><span id="line-97"></span><span>  </span><span class="annot"><span class="hs-comment">-- ^ Echoes the originating 'ToolCall'\'s 'toolCallId'.</span></span><span>
+</span><span id="line-98"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="toolResultName"><span class="annot"><span class="annottext">ToolResult -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#toolResultName"><span class="hs-identifier hs-var hs-var">toolResultName</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
+</span><span id="line-99"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="toolResultOutcome"><span class="annot"><span class="annottext">ToolResult -&gt; Either Text Text
+</span><a href="Control.Monad.Prompt.Backend.html#toolResultOutcome"><span class="hs-identifier hs-var hs-var">toolResultOutcome</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Data.Either.html#Either"><span class="hs-identifier hs-type">Either</span></a></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
+</span><span id="line-100"></span><span>  </span><span class="annot"><span class="hs-comment">{- ^ 'Left' &#8212; the tool failed, with a message for the model. 'Right' &#8212;
+  the tool's own result text.
+  -}</span></span><span>
+</span><span id="line-103"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-104"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252105"><span id="local-6989586621679252111"><span class="annot"><span class="annottext">ToolResult -&gt; ToolResult -&gt; Bool
+(ToolResult -&gt; ToolResult -&gt; Bool)
+-&gt; (ToolResult -&gt; ToolResult -&gt; Bool) -&gt; Eq ToolResult
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: ToolResult -&gt; ToolResult -&gt; Bool
+== :: ToolResult -&gt; ToolResult -&gt; Bool
+$c/= :: ToolResult -&gt; ToolResult -&gt; Bool
+/= :: ToolResult -&gt; ToolResult -&gt; Bool
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252115"><span id="local-6989586621679252122"><span id="local-6989586621679252126"><span class="annot"><span class="annottext">Int -&gt; ToolResult -&gt; ShowS
+[ToolResult] -&gt; ShowS
+ToolResult -&gt; String
+(Int -&gt; ToolResult -&gt; ShowS)
+-&gt; (ToolResult -&gt; String)
+-&gt; ([ToolResult] -&gt; ShowS)
+-&gt; Show ToolResult
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; ToolResult -&gt; ShowS
+showsPrec :: Int -&gt; ToolResult -&gt; ShowS
+$cshow :: ToolResult -&gt; String
+show :: ToolResult -&gt; String
+$cshowList :: [ToolResult] -&gt; ShowS
+showList :: [ToolResult] -&gt; ShowS
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Show.html#Show"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></a></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-105"></span><span>
+</span><span id="line-106"></span><span class="annot"><span class="hs-comment">-- * Context items</span></span><span>
+</span><span id="line-107"></span><span>
+</span><span id="line-108"></span><span class="annot"><span class="hs-comment">{- | A single item in the LLM conversation history.
+Backends map these to their native message types (Anthropic: @system@ field
+or @user@\/@assistant@ roles; Ollama: @system@\/@user@\/@assistant@ roles).
+-}</span></span><span>
+</span><span id="line-112"></span><span class="hs-keyword">data</span><span> </span><span id="ContextItem"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ContextItem"><span class="hs-identifier hs-var">ContextItem</span></a></span></span><span>
+</span><span id="line-113"></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-comment">-- | Instructions or persona, sent before any user turns.</span></span><span>
+</span><span id="line-114"></span><span>    </span><span id="SystemMessage"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#SystemMessage"><span class="hs-identifier hs-var">SystemMessage</span></a></span></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
+</span><span id="line-115"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="hs-comment">-- | A user turn in the conversation.</span></span><span>
+</span><span id="line-116"></span><span>    </span><span id="UserMessage"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#UserMessage"><span class="hs-identifier hs-var">UserMessage</span></a></span></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
+</span><span id="line-117"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="hs-comment">{- | A previous model response. Appended automatically after each successful
+      'Control.Monad.Prompt.Effect.promptSingle' call so subsequent prompts can
+      reference prior outputs naturally.
+    -}</span></span><span>
+</span><span id="line-121"></span><span>    </span><span id="AssistantMessage"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#AssistantMessage"><span class="hs-identifier hs-var">AssistantMessage</span></a></span></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
+</span><span id="line-122"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="hs-comment">{- | Tool calls a model requested in a single turn (parallel calls travel
+      together as one item, not one apiece, so they replay as one assistant
+      turn). Appended after a 'Backend' reply carries 'BackendToolCalls',
+      alongside the matching 'ToolResultMessage' once the calls have been
+      dispatched.
+    -}</span></span><span>
+</span><span id="line-128"></span><span>    </span><span id="ToolCallMessage"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCallMessage"><span class="hs-identifier hs-var">ToolCallMessage</span></a></span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCall"><span class="hs-identifier hs-type">ToolCall</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-129"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="hs-comment">{- | The results of dispatching the calls in a 'ToolCallMessage', one
+      per call, each still linked back to its call by 'toolResultId'.
+    -}</span></span><span>
+</span><span id="line-132"></span><span>    </span><span id="ToolResultMessage"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResultMessage"><span class="hs-identifier hs-var">ToolResultMessage</span></a></span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResult"><span class="hs-identifier hs-type">ToolResult</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-133"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252132"><span id="local-6989586621679252145"><span class="annot"><span class="annottext">ContextItem -&gt; ContextItem -&gt; Bool
+(ContextItem -&gt; ContextItem -&gt; Bool)
+-&gt; (ContextItem -&gt; ContextItem -&gt; Bool) -&gt; Eq ContextItem
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: ContextItem -&gt; ContextItem -&gt; Bool
+== :: ContextItem -&gt; ContextItem -&gt; Bool
+$c/= :: ContextItem -&gt; ContextItem -&gt; Bool
+/= :: ContextItem -&gt; ContextItem -&gt; Bool
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252149"><span id="local-6989586621679252164"><span id="local-6989586621679252168"><span class="annot"><span class="annottext">Int -&gt; ContextItem -&gt; ShowS
+[ContextItem] -&gt; ShowS
+ContextItem -&gt; String
+(Int -&gt; ContextItem -&gt; ShowS)
+-&gt; (ContextItem -&gt; String)
+-&gt; ([ContextItem] -&gt; ShowS)
+-&gt; Show ContextItem
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; ContextItem -&gt; ShowS
+showsPrec :: Int -&gt; ContextItem -&gt; ShowS
+$cshow :: ContextItem -&gt; String
+show :: ContextItem -&gt; String
+$cshowList :: [ContextItem] -&gt; ShowS
+showList :: [ContextItem] -&gt; ShowS
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Show.html#Show"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></a></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-134"></span><span>
+</span><span id="line-135"></span><span class="annot"><span class="hs-comment">{- | Render a list of 'ContextItem' values to a flat 'Text' for display or
+simple backends that do not support structured message histories.
+Each item is prefixed with its role and separated by newlines.
+-}</span></span><span>
+</span><span id="line-139"></span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#renderContextItems"><span class="hs-identifier hs-type">renderContextItems</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ContextItem"><span class="hs-identifier hs-type">ContextItem</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
+</span><span id="line-140"></span><span id="renderContextItems"><span class="annot"><span class="annottext">renderContextItems :: [ContextItem] -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#renderContextItems"><span class="hs-identifier hs-var hs-var">renderContextItems</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; [Text] -&gt; Text
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.html#intercalate"><span class="hs-identifier hs-var">T.intercalate</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;\n&quot;</span></span><span> </span><span class="annot"><span class="annottext">([Text] -&gt; Text)
+-&gt; ([ContextItem] -&gt; [Text]) -&gt; [ContextItem] -&gt; Text
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#."><span class="hs-operator hs-var">.</span></a></span><span> </span><span class="annot"><span class="annottext">(ContextItem -&gt; Text) -&gt; [ContextItem] -&gt; [Text]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#fmap"><span class="hs-identifier hs-var">fmap</span></a></span><span> </span><span class="annot"><span class="annottext">ContextItem -&gt; Text
+</span><a href="#local-6989586621679252172"><span class="hs-identifier hs-var">render</span></a></span><span>
+</span><span id="line-141"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-142"></span><span>    </span><span id="local-6989586621679252172"><span class="annot"><span class="annottext">render :: ContextItem -&gt; Text
+</span><a href="#local-6989586621679252172"><span class="hs-identifier hs-var hs-var">render</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#SystemMessage"><span class="hs-identifier hs-type">SystemMessage</span></a></span><span> </span><span id="local-6989586621679252186"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252186"><span class="hs-identifier hs-var">t</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;[system] &quot;</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text -&gt; Text
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#%3C%3E"><span class="hs-operator hs-var">&lt;&gt;</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252186"><span class="hs-identifier hs-var">t</span></a></span><span>
+</span><span id="line-143"></span><span>    </span><span class="annot"><a href="#local-6989586621679252172"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#UserMessage"><span class="hs-identifier hs-type">UserMessage</span></a></span><span> </span><span id="local-6989586621679252187"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252187"><span class="hs-identifier hs-var">t</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252187"><span class="hs-identifier hs-var">t</span></a></span><span>
+</span><span id="line-144"></span><span>    </span><span class="annot"><a href="#local-6989586621679252172"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#AssistantMessage"><span class="hs-identifier hs-type">AssistantMessage</span></a></span><span> </span><span id="local-6989586621679252188"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252188"><span class="hs-identifier hs-var">t</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;[assistant] &quot;</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text -&gt; Text
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#%3C%3E"><span class="hs-operator hs-var">&lt;&gt;</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252188"><span class="hs-identifier hs-var">t</span></a></span><span>
+</span><span id="line-145"></span><span>    </span><span class="annot"><a href="#local-6989586621679252172"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCallMessage"><span class="hs-identifier hs-type">ToolCallMessage</span></a></span><span> </span><span id="local-6989586621679252189"><span class="annot"><span class="annottext">[ToolCall]
+</span><a href="#local-6989586621679252189"><span class="hs-identifier hs-var">calls</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;[tool call] &quot;</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text -&gt; Text
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#%3C%3E"><span class="hs-operator hs-var">&lt;&gt;</span></a></span><span> </span><span class="annot"><span class="annottext">Text -&gt; [Text] -&gt; Text
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.html#intercalate"><span class="hs-identifier hs-var">T.intercalate</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;, &quot;</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(ToolCall -&gt; Text) -&gt; [ToolCall] -&gt; [Text]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#fmap"><span class="hs-identifier hs-var">fmap</span></a></span><span> </span><span class="annot"><span class="annottext">ToolCall -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#toolCallName"><span class="hs-identifier hs-var">toolCallName</span></a></span><span> </span><span class="annot"><span class="annottext">[ToolCall]
+</span><a href="#local-6989586621679252189"><span class="hs-identifier hs-var">calls</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-146"></span><span>    </span><span class="annot"><a href="#local-6989586621679252172"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResultMessage"><span class="hs-identifier hs-type">ToolResultMessage</span></a></span><span> </span><span id="local-6989586621679252190"><span class="annot"><span class="annottext">[ToolResult]
+</span><a href="#local-6989586621679252190"><span class="hs-identifier hs-var">results</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;[tool result] &quot;</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text -&gt; Text
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#%3C%3E"><span class="hs-operator hs-var">&lt;&gt;</span></a></span><span> </span><span class="annot"><span class="annottext">Text -&gt; [Text] -&gt; Text
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.html#intercalate"><span class="hs-identifier hs-var">T.intercalate</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;, &quot;</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(ToolResult -&gt; Text) -&gt; [ToolResult] -&gt; [Text]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#fmap"><span class="hs-identifier hs-var">fmap</span></a></span><span> </span><span class="annot"><span class="annottext">ToolResult -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#toolResultName"><span class="hs-identifier hs-var">toolResultName</span></a></span><span> </span><span class="annot"><span class="annottext">[ToolResult]
+</span><a href="#local-6989586621679252190"><span class="hs-identifier hs-var">results</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-147"></span><span>
+</span><span id="line-148"></span><span class="annot"><span class="hs-comment">{- | A chat backend, reduced to the one call every backend must make: given
+the conversation so far, the expected result type's description, its JSON
+schema and the tools currently on offer, produce the model's reply or an
+error.
+
+  * @conversation@ &#8212; the accumulated 'ContextItem' history.
+  * @typeDescription@ &#8212; appended as the final turn; describes the expected
+    output type in prose.
+  * @schema@ &#8212; the JSON schema the response must satisfy.
+  * @tools@ &#8212; the tool definitions on offer for this call; empty means no
+    tools are being offered.
+
+Returns a 'BackendReply' &#8212; the model's final answer or the tool calls it
+wants made &#8212; or a 'BackendError'.
+__Contract__: implementations must not throw IO exceptions &#8212; every failure
+comes back as 'Left'.
+-}</span></span><span>
+</span><span id="line-165"></span><span class="hs-keyword">newtype</span><span> </span><span id="Backend"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#Backend"><span class="hs-identifier hs-var">Backend</span></a></span></span><span> </span><span id="local-6989586621679252047"><span class="annot"><a href="#local-6989586621679252047"><span class="hs-identifier hs-type">m</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="Backend"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#Backend"><span class="hs-identifier hs-var">Backend</span></a></span></span><span>
+</span><span id="line-166"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="runBackendChat"><span class="annot"><span class="annottext">forall (m :: * -&gt; *).
+Backend m
+-&gt; [ContextItem]
+-&gt; Text
+-&gt; Value
+-&gt; [ToolDef]
+-&gt; m (Either BackendError BackendReply)
+</span><a href="Control.Monad.Prompt.Backend.html#runBackendChat"><span class="hs-identifier hs-var hs-var">runBackendChat</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ContextItem"><span class="hs-identifier hs-type">ContextItem</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.Internal.html#Value"><span class="hs-identifier hs-type">Value</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Schema.html#ToolDef"><span class="hs-identifier hs-type">ToolDef</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679252047"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Data.Either.html#Either"><span class="hs-identifier hs-type">Either</span></a></span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendError"><span class="hs-identifier hs-type">BackendError</span></a></span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendReply"><span class="hs-identifier hs-type">BackendReply</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-167"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-168"></span><span>
+</span><span id="line-169"></span><span class="annot"><span class="hs-comment">{- | A single 'Backend' call's reply: either the model's final answer, or
+the tool calls it wants made before it will answer. A backend with no
+tool concept (a mock, a file-replay backend) always returns 'BackendAnswer'.
+-}</span></span><span>
+</span><span id="line-173"></span><span class="hs-keyword">data</span><span> </span><span id="BackendReply"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendReply"><span class="hs-identifier hs-var">BackendReply</span></a></span></span><span>
+</span><span id="line-174"></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-comment">{- | The model's final response text (still raw JSON, same as the old
+    'Backend' always returned).
+    -}</span></span><span>
+</span><span id="line-177"></span><span>    </span><span id="BackendAnswer"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendAnswer"><span class="hs-identifier hs-var">BackendAnswer</span></a></span></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
+</span><span id="line-178"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="hs-comment">{- | The model wants these tool calls made before it will answer.
+      More than one call means parallel tool calls: dispatch each, then
+      send all the results back together on the next 'runBackendChat' call.
+    -}</span></span><span>
+</span><span id="line-182"></span><span>    </span><span id="BackendToolCalls"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendToolCalls"><span class="hs-identifier hs-var">BackendToolCalls</span></a></span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCall"><span class="hs-identifier hs-type">ToolCall</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-183"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252194"><span id="local-6989586621679252201"><span class="annot"><span class="annottext">BackendReply -&gt; BackendReply -&gt; Bool
+(BackendReply -&gt; BackendReply -&gt; Bool)
+-&gt; (BackendReply -&gt; BackendReply -&gt; Bool) -&gt; Eq BackendReply
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: BackendReply -&gt; BackendReply -&gt; Bool
+== :: BackendReply -&gt; BackendReply -&gt; Bool
+$c/= :: BackendReply -&gt; BackendReply -&gt; Bool
+/= :: BackendReply -&gt; BackendReply -&gt; Bool
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252205"><span id="local-6989586621679252212"><span id="local-6989586621679252216"><span class="annot"><span class="annottext">Int -&gt; BackendReply -&gt; ShowS
+[BackendReply] -&gt; ShowS
+BackendReply -&gt; String
+(Int -&gt; BackendReply -&gt; ShowS)
+-&gt; (BackendReply -&gt; String)
+-&gt; ([BackendReply] -&gt; ShowS)
+-&gt; Show BackendReply
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; BackendReply -&gt; ShowS
+showsPrec :: Int -&gt; BackendReply -&gt; ShowS
+$cshow :: BackendReply -&gt; String
+show :: BackendReply -&gt; String
+$cshowList :: [BackendReply] -&gt; ShowS
+showList :: [BackendReply] -&gt; ShowS
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Show.html#Show"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></a></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-184"></span><span>
+</span><span id="line-185"></span><span class="annot"><span class="hs-comment">{- | Why a 'Backend' call failed, distinguishing a refusal from a truncated
+reply and from a transport failure.
+
+A refusal is terminal: the model declining outright is not something a
+re-prompt fixes, so retrying just spends retry budget on real API calls
+before reporting the same refusal anyway. A transport failure (a 429, a
+500, a timeout, a decode failure) is exactly what a retry is for.
+
+'BackendRefusal' carries what a refusal actually offers &#8212; a provider-defined
+category, when the provider names one, and the provider's own message text
+&#8212; rather than being a bare nullary constructor, so that something
+populating it from a real provider's error payload (the shroom arc's todo
+14, from @baikai@\'s @BaikaiError@) has fields to fill rather than only a
+flag to set. Both fields are shaped after what @baikai@ can actually
+supply: its @refusalCategory :: Maybe Text@ is only ever populated on
+Anthropic's streaming path and is 'Nothing' everywhere else, so it stays
+optional here too; its @message :: Text@ is always present and already
+has any category or explanation folded in by the time it reaches a
+caller, so there is nothing left over for a separate &quot;reason&quot; field to
+carry.
+-}</span></span><span>
+</span><span id="line-206"></span><span class="hs-keyword">data</span><span> </span><span id="BackendError"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendError"><span class="hs-identifier hs-var">BackendError</span></a></span></span><span>
+</span><span id="line-207"></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-comment">-- | The model declined to answer at all.</span></span><span>
+</span><span id="line-208"></span><span>    </span><span id="BackendRefusal"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendRefusal"><span class="hs-identifier hs-var">BackendRefusal</span></a></span></span><span>
+</span><span id="line-209"></span><span>      </span><span class="hs-special">{</span><span> </span><span id="refusalCategory"><span class="annot"><span class="annottext">BackendError -&gt; Maybe Text
+</span><a href="Control.Monad.Prompt.Backend.html#refusalCategory"><span class="hs-identifier hs-var hs-var">refusalCategory</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Maybe.html#Maybe"><span class="hs-identifier hs-type">Maybe</span></a></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
+</span><span id="line-210"></span><span>      </span><span class="annot"><span class="hs-comment">{- ^ Provider-reported refusal category (e.g. a content-policy tag),
+      when the provider names one. Pass through whatever the provider
+      calls it.
+      -}</span></span><span>
+</span><span id="line-214"></span><span>      </span><span class="hs-special">,</span><span> </span><span id="refusalMessage"><span class="annot"><span class="annottext">BackendError -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#refusalMessage"><span class="hs-identifier hs-var hs-var">refusalMessage</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
+</span><span id="line-215"></span><span>      </span><span class="annot"><span class="hs-comment">-- ^ The provider's own message text, for logging\/debugging.</span></span><span>
+</span><span id="line-216"></span><span>      </span><span class="hs-special">}</span><span>
+</span><span id="line-217"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="hs-comment">{- | The reply was cut off by the output-token or context limit (a
+    @finish_reason: &quot;length&quot;@ stop) and so is, at best, half a JSON
+    document. Carries whatever text arrived before the cut, for logging
+    only &#8212; it is not a usable answer. Unlike a refusal this is worth a
+    retry, but unlike a transport failure it should not be retried blind: a
+    re-prompt that says nothing gets the same overlong answer again, so the
+    retry loop tells the model its reply was cut off and asks for a shorter
+    one.
+    -}</span></span><span>
+</span><span id="line-226"></span><span>    </span><span id="BackendTruncated"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendTruncated"><span class="hs-identifier hs-var">BackendTruncated</span></a></span></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
+</span><span id="line-227"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="hs-comment">-- | Anything else: an HTTP failure, a decode failure, a timeout, ...</span></span><span>
+</span><span id="line-228"></span><span>    </span><span id="BackendTransportError"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendTransportError"><span class="hs-identifier hs-var">BackendTransportError</span></a></span></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
+</span><span id="line-229"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252224"><span id="local-6989586621679252234"><span class="annot"><span class="annottext">BackendError -&gt; BackendError -&gt; Bool
+(BackendError -&gt; BackendError -&gt; Bool)
+-&gt; (BackendError -&gt; BackendError -&gt; Bool) -&gt; Eq BackendError
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: BackendError -&gt; BackendError -&gt; Bool
+== :: BackendError -&gt; BackendError -&gt; Bool
+$c/= :: BackendError -&gt; BackendError -&gt; Bool
+/= :: BackendError -&gt; BackendError -&gt; Bool
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252238"><span id="local-6989586621679252249"><span id="local-6989586621679252253"><span class="annot"><span class="annottext">Int -&gt; BackendError -&gt; ShowS
+[BackendError] -&gt; ShowS
+BackendError -&gt; String
+(Int -&gt; BackendError -&gt; ShowS)
+-&gt; (BackendError -&gt; String)
+-&gt; ([BackendError] -&gt; ShowS)
+-&gt; Show BackendError
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; BackendError -&gt; ShowS
+showsPrec :: Int -&gt; BackendError -&gt; ShowS
+$cshow :: BackendError -&gt; String
+show :: BackendError -&gt; String
+$cshowList :: [BackendError] -&gt; ShowS
+showList :: [BackendError] -&gt; ShowS
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Show.html#Show"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></a></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-230"></span></pre></body></html>

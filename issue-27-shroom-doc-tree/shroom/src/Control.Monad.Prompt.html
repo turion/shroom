@@ -1,0 +1,33 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="annot"><span class="hs-comment">{- | Re-exports 'Control.Monad.Prompt.Promptable.Promptable', the typeclass
+that attaches a default prompting strategy to a type.
+
+The program vocabulary itself &#8212; 'Control.Monad.Prompt.Effect.promptSingle',
+'Control.Monad.Prompt.Effect.context', 'Control.Monad.Prompt.Effect.promptTools'
+and the rest &#8212; lives in &quot;Control.Monad.Prompt.Effect&quot;, expressed as
+@effectful@ effects rather than as a bespoke monad transformer. Runner
+configuration ('Control.Monad.Prompt.Effect.PromptConfig') and the
+interpreters ('Control.Monad.Prompt.Effect.runPrompt',
+'Control.Monad.Prompt.Effect.runPromptResultEff') live there too.
+
+The class method 'Control.Monad.Prompt.Promptable.prompt' comes from this module, the
+runner and 'Control.Monad.Prompt.Effect.context' from &quot;Control.Monad.Prompt.Effect&quot;,
+so a program imports both (the names do not clash, since &quot;Control.Monad.Prompt.Effect&quot;
+exports no @prompt@):
+
+@
+import Control.Monad.Prompt
+import Control.Monad.Prompt.Effect (context, defaultPromptConfig, runPromptResultEff)
+
+result &lt;- runPromptResultEff backend defaultPromptConfig $ do
+  context &quot;The user's name is Alice.&quot;
+  prompt \@User
+@
+-}</span></span><span>
+</span><span id="line-26"></span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.html"><span class="hs-identifier">Control.Monad.Prompt</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html"><span class="hs-identifier">Control.Monad.Prompt.Promptable</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Generic.html"><span class="hs-identifier">Control.Monad.Prompt.Generic</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-27"></span><span>
+</span><span id="line-28"></span><span class="hs-comment">-- shroom</span><span>
+</span><span id="line-29"></span><span>
+</span><span id="line-30"></span><span class="hs-comment">-- Imported for its instances, which make @deriving via Generically X instance Promptable X@ work.</span><span>
+</span><span id="line-31"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Generic.html"><span class="hs-identifier">Control.Monad.Prompt.Generic</span></a></span><span>
+</span><span id="line-32"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html"><span class="hs-identifier">Control.Monad.Prompt.Promptable</span></a></span><span>
+</span><span id="line-33"></span></pre></body></html>
