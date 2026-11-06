@@ -1,0 +1,10 @@
+
+Produce a value of the following type:
+A span between points, a positional sum with a doc on each argument.
+- Between: Between two points.
+  - field 1: The first point.
+  - field 2: The second point.
+- Starting: From a point on, with one argument documented and one not.
+  - field 1: The point to start at.
+- Whole
+

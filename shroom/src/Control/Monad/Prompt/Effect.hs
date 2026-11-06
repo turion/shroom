@@ -8,12 +8,21 @@ ordinary effect rather than a constructor in a bespoke DSL.
   'context')
 * Scoping — @local@-style, over that same state ('withContextItem' \/
   'withContext')
-* The typed request itself — the 'Prompt' dynamic effect ('prompt' \/
-  'promptWith' \/ 'promptTools')
+* The typed request itself — the 'Prompt' dynamic effect ('promptSingle' \/
+  'promptSingleWith' \/ 'promptTools')
 * Failure — "Effectful.Error.Static" with 'Text' ('failWith')
 * Fallback — 'catchError' plus context restoration ('orElse')
 * Parallelism — "Effectful.Concurrent.Async", explicit rather than hiding in
   an @Applicative@ instance ('promptPar' \/ 'promptsParallel')
+
+== Which request to reach for
+
+In ordinary code call the class method 'Control.Monad.Prompt.Promptable.prompt'
+(from "Control.Monad.Prompt"), which honours a type's 'Control.Monad.Prompt.Promptable.Promptable'
+strategy. 'promptSingle' is the flat request that method defaults to: one
+request, never consulting 'Control.Monad.Prompt.Promptable.Promptable'. So
+@'withContext' t ('Control.Monad.Prompt.Promptable.prompt' \@a)@ is the
+strategy-aware equivalent of @'promptSingleWith' t@.
 
 Tool use (todo 10 of the shroom arc) is 'promptTools' plus
 "Control.Monad.Prompt.Tool"\'s 'Control.Monad.Prompt.Tool.Tool' effect and
@@ -36,8 +45,8 @@ one final tool-free call to answer with what it already has.
 module Control.Monad.Prompt.Effect (
   -- * The 'Prompt' effect
   Prompt,
-  prompt,
-  promptWith,
+  promptSingle,
+  promptSingleWith,
   promptTools,
   improve,
   promptPar,
@@ -113,19 +122,32 @@ data Prompt :: Effect where
 
 type instance DispatchOf Prompt = Dynamic
 
--- | Request a value of type @a@ from the LLM. Mirrors 'Control.Monad.Prompt.Promptable.prompt'.
-prompt :: forall a es. (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) => Eff es a
-prompt = send RequestPrompt
+{- | Request a value of type @a@ from the LLM in one flat request: the prompt
+text is the type's own 'description', and the schema is the type's own
+'ToSchema'. It never consults a 'Control.Monad.Prompt.Promptable.Promptable'
+instance, so a type's prompt strategy (a @deriving via Generically@, a
+hand-written override) is silently skipped. It is the default of the class
+method 'Control.Monad.Prompt.Promptable.prompt', which is what to reach for in
+ordinary code: for a type with the default strategy the two coincide, and for
+any other 'Control.Monad.Prompt.Promptable.prompt' honours the strategy while
+this does not. Reach for 'promptSingle' only when a flat request is the point
+(inside a strategy itself, or to compare against it).
+-}
+promptSingle :: forall a es. (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) => Eff es a
+promptSingle = send RequestPrompt
 
--- | Like 'prompt', with an extra piece of context scoped to this request only.
-promptWith ::
+{- | Like 'promptSingle', with an extra piece of context scoped to this request
+only. Equally flat: it never consults 'Control.Monad.Prompt.Promptable.Promptable'.
+The strategy-aware equivalent is @'withContext' t ('Control.Monad.Prompt.Promptable.prompt' \@a)@.
+-}
+promptSingleWith ::
   forall a es.
   (Prompt :> es, State [ContextItem] :> es, Surveyable a, ToSchema a, FromJSON a) =>
   Text ->
   Eff es a
-promptWith txt = withContext txt (prompt @a)
+promptSingleWith txt = withContext txt (promptSingle @a)
 
-{- | Like 'prompt', but the model may call any of the given tools. Build each
+{- | Like 'promptSingle', but the model may call any of the given tools. Build each
 'ToolBinding' with 'Control.Monad.Prompt.Tool.toolBinding' — that is only
 possible when the tool's 'Control.Monad.Prompt.Tool.Tool' effect is in
 @es@, which is the compile-time denial: a program cannot offer a tool it
@@ -150,8 +172,8 @@ every listed property, and the reply is one verdict object,
 the corrected value for @improved@, the given value unchanged for @fine@ (where
 it is ignored; a @fine@ reply that omits it is still accepted). The type's
 description (see 'description') goes with it, as for
-'prompt'. The scoped message is not kept; the raw reply is appended to the
-context as an 'AssistantMessage', as for 'prompt'.
+'promptSingle'. The scoped message is not kept; the raw reply is appended to the
+context as an 'AssistantMessage', as for 'promptSingle'.
 
 The reply goes through the same retry path as any request: an @improved@ value
 that fails to parse or violates a property is re-prompted. A @fine@ verdict

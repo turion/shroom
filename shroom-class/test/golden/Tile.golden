@@ -1,0 +1,39 @@
+
+Produce a value of the following type:
+A ceramic tile.
+- tileCut (object): How the tile is cut.
+- tileSize (object): The size of the tile when laid.
+- tileLabels (array): The labels printed on the tile.
+- tileColour (object): The chosen colour, if any.
+- tileNote (string): A note for the tiler.
+
+The types above refer to the following types:
+
+Cut:
+How a tile is cut.
+- Straight: Straight edges, to the given dimensions.
+- Curved: A round tile of the given diameter in millimetres.
+
+
+Dimensions:
+The size of a tile.
+- dimWidth: The width in millimetres.
+- dimHeight: The height in millimetres.
+
+
+Label:
+A text printed on a tile.
+- labelText: The words that are printed.
+
+
+Choice Colour:
+Either a value was picked, or none was.
+- Pick: The picked value.
+- Decline: Nothing was picked.
+
+
+Colour:
+A colour of paint.
+- Red: Like a post box.
+- Green: Like a lawn.
+

@@ -21,9 +21,23 @@ and in the module (it needs @DerivingVia@, @StandaloneDeriving@, @DeriveAnyClass
 import Generics.SOP qualified as SOP
 @
 
-Then a record, with a flat leaf type for each of its parts:
+Then a record, with a flat leaf type for each of its parts. The leaf type is
+derived first: a field type needs its 'Describable' instance from an earlier
+splice (or the same one), so that its description reaches the model with the
+record's:
 
 @
+-- | The full name of a person.
+newtype Name = Name Text
+  deriving stock (Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+\$(deriveDescribable ''Name)
+
+instance Surveyable Name   -- or a custom Property, e.g. \"not empty\"
+
+instance Promptable Name   -- flat: one request
+
 -- | A musician.
 data Musician = Musician
   { name :: Name
@@ -39,17 +53,6 @@ data Musician = Musician
 instance Surveyable Musician
 
 deriving via Generically Musician instance Promptable Musician
-
--- | The full name of a person.
-newtype Name = Name Text
-  deriving stock (Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
-
-\$(deriveDescribable ''Name)
-
-instance Surveyable Name   -- or a custom Property, e.g. \"not empty\"
-
-instance Promptable Name   -- flat: one request
 @
 
 A sum is derived the same way: @data Fruit = FruitApple Apple | FruitBanana
@@ -66,7 +69,7 @@ and @SOP.HasDatatypeInfo@ (derivable with @deriving anyclass@), and a
 @deriving via Generically@ takes effect only through the class method
 'Control.Monad.Prompt.Promptable.prompt' (and so through any 'Promptable'
 instance that calls it, such as a field's). The flat
-'Control.Monad.Prompt.Effect.prompt' stays flat: it sends one request for the
+'Control.Monad.Prompt.Effect.promptSingle' stays flat: it sends one request for the
 whole value, never calls the type's own @prompt@, and so never runs the strategy;
 'Control.Monad.Prompt.Effect.improve' is flat as well. A program that means to use
 the strategy must call @Promptable.prompt \@Musician@, qualified as in
@@ -123,7 +126,7 @@ for a constructor with @n > 0@ fields of a type with several constructors (choic
 cue, fields, improve) and 2 for a constructor without fields (choice, improve);
 and one more for every retry. Flat leaves cost one request each. So the example
 @Musician@ costs 4 requests, and a @Fruit@ 4 (choice, cue, the one field,
-improve), where a flat 'Control.Monad.Prompt.Effect.prompt' costs 1.
+improve), where a flat 'Control.Monad.Prompt.Effect.promptSingle' costs 1.
 
 == Leaves flat, composites generic
 
@@ -135,7 +138,7 @@ its measurements, where the cue and the earlier fields steer the later ones.
 
 == Containers are prompted whole
 
-A field of type @[a]@, @'NonEmpty' a@ or @'Maybe' a@ is prompted whole, in one
+A field of type @[a]@, @'NonEmpty' a@, @'Set' a@ or @'Maybe' a@ is prompted whole, in one
 request for the container (issue #24), through its flat 'Promptable' instance;
 the strategy does not go element by element. The properties of the elements are
 therefore not checked, nor told to the model, as for any container field (issue
@@ -144,7 +147,7 @@ therefore not checked, nor told to the model, as for any container field (issue
 == Recursive types hang, and fail against Claude
 
 A directly or mutually recursive type (@data Expr = Lit Int | Neg Expr@: a field
-of its own type that is not under a list, 'NonEmpty' or 'Maybe', or one that
+of its own type that is not under a list, 'NonEmpty', 'Set' or 'Maybe', or one that
 reaches itself through another type's bare instance) with a bare
 @instance Surveyable@ hangs under the structural default, on every backend and
 before any request is sent: enumerating its structural 'Property' never ends.

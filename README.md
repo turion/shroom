@@ -16,6 +16,21 @@ and get back a typed Haskell value, or a `Text` error explaining what went
 wrong.
 
 ```haskell
+{-# LANGUAGE DeriveAnyClass, DeriveGeneric, OverloadedStrings, TemplateHaskell, TypeFamilies #-}
+
+import Control.Monad.Prompt                         -- Promptable, and its method `prompt`
+import Control.Monad.Prompt.Baikai (claudeBackend)  -- from shroom-baikai
+import Control.Monad.Prompt.Effect (context, defaultPromptConfig, runPromptResultEff)
+import Control.Monad.Prompt.TH (deriveDescribable)
+import Data.Aeson (FromJSON, ToJSON)
+import Data.OpenApi (ToSchema)
+import Data.Shroom.Class (Surveyable (..))
+import Data.Text (Text)
+import Data.Text qualified as T
+import Data.Universe.Class (Universe)
+import GHC.Generics (Generic)
+import System.Environment (getEnv)
+
 -- | A user with a name and an email address.
 data User = User { userName :: Text, userEmail :: Text }
   deriving (Generic, ToJSON, FromJSON, ToSchema, Show)
@@ -34,6 +49,7 @@ instance Promptable User
 
 main :: IO ()
 main = do
+  apiKey <- T.pack <$> getEnv "ANTHROPIC_API_KEY"
   backend <- claudeBackend apiKey
   result <- runPromptResultEff backend defaultPromptConfig $ do
     context "Give me a user starting with A"
@@ -103,7 +119,13 @@ Describable          — describeType: one sentence (auto-derived from Haddock)
 
 - **`Describable`** — attach a one-sentence description to a type.
   Use `$(deriveDescribable ''MyType)` from `Control.Monad.Prompt.TH` to derive
-  `describeType` automatically from your Haddock comment.
+  `describeType` automatically from your Haddock comment. The prompt text then also carries the
+  docs of **every type `MyType` refers to**, once each (a type's constructors and fields, record
+  or positional, are documented too). So **every field type needs a `Describable` instance**, from
+  an earlier splice or the same one (a missing one is a compile error), and **a parameterised
+  type derives** (`data Choice a = …` gets `Describable a => Describable (Choice a)`). The
+  migration steps are in [`shroom-class/CHANGELOG.md`](shroom-class/CHANGELOG.md).  Check what a
+  type sends with `T.putStrLn (description (Proxy @MyType))` in `cabal repl`.
 
 - **`Surveyable`** — properties and examples of a type. A bare `instance Surveyable MyType`
   already describes and checks the properties of `MyType`'s fields (its `Property` defaults to
@@ -119,11 +141,11 @@ Describable          — describeType: one sentence (auto-derived from Haddock)
 - **`Promptable`** — a single method,
   `prompt :: (Prompt :> es, State [ContextItem] :> es) => Eff es a`,
   the `effectful` program that requests a value of the type from the LLM.
-  The default sends `Control.Monad.Prompt.Effect`'s `RequestPrompt`, which
-  renders the prompt from the type's description, properties and examples,
-  annotated with JSON field types. `instance Promptable MyType` with no body
-  is the normal case; override `prompt` to add type-specific context,
-  fallback logic, or any other custom program.
+  The default is `Control.Monad.Prompt.Effect.promptSingle`, one flat request: it sends
+  `RequestPrompt`, which renders the prompt from the type's description, properties and examples,
+  annotated with JSON field types, and never consults the type's `Promptable` instance.
+  `instance Promptable MyType` with no body is the normal case; override `prompt` to add
+  type-specific context, fallback logic, or any other custom program.
 
 ## Prompting a type part by part
 
@@ -137,22 +159,32 @@ deriving via Generically Musician instance Promptable Musician
 `prompt` then builds a `Musician` field by field (for a sum, it first asks which constructor),
 steered by a short cue and finished by an `improve` pass, each field through its own type's
 `Promptable`. It needs `SOP.Generic` and `SOP.HasDatatypeInfo` for the type (and `generics-sop` in
-your `build-depends`), and takes effect only through the class method `Promptable.prompt`, not
-`Control.Monad.Prompt.Effect.prompt`. Derive the leaves flat and `Generically` only the composites.
+your `build-depends`), and takes effect only through the class method `Promptable.prompt`, not the
+flat `Control.Monad.Prompt.Effect.promptSingle`. Derive the leaves flat and `Generically` only the composites.
 The module Haddock of `Control.Monad.Prompt.Generic` is the guide: what each call does, what it
 costs, how containers and recursive types behave.
 
 ## Prompt chaining
 
 `Eff` is a monad, so you can chain multiple prompts together. Each call to
-`prompt` or `promptWith` is a separate LLM request, but they share the same
-accumulated context:
+`prompt` is a separate LLM request, but they share the same
+accumulated context. The examples in this and the next two sections are statements for
+`main`'s do-block, with `backend` as above and `Score`, `Talk` and the like derived the way
+`User` is (the Parallel section's are `Eff` statements, so they sit inside a
+`runPromptResultEff … $ do` block there); they need these imports besides the ones of the first
+example:
+
+```haskell
+import Control.Monad.Prompt.Effect (orElse, promptPar, promptsParallel, withContext)
+```
+
+Chaining:
 
 ```haskell
 result <- runPromptResultEff backend defaultPromptConfig $ do
   context "The user Alice is an expert programmer:"
   user  <- prompt @User                                         -- first LLM call
-  score <- promptWith @Score "Rate this user's awesomeness."   -- second LLM call, still sees "The user Alice is an expert programmer:"
+  score <- withContext "Rate this user's awesomeness." (prompt @Score)   -- second LLM call, still sees "The user Alice is an expert programmer:"
   pure (user, score)
 ```
 
@@ -164,11 +196,13 @@ sequentially, the same as any other `Applicative` — reach for `promptPar` or
 `effectful`'s `Concurrent` effect:
 
 ```haskell
--- Two independent prompts, run concurrently:
-(user, score) <- promptPar (prompt @User) (prompt @Score)
+result <- runPromptResultEff backend defaultPromptConfig $ do
+  -- Two independent prompts, run concurrently:
+  (user, score) <- promptPar (prompt @User) (prompt @Score)
 
--- A list of independent prompts, all in parallel:
-talks <- promptsParallel [ promptWith @Talk ("Speaker: " <> speakerName spk) | spk <- speakers ]
+  -- A list of independent prompts, all in parallel:
+  talks <- promptsParallel [ withContext ("Speaker: " <> speakerName spk) (prompt @Talk) | spk <- speakers ]
+  pure (user, score, talks)
 ```
 
 Context added *inside* a parallel branch is local to that branch — it does not
@@ -178,8 +212,9 @@ leak to sibling branches or to subsequent steps in the chain.
 
 - `context "..."` adds text to the *global* conversation context, visible to
   all subsequent prompts in the chain.
-- `promptWith @T "..."` sends a *prompt-local* extra message alongside one
-  specific request — it doesn't accumulate into the global context.
+- `withContext "..." (prompt @T)` sends a *prompt-local* extra message alongside one
+  specific request — it doesn't accumulate into the global context. (`promptSingleWith @T "..."`
+  is the same for the flat request that skips `T`'s `Promptable` strategy.)
 - For fine-grained control, `addContextItem` and `withContextItem` accept
   `ContextItem` values (`SystemMessage`, `UserMessage`, or `AssistantMessage`)
   directly, letting you build structured multi-turn conversation history.
@@ -264,7 +299,8 @@ and depends on no LLM client of its own; `shroom-baikai` supplies the transport,
 `baikai` family shikumi itself sits on.
 
 What shroom has that neither of them do is the Haddock-to-prompt TH splice: `deriveDescribable`
-extracts a type's documentation and its record-field docs at compile time, so the documentation
+extracts a type's documentation, its constructors' and fields' docs (record and positional), and the docs
+of every type it refers to, at compile time, so the documentation
 *is* the prompt engineering and the two cannot drift. shikumi's `Signature` instructions and
 `FieldMeta` descriptions are hand-written `Text`; so are langchain-hs's. That makes both
 potential **consumers** of shroom's pure half (`Data.Shroom.*`, the part of the library that
@@ -291,7 +327,7 @@ expects a different encoding than the schema describes will silently fail to par
 shroom follows [Anthropic's prompt chaining recommendations](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/chain-prompts):
 
 - **One prompt, one type** — each `prompt @T` call targets a single type.
-- **Explicit context passing** — `context` for global state, `promptWith`/`withContext` for local.
+- **Explicit context passing** — `context` for global state, `withContext` for local.
 - **Validation checkpoints** — `propertyHolds` validates each response before
   the chain continues.
 - **Self-correction** — on failure the model is re-prompted with the invalid response
@@ -337,6 +373,9 @@ its fields' Haddock comments) **and** the `ToJSON`, `FromJSON` and `ToSchema` in
 `Promptable` needs. Those instances come from `aeson` and `openapi3`, so both are listed above.
 `openapi3` costs nothing extra, since it is already in `shroom-class`'s dependency closure, but it
 still has to be listed: cabal hides a package that is only a transitive dependency.
+
+Every field type of a derived type needs a `Describable` instance too, from an earlier or the same
+splice; see the migration note in [`shroom-class/CHANGELOG.md`](shroom-class/CHANGELOG.md).
 
 A bare `instance Surveyable T` surveys the fields of `T`: their properties become properties of
 `T`. That needs the two `generics-sop` classes next to the others, which is why `generics-sop` is
