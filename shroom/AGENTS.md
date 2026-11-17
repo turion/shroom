@@ -40,3 +40,24 @@ the Haddocks say what the functions do.
   `aeson`'s generic ones, needed by the superclasses.
 - **`promptSingle` and `improve` are flat on purpose,** so the strategy may call `improve` without recursing
   into itself; only the class method `prompt` runs a `deriving via Generically` strategy.
+
+## `Control.Monad.Prompt.Tool`
+
+- **`Toolable` is deliberately not a subclass of `Promptable`.** A tool's input type is described and given a
+  schema the way a `Promptable` type is, but it is never the target of a `prompt` call. Requiring `Promptable`
+  would add a method nobody uses and make `Tool` depend on `Control.Monad.Prompt.Effect`, which it does not
+  otherwise need. The superclasses are `Surveyable`, `ToSchema`, `FromJSON` and `Typeable`.
+- **`dispatchBindings` is a run-time scan by name; only dispatch is.** Whether a program may call or offer a
+  tool is checked at compile time, through `Tool t :> es` on `callTool` and `toolBinding`. Finding the tool the
+  model named from a bare string needs run-time reflection over `es`, which `effectful` does not offer, so
+  every `ToolBinding` closes over its own tool type and the list is searched by `toolDefName`. Full
+  type-level dispatch was not attempted beyond that.
+- **`Control.Monad.Prompt.Tool.Web`'s three tool types are prompt text.** Their own and their fields' Haddocks
+  are read by `deriveDescribable` at compile time into `describeType`, which the model is sent; so are their
+  `examples` and `toolDescription`. Editing one changes what the model sees. Known mismatch: the Haddock of
+  `DuckDuckGoSearch` says multi-word queries return no result, while its `examples` are multi-word queries.
+  It is left as it is so the model's prompt does not change.
+- **`trySynchronous` catches synchronous exceptions only.** A failed request (connection refused, bad status)
+  becomes a `Left` tool result; an asynchronous exception (`System.Timeout.timeout`'s `Timeout`,
+  `ThreadKilled`, an `async` cancellation) is the caller's control flow and propagates, so a `timeout` around
+  a hung request returns `Nothing` instead of handing the model a timeout result and carrying on.

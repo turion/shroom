@@ -1,13 +1,23 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-{- | Built-in web tools: 'WebFetch', 'DuckDuckGoSearch', and 'WikipediaSearch'.
+{- |
+Module      : Control.Monad.Prompt.Tool.Web
+Description : Ready-made tools that let a model fetch a web page or search the web.
 
-Use these as ready-made 'ToolHandler' values. A program names the ones it
-needs, e.g. @('Tool' WebFetch ':>' es, 'Tool' DuckDuckGoSearch ':>' es)@,
-offers @'toolBinding' \@WebFetch : 'toolBinding' \@DuckDuckGoSearch : ...@ to
-'Control.Monad.Prompt.Effect.promptTools', and each handler is supplied via
-@'runTool' webFetchHandler@ \/ @'runTool' duckDuckGoSearchHandler@:
+Three tools, each a 'Toolable' type with a t'ToolHandler' to run it:
+
+* 'webFetchHandler' runs t'WebFetch': an HTTP GET whose HTML is stripped and
+  whose text is cut to 2000 characters.
+* 'duckDuckGoSearchHandler' runs t'DuckDuckGoSearch', the DuckDuckGo Instant
+  Answer API. It suits named entities (people, places, concepts) that have a
+  Wikipedia article, and returns a short abstract with a URL.
+* 'wikipediaSearchHandler' runs t'WikipediaSearch', the Wikipedia OpenSearch API.
+  It returns up to 5 article titles and URLs for any query.
+
+A program that offers these tools has them in its constraints and is run with
+one 'Control.Monad.Prompt.Tool.runTool' per handler. See "Control.Monad.Prompt.Tool"
+for 'Control.Monad.Prompt.Tool.toolBinding', which offers a tool to the model:
 
 @
 result <- runPromptResultEff backend defaultPromptConfig $
@@ -16,16 +26,23 @@ result <- runPromptResultEff backend defaultPromptConfig $
       runTool wikipediaSearchHandler
         myProgram
 @
-
-* 'duckDuckGoSearchHandler' — DuckDuckGo Instant Answer API. Best for named
-  entities (people, places, concepts) that have a Wikipedia article.
-  Returns a short abstract and a URL to fetch for more detail.
-* 'wikipediaSearchHandler' — Wikipedia OpenSearch. Returns up to 5
-  article titles and URLs for any query. Use this when the DDG search
-  returns no result and you need to find Wikipedia pages to fetch.
-* 'webFetchHandler' — HTTP GET, strips HTML, truncates to 2000 chars.
 -}
-module Control.Monad.Prompt.Tool.Web (module Control.Monad.Prompt.Tool.Web) where
+module Control.Monad.Prompt.Tool.Web (
+  -- * Fetching a page
+  WebFetch (..),
+  WebFetchProperty (..),
+  webFetchHandler,
+
+  -- * Searching with DuckDuckGo
+  DuckDuckGoSearch (..),
+  DuckDuckGoSearchProperty (..),
+  duckDuckGoSearchHandler,
+
+  -- * Searching Wikipedia
+  WikipediaSearch (..),
+  WikipediaSearchProperty (..),
+  wikipediaSearchHandler,
+) where
 
 -- base
 import Control.Exception (SomeAsyncException, SomeException, fromException, tryJust)
@@ -94,8 +111,9 @@ newtype WebFetch = WebFetch
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema)
 
+-- | The properties of a t'WebFetch', for 'propertyHolds'.
 data WebFetchProperty
-  = -- | Must start with http:// or https://
+  = -- | Must start with @http:\/\/@ or @https:\/\/@
     WebFetchUrlScheme
   | -- | Must contain only URL-safe characters
     WebFetchUrlSafeChars
@@ -124,19 +142,13 @@ instance Promptable WebFetch
 instance Toolable WebFetch where
   toolDescription _ = Just "Returns up to 2000 characters of the page body."
 
--- | Perform an HTTP GET, strip HTML tags, truncate to 2000 characters.
+-- The User-Agent header that every web handler sends.
 userAgentHeader :: Req.Option scheme
 userAgentHeader = Req.header "User-Agent" "shroom/0.1 (https://github.com/turion/shroom)"
 
-{- | Run an action, catching /synchronous/ exceptions only. All three web
-handlers wrap their HTTP call in this, so a failed request (connection
-refused, bad status, ...) comes back as a 'Left' and becomes a tool-error
-result. /Asynchronous/ exceptions ('SomeAsyncException':
-@System.Timeout.timeout@\'s @Timeout@, @ThreadKilled@, an @async@
-cancellation) are the caller's control flow, not a tool failure, so they
-propagate: a @timeout@ around a hung request returns 'Nothing' instead of
-the model being handed a @\<\<timeout\>\>@ tool result and the loop carrying on.
--}
+-- Run an action, catching synchronous exceptions only: a failed request
+-- becomes a result, while an asynchronous exception (a timeout, a cancellation)
+-- propagates to the caller.
 trySynchronous :: IO a -> IO (Either SomeException a)
 trySynchronous = tryJust synchronousOnly
   where
@@ -147,6 +159,9 @@ trySynchronous = tryJust synchronousOnly
       Just (_ :: SomeAsyncException) -> Nothing
       Nothing -> Just ex
 
+{- | Fetch a URL with an HTTP GET, strip the HTML tags and return the first 2000
+characters of the text.
+-}
 webFetchHandler :: ToolHandler WebFetch
 webFetchHandler = ToolHandler $ \(WebFetch url) -> do
   result <- trySynchronous $ runReq defaultHttpConfig $ do
@@ -191,6 +206,7 @@ newtype DuckDuckGoSearch = DuckDuckGoSearch
 
 $(deriveDescribable ''DuckDuckGoSearch)
 
+-- | The properties of a t'DuckDuckGoSearch', for 'propertyHolds'.
 data DuckDuckGoSearchProperty
   = -- | Must not be empty
     DuckDuckGoSearchQueryNotEmpty
@@ -218,7 +234,7 @@ instance Promptable DuckDuckGoSearch
 instance Toolable DuckDuckGoSearch where
   toolDescription _ = Just "DuckDuckGo Instant Answer: returns a short abstract for well-known named entities (people, places) that have a Wikipedia article. Returns no result for vague or multi-word queries — use wikipedia_search instead."
 
--- | DuckDuckGo Instant Answer API response (partial).
+-- The fields of the DuckDuckGo Instant Answer API response that the handler reads.
 data DDGResponse = DDGResponse
   { abstractText :: Maybe Text
   , abstractURL :: Maybe Text
@@ -234,7 +250,7 @@ instance Aeson.FromJSON DDGResponse where
       <*> o .:? "Heading"
       <*> o .:? "Answer"
 
--- | Query DuckDuckGo Instant Answer API, return AbstractText (+ URL) or Answer.
+-- | Query the DuckDuckGo Instant Answer API and return its answer, or its abstract with a URL.
 duckDuckGoSearchHandler :: ToolHandler DuckDuckGoSearch
 duckDuckGoSearchHandler = ToolHandler $ \(DuckDuckGoSearch q) -> do
   result <- trySynchronous $ runReq defaultHttpConfig $ do
@@ -278,6 +294,7 @@ newtype WikipediaSearch = WikipediaSearch
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema)
 
+-- | The properties of a t'WikipediaSearch', for 'propertyHolds'.
 data WikipediaSearchProperty
   = -- | Must not be empty
     WikipediaSearchQueryNotEmpty
