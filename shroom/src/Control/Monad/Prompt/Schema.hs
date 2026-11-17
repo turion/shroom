@@ -44,26 +44,12 @@ result text or an error.
 -}
 type ToolDispatcher m = Text -> Value -> m (Either Text Text)
 
-{- | Build a JSON schema 'Value' for type @a@, fully self-contained with no
-@$ref@\/@$defs@ left in it, using openapi3's 'declareSchemaRef'.
+{- | Build the JSON schema of type @a@, self-contained with no @$ref@ or @$defs@
+left in it. It takes the schema @openapi3@ derives, normalises it for
+structured-output use and then inlines every reference.
 
-Internally this first rewrites the @#\/components\/schemas\/X@ reference form
-openapi3 emits by default into the @#\/$defs\/X@ form a structured-output
-schema uses, via 'normalizeSchemaForStructuredOutput', then flattens every
-@$ref@ against its @$defs@ via 'inlineSchema'.
-
-The flattening step is load-bearing, not cosmetic: a live Ollama
-(@0.30.6@, @llama3.2:1b@) resolves a single @$ref@ hop correctly —
-confirmed directly, including on a deliberately unguessable field name —
-but silently stops enforcing the schema (falling back to an unconstrained
-node, observed as an empty array or invented field names rather than an
-error) as soon as the wire schema asks it to follow a /second/ hop: a
-@$ref@ found while resolving another @$ref@, which is exactly what any
-nested-record type produces once it references another named schema (an
-array of records, or a record containing a record). A flat record's own
-schema is only ever one hop from the root, which is why that case worked
-before this fix and a nested one did not. See this package's arc plan,
-todo 20, for the direct wire evidence.
+A backend uses it to describe the expected result type and a tool's input to
+the model.
 -}
 schemaWithDefs :: forall a. (ToSchema a) => Proxy a -> Value
 schemaWithDefs prx =
@@ -87,43 +73,17 @@ strict tool) schema:
 * Rewrites @$ref@ values from @#\/components\/schemas\/X@ (openapi3's
   default) to @#\/$defs\/X@.
 * Folds @"minimum"@\/@"maximum"@ on every @"type": "integer"@ node into that
-  field's @"description"@, then removes the keywords, rather than dropping
-  them. Numeric bounds are not part of the wire schema any provider used
-  here accepts, but the official SDKs move them into the description so the
-  model still hears the constraint; this does the same rather than silently
-  discarding it.
-* Rewrites @"oneOf"@ to @"anyOf"@. @openapi3@ renders a sum type with a
-  non-nullary constructor as @oneOf@, which Anthropic's structured outputs
-  do not list as supported (they list @anyOf@ and @allOf@). The alternatives
-  @openapi3@ generates for a sum are told apart by their tag, so \"at least
-  one\" accepts what \"exactly one\" did. A node that already has an @anyOf@
-  keeps it, and its @oneOf@ moves into an extra @allOf@ entry so that both
-  constraints still apply.
+  field's @"description"@ and removes the keywords, so the model still hears
+  the constraint.
+* Rewrites @"oneOf"@ to @"anyOf"@, the form structured-output schemas support.
+  The alternatives that @openapi3@ generates for a
+  sum are told apart by their tag, so \"at least one\" accepts what \"exactly
+  one\" did. A node that already has an @anyOf@ keeps it, and its @oneOf@ moves
+  into an extra @allOf@ entry so that both constraints still apply.
 
-String @"format"@ is left alone: Anthropic's structured outputs accept
-@date-time@, @date@, @time@, @duration@, @email@, @hostname@, @uri@,
-@ipv4@, @ipv6@ and @uuid@, and stripping it would throw away schema the API
-accepts.
-
-Whether a JSON Schema @"format"@ is actually enforced depends on the host,
-and the two disagree: Anthropic's own structured-outputs documentation
-lists @"format"@ among the schema features it enforces, alongside
-@additionalProperties: false@. A local model behind llama.cpp is weaker and
-uneven about it instead — llama.cpp's grammar converter compiles @uuid@,
-@date@, @time@ and @date-time@ into real grammar rules but leaves @email@,
-@uri@ and others unconstrained. A live test against a schema declaring
-@format: email@ got back @"thompsons sophia\@outlook.com "@, with a stray
-space in the middle; which host that test ran against was never recorded,
-but the surrounding evidence points to Ollama rather than Anthropic: a
-direct call with @ANTHROPIC_API_KEY@ got a @401@ from @api.anthropic.com@,
-nothing in this project's history records a successful Anthropic call, and
-the failure's shape — an unconstrained @email@ next to formats llama.cpp
-does compile — matches llama.cpp's grammar converter exactly. Send
-@"format"@ regardless: it is correct schema, and Anthropic enforces it even
-where a local model may not. Whether the folded bounds above
-(@"minimum"@\/@"maximum"@) are enforced numerically by a llama.cpp-backed
-grammar is a separate, still-open question. That is what the @Surveyable@
-properties in 'Data.Shroom.Class' are for.
+String @"format"@ is left alone. Whether a host enforces it varies; the
+properties of @Surveyable@ in "Data.Shroom.Class" check in code what the schema
+does not enforce.
 -}
 normalizeSchemaForStructuredOutput :: Value -> Value
 normalizeSchemaForStructuredOutput (Object km) =
@@ -179,23 +139,8 @@ renderNum v = T.pack (show v)
 {- | Inline all @$ref@ pointers in a schema against its @$defs@ section,
 producing a flat schema with no @$ref@ or @$defs@.
 
-@$ref@\/@$defs@ is not simply unsupported on the wire — a single hop
-resolves correctly even against a small local Ollama model, on both the
-response @format@ field and a tool's parameter schema, confirmed directly
-with a deliberately unguessable field name. What fails is a /second/ hop:
-a @$ref@ found while resolving another @$ref@, which is exactly what any
-nested-record type produces (an array of records, or a record containing
-a record) once 'schemaWithDefs' leaves @$ref@\/@$defs@ in place. A live
-Ollama (@0.30.6@) does not error on this; it silently stops enforcing the
-schema at that point, observed as an empty array or invented field names.
-This is why 'schemaWithDefs' now calls this function on its own result
-before returning — see its Haddock and this package's arc plan, todo 20,
-for the wire evidence.
-
-Recursion is capped at 20 levels (see 'go') rather than unrolled fully: a
-genuinely self-referential type has no finite fully-inlined form, so past
-the cap whatever is left simply stops being descended into, rather than
-looping forever.
+Recursion is capped at 20 levels: a self-referential type has no finite fully
+inlined form, so past the cap whatever is left is not descended into.
 -}
 inlineSchema :: Value -> Value
 inlineSchema root = go 20 startVal
