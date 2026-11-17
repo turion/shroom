@@ -84,7 +84,30 @@ with no program layer attached, to feed shikumi's own instruction and
 validation machinery. Keep it that way: an import of @Control.Monad.Prompt@
 here would put the program layer back in C3's way.
 -}
-module Data.Shroom.Class (module Data.Shroom.Class) where
+module Data.Shroom.Class (
+  -- * The classes
+  Describable (..),
+  Surveyable (..),
+
+  -- * Structural properties: the default
+  Structural,
+  structuralHolds,
+  describeStructural,
+  PropertyDefault (..),
+  PropertyOf,
+
+  -- * Helpers for hand-written instances
+  Described (..),
+  reach,
+  reachableTypes,
+  everyHolds,
+  describeEvery,
+
+  -- * Rendering a type for the model
+  description,
+  annotateFieldTypes,
+  fieldNameAt,
+) where
 
 -- base
 
@@ -206,7 +229,9 @@ class (ToJSON a, Typeable a) => Describable a where
 {- | A type of which only the 'Describable' instance is known, to put types of
 different kinds into one list: what 'referencedTypes' returns.
 -}
-data Described = forall t. (Describable t) => Described (Proxy t)
+data Described
+  = -- | Packs the type behind the 'Proxy', together with its 'Describable' instance.
+    forall t. (Describable t) => Described (Proxy t)
 
 {- | The entries a field of type @t@ contributes to 'referencedTypes': @t@ itself
 if it has a section of its own ('hasOwnSection'), otherwise whatever @t@ itself
