@@ -21,6 +21,13 @@ Please always speak like a 1970s British working class person!
 - The golden files of `shroom-class` (`shroom-class/test/golden/`) are regenerated with `cabal test shroom-class-test --test-options=--accept`; review the diff afterwards.
 - Before every push, run `jj fix` (fourmolu, cabal-gild, `hlint --refactor`; CI checks the first two and hlint) and then the build and test gates again. Build afterwards, because a tool can change meaning: fourmolu once rewrote `OverloadedRecordDot` access `a.b` into `a . b`, and an hlint refactor can introduce a partial function such as `head`, which `-Werror` rejects.
 
+# Documentation standard
+
+- Every PR re-reads the generated haddocks of each file it changes. Build them as CI does: `cabal haddock all -f-anthropic -f-ollama --haddock-hyperlink-source --haddock-quickjump`. The HTML of each package lands in `dist-newstyle/build/*/*/<package>-<version>/doc/html/<package>/`; open its `index.html` and read the pages of the modules the PR touched. A haddock run passes with unresolved links, so only reading the page shows that a link resolves and that the markup renders as meant.
+- A Haddock or code comment describes what the code does, never how it came about. No plan, arc or todo references, no issue numbers, no "as before", "used to", "old behaviour" or "no longer". A real limitation stays, stated plainly. History goes in the CHANGELOG.
+- A fact that a future agent needs but a user does not goes in the package's own `AGENTS.md`, imported by a `CLAUDE.md` beside it that holds `@AGENTS.md`.
+- The maintainer's documentation standard is the Hackage documentation of rhine, changeset and essence-of-live-coding.
+
 # Key dependency patterns
 
 ## openapi3 (`^>=3.2`) — schema generation
