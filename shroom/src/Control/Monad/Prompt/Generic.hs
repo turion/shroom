@@ -1,46 +1,57 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-{- | Prompt a type part by part, after choosing its constructor if it has
-several: @deriving via 'Generically'@. This module is the user's guide.
+{- |
+Module      : Control.Monad.Prompt.Generic
+Description : Prompt a record or sum type part by part, with @deriving via Generically@.
 
-== Opting in
+Prompt a type part by part, after choosing its constructor if it has several,
+by deriving 'Promptable' via t'Generically'.
 
-Three lines of setup, next to the instances you write anyway. In your @.cabal@
-file, @generics-sop@ among the @build-depends@ (next to @shroom@):
+A flat 'Promptable' asks for the whole value in one request. The strategy here
+instead asks for a record's fields one at a time, each seeing the earlier ones,
+so that the parts of a value that must fit together (a musician and the city
+they are from) are built in one train of thought. It then asks the model to
+'Control.Monad.Prompt.Effect.improve' the assembled value.
+
+The example needs the packages @shroom@, @generics-sop@, @aeson@, @openapi3@ and @text@,
+and the GHC flag @-haddock@ for the module that declares the types: the descriptions
+are read from their Haddock comments (see "Data.Shroom.Class.TH"). A leaf type that a
+field uses is derived before the type that has the field.
 
 @
-build-depends: shroom, generics-sop
-@
+{\-# LANGUAGE DeriveAnyClass #-\}
+{\-# LANGUAGE DeriveGeneric #-\}
+{\-# LANGUAGE DerivingStrategies #-\}
+{\-# LANGUAGE DerivingVia #-\}
+{\-# LANGUAGE StandaloneDeriving #-\}
+{\-# LANGUAGE TemplateHaskell #-\}
 
-and in the module (it needs @DerivingVia@, @StandaloneDeriving@, @DeriveAnyClass@,
-@DeriveGeneric@ and, for 'Data.Shroom.Class.TH.deriveDescribable',
-@TemplateHaskell@):
-
-@
+import Data.Aeson (FromJSON, ToJSON)
+import Data.OpenApi (ToSchema)
+import Data.Text (Text)
+import GHC.Generics (Generic, Generically (..))
 import Generics.SOP qualified as SOP
-@
 
-Then a record, with a flat leaf type for each of its parts. The leaf type is
-derived first: a field type needs its 'Describable' instance from an earlier
-splice (or the same one), so that its description reaches the model with the
-record's:
+import Control.Monad.Prompt
+import Data.Shroom.Class
+import Data.Shroom.Class.TH (deriveDescribable)
 
-@
--- | The full name of a person.
-newtype Name = Name Text
+-- | The name of a city.
+newtype City = City Text
   deriving stock (Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
-\$(deriveDescribable ''Name)
+\$(deriveDescribable ''City)
 
-instance Surveyable Name   -- or a custom Property, e.g. \"not empty\"
+instance Surveyable City
 
-instance Promptable Name   -- flat: one request
+-- A leaf is flat: one request.
+instance Promptable City
 
 -- | A musician.
 data Musician = Musician
-  { name :: Name
+  { name :: Text
   -- ^ The musician's full name.
   , city :: City
   -- ^ The city the musician is from.
@@ -55,120 +66,64 @@ instance Surveyable Musician
 deriving via Generically Musician instance Promptable Musician
 @
 
-A sum is derived the same way: @data Fruit = FruitApple Apple | FruitBanana
-Banana@ with @deriving via Generically Fruit instance Promptable Fruit@ first
-asks for the constructor, then builds that constructor's fields.
+A program then asks for a musician with @prompt \@Musician@, as for any
+'Promptable' type. A sum is derived the same way; its strategy first asks which
+constructor to build.
 
-The type needs the same instances as for a flat 'Promptable' ('Surveyable',
-'ToSchema', 'FromJSON'), besides them the @generics-sop@ classes @SOP.Generic@
-and @SOP.HasDatatypeInfo@ (derivable with @deriving anyclass@), and a
-'Promptable' instance for every field type.
+Only the class method 'Control.Monad.Prompt.Promptable.prompt' runs the strategy, directly or through
+the instance of a field. The flat 'Control.Monad.Prompt.Effect.promptSingle' and
+'Control.Monad.Prompt.Effect.improve' send one request for the whole value and
+never run it.
 
-== Only the class method takes the strategy
+== The strategy
 
-@deriving via Generically@ takes effect only through the class method
-'Control.Monad.Prompt.Promptable.prompt' (and so through any 'Promptable'
-instance that calls it, such as a field's). The flat
-'Control.Monad.Prompt.Effect.promptSingle' stays flat: it sends one request for the
-whole value, never calls the type's own @prompt@, and so never runs the strategy;
-'Control.Monad.Prompt.Effect.improve' is flat as well. A program that means to use
-the strategy must call @Promptable.prompt \@Musician@, qualified as in
-@import Control.Monad.Prompt.Promptable qualified as Promptable@.
+'Control.Monad.Prompt.Promptable.prompt' for @t'Generically' a@ builds an @a@ in the following steps, all
+inside one snapshot of the context:
 
-== The strategy, call by call
-
-'prompt' for @'Generically' a@ builds an @a@ in several requests, all inside one
-snapshot of the context:
-
-1. Only for a type with several constructors: a message tells the model it is
-   about to build a value of @a@, described by 'description', and asks which
-   constructor to build it with. The model is asked for a 'ConstructorChoice', an
-   enum of the constructor names. The reply stays in the context. A type with
-   one constructor skips this step.
-2. A message tells the model it is about to build a value of @a@, described by
-   'description', field by field (after a choice: that it chose this constructor),
-   and the model is asked for a 'Cue': a short,
-   specific steer that every field will follow. The reply stays in the context.
-   A constructor without fields skips this step and the next.
+1. Only for a type with several constructors: the model is told it is about to
+   build a value of @a@, described by 'description', and is asked for a
+   t'ConstructorChoice', an enum of the constructor names.
+2. Unless the constructor has no fields: the model is asked for a t'Cue', a short,
+   specific steer that every field will follow: a tone or a setting that the first
+   field's request would otherwise leave to chance, and the later ones inherit.
 3. For each field in order, a message names the field (a record's field name,
-   otherwise the constructor's name and the field's position, and for a type with
-   several constructors always the constructor too), and the field
-   type's __own__ 'Control.Monad.Prompt.Promptable.prompt' is called. Its
-   answer stays in the context, so each field sees the earlier ones. A field type
-   whose own @prompt@ scopes its context (and so leaves no answer behind) has its
-   answer appended by the strategy: whenever the context did not grow, or does not
-   end in an 'AssistantMessage'. The strategy cannot tell whether a trailing
-   'AssistantMessage' is really that field's answer, so an override that drops
-   its answer yet appends some other 'AssistantMessage' last goes unnoticed.
-4. The fields are assembled into an @a@, a /draft/.
-5. The draft goes through 'Control.Monad.Prompt.Effect.improve', unconditionally. A
-   @fine@ verdict keeps the draft, an @improved@ one replaces it.
-6. The context is restored to the snapshot, and one 'AssistantMessage' holding the
-   final value's JSON is appended: the caller's context ends as after a flat
-   'Control.Monad.Prompt.Promptable.prompt', that is, what it was plus the value.
+   otherwise the constructor's name and the field's position), and the field
+   type's own 'Control.Monad.Prompt.Promptable.prompt' is called. Its answer stays in the context, so
+   each field sees the earlier ones.
+4. The fields are assembled into a draft and go through
+   'Control.Monad.Prompt.Effect.improve', which checks it against the type's own
+   'Property' (see 'Surveyable') and either keeps it or returns a corrected one.
+5. The context is restored to the snapshot, and one 'AssistantMessage' holding the
+   final value's JSON is appended, as after a flat 'Control.Monad.Prompt.Promptable.prompt'.
 
-The /cue/ is there so that fields asked for one by one still read as one value:
-a tone or a setting that the first field's request would otherwise leave to
-chance, and the later ones inherit. 'improve' is there to catch what a
-field-by-field build cannot see: a pair of fields that do not fit together. It is
-checked against the type's own 'Property', the one 'Surveyable' gives it: the
-structural one (the properties of the fields) by default, and only the custom
-one if the type replaced it (see the @Either … ('Structural' X)@ pattern in
-'Surveyable'). A draft that violates a property is never kept on a @fine@ verdict:
-'improve' retries that.
+Note that a field type whose own @prompt@ scopes its context leaves no answer
+behind; the strategy then appends the answer, whenever the context did not grow
+or does not end in an 'AssistantMessage'. It cannot tell whether a trailing
+'AssistantMessage' really is the field's answer, so an override that drops its
+answer yet appends some other 'AssistantMessage' last goes unnoticed.
 
 == Cost
 
-Per generic node: one choice (sums only), one cue, one request per field
-(recursively, for a field that is itself generic) and one 'improve'. That is
-@n + 2@ requests for a record with @n@ fields (cue, fields, improve), @n + 3@
-for a constructor with @n > 0@ fields of a type with several constructors (choice,
-cue, fields, improve) and 2 for a constructor without fields (choice, improve);
-and one more for every retry. Flat leaves cost one request each. So the example
-@Musician@ costs 4 requests, and a @Fruit@ 4 (choice, cue, the one field,
-improve), where a flat 'Control.Monad.Prompt.Effect.promptSingle' costs 1.
+A record with @n > 0@ fields costs @n + 2@ requests (cue, fields, improve), where
+a flat request costs 1: the @Musician@ above costs 4. A constructor of a type with
+several constructors costs one more for the choice, and one more for every retry.
+Derive the leaves flat, with a bare @instance Promptable@, as asking for a scalar
+part by part would pay a cue and an @improve@ for nothing; use @Generically@ for
+the records and sums whose parts must cohere.
 
-== Leaves flat, composites generic
+== What the strategy does not do
 
-Derive leaves and newtypes (@Name@, @City@, a unit-carrying @Double@) flat, with
-a bare @instance Promptable@: asking for them part by part would pay a cue and an
-@improve@ for one scalar. Reach for @Generically@ for the records and sums whose
-parts must cohere, such as a musician and the city they are from, or a fruit and
-its measurements, where the cue and the earlier fields steer the later ones.
+A field of type @[a]@, @NonEmpty a@, @Set a@ or @Maybe a@ is prompted whole, in one
+request for the container, and the properties of its elements are neither checked
+nor told to the model, as for any container field (see "Data.Shroom.Class").
+A recursive type needs the opt-out that "Data.Shroom.Class" describes. Anthropic's
+structured outputs do not support recursive schemas, so such a type fails against
+Claude even with it.
 
-== Containers are prompted whole
-
-A field of type @[a]@, @'NonEmpty' a@, @'Set' a@ or @'Maybe' a@ is prompted whole, in one
-request for the container (issue #24), through its flat 'Promptable' instance;
-the strategy does not go element by element. The properties of the elements are
-therefore not checked, nor told to the model, as for any container field (issue
-#18, see "Data.Shroom.Class").
-
-== Recursive types hang, and fail against Claude
-
-A directly or mutually recursive type (@data Expr = Lit Int | Neg Expr@: a field
-of its own type that is not under a list, 'NonEmpty', 'Set' or 'Maybe', or one that
-reaches itself through another type's bare instance) with a bare
-@instance Surveyable@ hangs under the structural default, on every backend and
-before any request is sent: enumerating its structural 'Property' never ends.
-Such a type must opt out of the default with @type Property X = Void@ (or a custom
-'Property'), see 'Surveyable'.
-
-Independently of that, Anthropic's structured outputs do not support recursive
-schemas. A type that mentions itself (a tree whose children are trees, say)
-therefore fails against Claude even with the opt-out, in the generic strategy as
-in a flat request, which sends the same schema.
-
-== Which types
-
-Every type with 'SOP.Generic' and 'SOP.HasDatatypeInfo' whose every field type is
-'Promptable'. A sum's flat schema, which 'Control.Monad.Prompt.Effect.improve' sends,
-has its @oneOf@ rewritten to @anyOf@ on the wire: see
-'Control.Monad.Prompt.Backend.schemaWithDefs'.
-
-== Orphan instances
-
-This module holds two orphans, each commented where it is defined.
+The schema that 'improve' sends for a sum is the one
+'Control.Monad.Prompt.Backend.schemaWithDefs' builds from its 'ToSchema':
+normalised for structured outputs, so that its @oneOf@ becomes @anyOf@, and
+self-contained.
 -}
 module Control.Monad.Prompt.Generic (
   Cue (..),
@@ -212,8 +167,8 @@ import Data.Shroom.Class
 -- * The cue
 
 {- | A short, specific steer that every field of a value under construction
-follows: a tone, a setting, a constraint. The strategy asks the model for it
-before the first field, once the constructor is known.
+follows: a tone, a setting, a constraint. The model is asked for it before the
+first field, once the constructor is known.
 -}
 newtype Cue = Cue Text
   deriving stock (Eq, Show)
@@ -225,13 +180,13 @@ instance Describable Cue where
 instance Surveyable Cue where
   type Property Cue = Void
 
--- | Flat, like the base types.
+-- Flat: one request for the whole value.
 instance Promptable Cue
 
 -- * The constructor choice
 
 {- | The constructor of an @a@ to build, one of the constructors of @a@. The first
-thing the strategy asks the model for when @a@ has several constructors.
+thing the model is asked for when building an @a@ part by part.
 
 On the wire it is a string, one of the constructor names, and nothing else is
 accepted; its schema is a string enum named after @a@, so the choices of two
@@ -287,13 +242,15 @@ instance (SOP.HasDatatypeInfo a, Describable a) => Describable (ConstructorChoic
 instance (SOP.HasDatatypeInfo a, Describable a) => Surveyable (ConstructorChoice a) where
   type Property (ConstructorChoice a) = Void
 
--- | Flat, like the 'Cue'.
+-- Flat: one request for the whole value.
 instance (Typeable a, SOP.HasDatatypeInfo a, Describable a) => Promptable (ConstructorChoice a)
 
 -- * The strategy
 
-{- | The strategy, see the module header. Written for @a@ itself; the
-'Promptable' instance for 'Generically' wraps it.
+{- | Build an @a@ part by part: choose its constructor if it has several, then
+prompt its fields in order and improve the assembled draft. The context ends as
+the caller's plus the final value. The 'Promptable' instance for t'Generically'
+wraps it.
 -}
 promptGeneric ::
   forall a es.
@@ -353,7 +310,7 @@ promptChosen parent (constructor :* _) (Z _) = Z <$> promptConstructor parent Tr
 promptChosen parent (_ :* constructors) (S choice) = S <$> promptChosen parent constructors choice
 promptChosen _ Nil choice = case choice of {}
 
-{- | The product strategy for one constructor: a message and the 'Cue', then its
+{- | The product strategy for one constructor: a message and the t'Cue', then its
 fields. A constructor without fields is built at once. The flag says whether the
 constructor was chosen among several, which the messages then say.
 -}
@@ -379,7 +336,7 @@ promptConstructor parent chosen constructor = case sList :: SList xs of
     promptFields (fieldLabel chosen constructor) 0
 
 {- | Prompt each field of one constructor in order, each through its own type's
-'Promptable.prompt', after a message naming it. The label function says how to
+'Control.Monad.Prompt.Promptable.prompt', after a message naming it. The label function says how to
 name the field at a (zero-based) position.
 -}
 promptFields ::
@@ -424,25 +381,11 @@ fieldLabel chosen constructor i = case fieldNameAt i constructor of
 
 -- * The instances
 
-{- | Orphan. @openapi3@ has no 'ToSchema' for 'Generically', and it belongs there
-upstream; until then it is here. It forwards to @a@: the strategy only ever
-uses the schema of @a@ itself, and this instance exists to satisfy the
-superclass of 'Promptable'.
--}
+-- | The schema of @a@.
 instance (ToSchema a) => ToSchema (Generically a) where
   declareNamedSchema _ = declareNamedSchema (Proxy @a)
 
-{- | Orphan. It cannot sit next to the class in
-"Control.Monad.Prompt.Promptable": the strategy calls that class's own
-'Promptable.prompt' on every field and 'improve' from
-"Control.Monad.Prompt.Effect", and keeping the strategy in a module of its own is
-worth one orphan. 'Describable' and 'Surveyable' for 'Generically' are not
-orphans: they are in "Data.Shroom.Class".
-
-The method is what @deriving via@ coerces; the context is mostly about @a@,
-and @ToJSON (Generically a)@ and @FromJSON (Generically a)@ are @aeson@'s
-generic ones, needed by the superclasses.
--}
+-- | Prompt an @a@ part by part, through @deriving via Generically@.
 instance
   ( Surveyable a
   , ToSchema a
