@@ -1,7 +1,15 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-{- | Template Haskell utilities for deriving 'Describable' instances from Haddock
-documentation comments.
+{- |
+Module      : Data.Shroom.Class.TH
+Description : Derive Describable instances from Haddock comments with Template Haskell.
+
+'deriveDescribable' generates a complete 'Describable' instance for a type from its
+Haddock comments and its fields. 'deriveDescribableExp' generates the
+'describeType' body alone, for a hand-written instance.
+
+The type's own module must be compiled with the @-haddock@ GHC flag, because the
+splices read the Haddock comments from the compiler. See 'deriveDescribable'.
 -}
 module Data.Shroom.Class.TH (deriveDescribable, deriveDescribableExp) where
 
@@ -19,10 +27,9 @@ import Data.Text (pack)
 -- shroom
 import Data.Shroom.Class (Describable (describeType, referencedTypes), reach)
 
-{- | Generate a complete 'Describable' instance for a type, deriving
-'describeType' from its Haddock documentation comment and
-'referencedTypes' from its fields.  Use this when
-you don't need to customise the description:
+{- | Generate a complete 'Describable' instance for a type: 'describeType' from
+the type's Haddock comment, 'referencedTypes' from its fields. Use it when the
+description needs no customising:
 
 @
 -- | A user with a name and an email address.
@@ -35,7 +42,7 @@ This generates:
 
 @
 instance Describable User where
-  describeType = \_ -> pack "A user with a name and an email address.\\n..."
+  describeType = \\_ -> pack "A user with a name and an email address.\\n..."
   referencedTypes _ = reach \@Text <> (reach \@Text <> mempty)
 @
 
@@ -97,8 +104,10 @@ instance Describable MyType where
   referencedTypes _ = reach \@Inner
 @
 
-This requires the module to be compiled with the @-haddock@ GHC flag,
-which is set automatically when using this package's build configuration.
+The module that declares the type must be compiled with the @-haddock@ GHC flag,
+which GHC does not set by default. Add @ghc-options: -haddock@ to the
+@.cabal@ stanza of the library, executable or test suite that holds the type. Without it,
+GHC discards the comments and the splice fails with the error below.
 
 __Error__: A compile-time error is raised if no Haddock documentation is found.
 -}
@@ -199,8 +208,9 @@ instance Describable MyType where
 
 __This returns the 'describeType' body only.__ It does not collect the referenced types:
 a hand-written instance must write 'referencedTypes' itself, or its field types are not
-described to the model. For a wrapper that is @referencedTypes _ = reach \@a@; for a
-record, the @reach \@t@ of each of its field types, as 'deriveDescribable' generates.
+described to the model. For a record, write the @reach \@t@ of each of its field types,
+as 'deriveDescribable' generates. A transparent wrapper forwards to the wrapped type's
+'referencedTypes' instead, see 'Describable'.
 
 For a type with several constructors, each constructor is listed as
 @- Constructor: doc@ (by name alone if undocumented), followed by its documented
