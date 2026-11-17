@@ -10,10 +10,10 @@
 #
 # ## Importing it
 #
-#   inputs.shroom.url = "github:turion/shroom/turion/shroom-layer";  # pin a branch while it is unmerged
+#   inputs.shroom.url = "github:turion/shroom";
 #   imports = [ inputs.shroom.nixosModules.ollama-shroom ];
 #
-# Drop the branch suffix from the `url` to follow `main`.
+# Append `/<branch>` to the `url` to pin a branch.
 #
 # ## A pasteable server example (reached by CI through an SSH tunnel)
 #
