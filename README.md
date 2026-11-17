@@ -319,8 +319,7 @@ types shroom already describes, instead of shikumi's callers writing that prose 
 **Schema / `FromJSON` consistency.** None of the three enforce automatically that the schema sent
 to the LLM and the type used to parse its response agree on the wire format — the schema instructs
 the LLM what to produce, and the codec deserialises what it produces. A custom `FromJSON` that
-expects a different encoding than the schema describes will silently fail to parse. (Arc B on
-[TODO.md](TODO.md) is one definition yielding both, which would close this gap for shroom itself.)
+expects a different encoding than the schema describes will silently fail to parse. (A planned feature, listed in [TODO.md](TODO.md), is one definition yielding both, which would close this gap for shroom itself.)
 
 ### Prompt chaining best practices
 
@@ -399,7 +398,7 @@ to live where `shroom` is a dependency, typically the package that runs the prom
 
 ### Building from source
 
-None of these is on Hackage yet (see [TODO.md](TODO.md), arc A). For now, point your `cabal.project`
+None of these is on Hackage yet (a release is planned, see [TODO.md](TODO.md)). For now, point your `cabal.project`
 at the source, which holds them as sibling directories:
 
 ```

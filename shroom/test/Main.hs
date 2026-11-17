@@ -195,9 +195,8 @@ callerProgram = subProgram
 {- | A record two named-schema hops away from a would-be top level — the
 shape 'Quexnorbs' below needs, and the shape the existing suite never had:
 a nested array of records referencing another record. Field names are
-deliberately made up (matching todo 20's own diagnostic vocabulary) so a
-passing test can only mean the schema carried them, never that a model
-guessed something plausible.
+deliberately made up so a passing test can only mean the schema carried them,
+never that a model guessed something plausible.
 -}
 data Zblorf = Zblorf
   { zblorfSnorkfirst :: Text
@@ -515,7 +514,7 @@ main =
           "structured-output schema (Control.Monad.Prompt.Schema.schemaWithDefs, via toolDefsRaw)"
           [ testCase "a nested array-of-records type carries no unresolved $ref/$defs, and keeps its field names" $ do
               let dummyHandler = ToolHandler $ \_ -> pure (Right "")
-              -- The bug this guards against (todo 20): a live Ollama resolves one
+              -- The bug this guards against: a live Ollama resolves one
               -- '$ref' hop correctly but silently stops enforcing the schema at a
               -- second one — exactly what a nested array-of-records type produces
               -- unless the schema handed to the wire is fully self-contained.
