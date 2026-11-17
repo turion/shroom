@@ -51,7 +51,7 @@ data FileMockConfig = FileMockConfig
   -}
   }
 
-{- | A 'FileMockConfig' that reads the files in @dev\/mock-responses\/@ of the @shroom@ data
+{- | A t'FileMockConfig' that reads the files in @dev\/mock-responses\/@ of the @shroom@ data
 directory and prints prompts to stdout.
 -}
 defaultFileMockConfig :: IO FileMockConfig
@@ -65,7 +65,7 @@ defaultFileMockConfig = do
       , stepCounter = counter
       }
 
-{- | The t'Backend' for a 'FileMockConfig'. It ignores the offered tools, so every reply
+{- | The t'Backend' for a t'FileMockConfig'. It ignores the offered tools, so every reply
 is a 'BackendAnswer', and it answers a missing response file with
 'BackendTransportError'.
 -}

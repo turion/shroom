@@ -19,7 +19,9 @@ the description is read from the Haddock comment (see "Data.Shroom.Class.TH").
 
 @
 {\-# LANGUAGE DeriveAnyClass #-\}
+{\-# LANGUAGE DeriveGeneric #-\}
 {\-# LANGUAGE DerivingStrategies #-\}
+{\-# LANGUAGE ImportQualifiedPost #-\}
 {\-# LANGUAGE OverloadedStrings #-\}
 {\-# LANGUAGE TemplateHaskell #-\}
 {\-# LANGUAGE TypeApplications #-\}

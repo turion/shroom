@@ -134,7 +134,7 @@ content with it, @'Just' v'@ means the model returned a corrected whole value
 
 The request shows the value as JSON in a scoped 'UserMessage' (not kept in the
 context) and asks for one verdict object,
-@{"verdict": "fine" | "improved", "value": <a>}@. As for 'promptSingle', the
+@{"verdict": "fine" | "improved", "value": \<a\>}@. As for 'promptSingle', the
 raw reply is appended to the context as an 'AssistantMessage'.
 
 The reply goes through the same retry path as any request. An @improved@ value
