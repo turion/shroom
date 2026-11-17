@@ -23,7 +23,7 @@ Please always speak like a 1970s British working class person!
 
 # Documentation standard
 
-- Every PR re-reads the generated haddocks of each file it changes. Build them as CI does: `cabal haddock all -f-anthropic -f-ollama --haddock-hyperlink-source --haddock-quickjump`. The HTML of each package lands in `dist-newstyle/build/*/*/<package>-<version>/doc/html/<package>/`; open its `index.html` and read the pages of the modules the PR touched. A haddock run passes with unresolved links, so only reading the page shows that a link resolves and that the markup renders as meant.
+- Every PR re-reads the generated haddocks of each file it changes. Build them as CI does: `cabal haddock all -f-anthropic -f-ollama --haddock-hyperlink-source --haddock-quickjump --haddock-html-location='https://hackage.haskell.org/package/$pkg-$version/docs'`. The HTML of each package lands in `dist-newstyle/build/*/*/<package>-<version>/doc/html/<package>/`; open its `index.html` and read the pages of the modules the PR touched. A haddock run passes with unresolved links, so only reading the page shows that a link resolves and that the markup renders as meant.
 - A Haddock or code comment describes what the code does, never how it came about. No plan, arc or todo references, no issue numbers, no "as before", "used to", "old behaviour" or "no longer". A real limitation stays, stated plainly. History goes in the CHANGELOG.
 - A fact that a future agent needs but a user does not goes in the package's own `AGENTS.md`, imported by a `CLAUDE.md` beside it that holds `@AGENTS.md`.
 - The maintainer's documentation standard is the Hackage documentation of rhine, changeset and essence-of-live-coding.
@@ -57,6 +57,13 @@ Please always speak like a 1970s British working class person!
   field (measured: `max_completion_tokens=16` → 991 tokens, `max_tokens=16` → 16). `openAICompatBackend`
   therefore sets `Model.compat = CompatOpenAICompletions … {maxTokensField = MaxTokensField}` (kept
   off `api.openai.com`, whose newer models reject `max_tokens`); the offline suite asserts the wire body
+
+# CI's Ollama integration job
+
+- The job `cabal test`s `shroom-test-integration-ollama` against the maintainer's own Ollama server, reached through an SSH tunnel (`ssh -L 11434:127.0.0.1:11434 ci-ollama@$OLLAMA_SERVER_HOST`); the private key is the secret `OLLAMA_SSH_KEY`, the host the variable `OLLAMA_SERVER_HOST`.
+- The server side is `nix/ollama-shroom.nix` (`services.ollama.shroom`, `auth.mode = "ssh-tunnel"`): sshd restricts the key to that one port forward (`permitopen`, `command=""`), so a leaked key can reach Ollama and nothing else. The job pins the host key with `ssh-keyscan` instead of disabling host-key checking.
+- `OLLAMA_MODEL` in `ci.yml` must equal the module's `model` on the server (`llama3.2:1b`) and the fallback in `shroom-baikai/test/Integration/Ollama.hs`; a mismatch fails with `not_found_error` and tests nothing about shroom. Keep the three in step by hand.
+- The server has 2 cores and no GPU, so the job skips the `conferenceChain` cases (they test model capability, not plumbing) and caps each case at 10 minutes.
 
 # Shell behaviour
 
