@@ -1,0 +1,310 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="annot"><span class="hs-comment">{- |
+Module      : Control.Monad.Prompt.Promptable
+Description : Request a value of a type from a language model, with a default strategy.
+
+The class 'Promptable', the newtype 'DescriptionPrompt' to derive it via, and
+'Promptable' instances for the base types. This module belongs to @shroom@; the
+classes it builds on, 'Surveyable' and 'Describable', are in &quot;Data.Shroom.Class&quot;
+from @shroom-class@.
+-}</span></span><span>
+</span><span id="line-10"></span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html"><span class="hs-identifier">Control.Monad.Prompt.Promptable</span></a></span><span> </span><span class="hs-special">(</span><span>
+</span><span id="line-11"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Promptable</span></span><span>
+</span><span id="line-12"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier">Promptable</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-13"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#DescriptionPrompt"><span class="hs-identifier">DescriptionPrompt</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-14"></span><span>
+</span><span id="line-15"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Base types</span></span><span>
+</span><span id="line-16"></span><span>  </span><span class="annot"><span class="hs-comment">-- $baseTypes</span></span><span>
+</span><span id="line-17"></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-18"></span><span>
+</span><span id="line-19"></span><span class="hs-comment">-- base</span><span>
+</span><span id="line-20"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Int</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Int64</span></span><span class="hs-special">)</span><span>
+</span><span id="line-21"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.List.NonEmpty</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">NonEmpty</span></span><span class="hs-special">)</span><span>
+</span><span id="line-22"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Proxy</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Proxy</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-23"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Numeric.Natural</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Natural</span></span><span class="hs-special">)</span><span>
+</span><span id="line-24"></span><span>
+</span><span id="line-25"></span><span class="hs-comment">-- containers</span><span>
+</span><span id="line-26"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Set</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Set</span></span><span class="hs-special">)</span><span>
+</span><span id="line-27"></span><span>
+</span><span id="line-28"></span><span class="hs-comment">-- aeson</span><span>
+</span><span id="line-29"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Aeson</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">FromJSON</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">ToJSON</span></span><span class="hs-special">)</span><span>
+</span><span id="line-30"></span><span>
+</span><span id="line-31"></span><span class="hs-comment">-- openapi3</span><span>
+</span><span id="line-32"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.OpenApi</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">ToSchema</span></span><span class="hs-special">)</span><span>
+</span><span id="line-33"></span><span>
+</span><span id="line-34"></span><span class="hs-comment">-- text</span><span>
+</span><span id="line-35"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Text</span></span><span class="hs-special">)</span><span>
+</span><span id="line-36"></span><span>
+</span><span id="line-37"></span><span class="hs-comment">-- time</span><span>
+</span><span id="line-38"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Time</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Day</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">UTCTime</span></span><span class="hs-special">)</span><span>
+</span><span id="line-39"></span><span>
+</span><span id="line-40"></span><span class="hs-comment">-- effectful</span><span>
+</span><span id="line-41"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Effectful</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Eff</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-operator">(:&gt;)</span></span><span class="hs-special">)</span><span>
+</span><span id="line-42"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Effectful.State.Static.Local</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">State</span></span><span class="hs-special">)</span><span>
+</span><span id="line-43"></span><span>
+</span><span id="line-44"></span><span class="hs-comment">-- shroom</span><span>
+</span><span id="line-45"></span><span>
+</span><span id="line-46"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html"><span class="hs-identifier">Control.Monad.Prompt.Backend</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ContextItem"><span class="hs-identifier">ContextItem</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-47"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Effect.html"><span class="hs-identifier">Control.Monad.Prompt.Effect</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Effect.html#Prompt"><span class="hs-identifier">Prompt</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-48"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Effect.html"><span class="hs-identifier">Control.Monad.Prompt.Effect</span></a></span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Effect</span></span><span>
+</span><span id="line-49"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Shroom.Class</span></span><span>
+</span><span id="line-50"></span><span>
+</span><span id="line-51"></span><span class="annot"><span class="hs-comment">{- | Attach a default prompting strategy to a type.
+
+'prompt' is an 'Eff' program that requests a value of type @a@ from the model.
+The default, 'Control.Monad.Prompt.Effect.promptSingle', sends the request to the
+'Prompt' effect, which builds the prompt text from 'description' (the type's
+description, properties and examples) and checks the model's answer against the
+type's properties. Most types need no override, and an empty instance is enough:
+
+@
+instance Promptable User
+@
+
+Override 'prompt' to change what a request to this type does. The override below
+adds one line of context to the default request, and keeps it out of every other
+request:
+
+@
+instance Promptable Recipe where
+  prompt = withContext &quot;Always prefer metric units.&quot; promptSingle
+@
+-}</span></span><span>
+</span><span id="line-72"></span><span class="hs-keyword">class</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Surveyable</span></span><span> </span><span class="annot"><a href="#local-6989586621679253613"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ToSchema</span></span><span> </span><span class="annot"><a href="#local-6989586621679253613"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FromJSON</span></span><span> </span><span class="annot"><a href="#local-6989586621679253613"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span id="Promptable"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-var">Promptable</span></a></span></span><span> </span><span id="local-6989586621679253613"><span class="annot"><a href="#local-6989586621679253613"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-73"></span><span>  </span><span class="hs-comment">{- | Request a value of type @a@ from the model.
+
+  An override can also add fallbacks or run sub-prompts in parallel. Its
+  @State [ContextItem]@ constraint is the state that
+  'Control.Monad.Prompt.Effect.context' adds to, so an override can scope context
+  with 'Control.Monad.Prompt.Effect.withContext'.
+  -}</span><span>
+</span><span id="line-80"></span><span>  </span><span id="prompt"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#prompt"><span class="hs-identifier hs-type">prompt</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-keyword">forall</span><span> </span><span id="local-6989586621679253620"><span class="annot"><a href="#local-6989586621679253620"><span class="hs-identifier hs-type">es</span></a></span></span><span class="hs-operator">.</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Effect.html#Prompt"><span class="hs-identifier hs-type">Prompt</span></a></span><span> </span><span class="annot"><span class="hs-operator hs-type">:&gt;</span></span><span> </span><span class="annot"><a href="#local-6989586621679253620"><span class="hs-identifier hs-type">es</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">State</span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ContextItem"><span class="hs-identifier hs-type">ContextItem</span></a></span><span class="hs-special">]</span><span> </span><span class="annot"><span class="hs-operator hs-type">:&gt;</span></span><span> </span><span class="annot"><a href="#local-6989586621679253620"><span class="hs-identifier hs-type">es</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Eff</span></span><span> </span><span class="annot"><a href="#local-6989586621679253620"><span class="hs-identifier hs-type">es</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253613"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-81"></span><span>  </span><span id="local-6989586621679253722"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#prompt"><span class="hs-identifier hs-var hs-var">prompt</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Eff es a
+forall a (es :: [Effect]).
+(Prompt :&gt; es, Surveyable a, ToSchema a, FromJSON a) =&gt;
+Eff es a
+</span><a href="Control.Monad.Prompt.Effect.html#promptSingle"><span class="hs-identifier hs-var">Effect.promptSingle</span></a></span></span><span>
+</span><span id="line-82"></span><span>
+</span><span id="line-83"></span><span class="annot"><span class="hs-comment">{- | Newtype for deriving the default 'Promptable' instance with @DerivingVia@, as an
+alternative to the empty instance.
+
+@
+\$(deriveDescribable ''Recipe)
+
+instance Surveyable Recipe
+
+deriving via DescriptionPrompt Recipe instance Promptable Recipe
+@
+-}</span></span><span>
+</span><span id="line-94"></span><span class="hs-keyword">newtype</span><span> </span><span id="DescriptionPrompt"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#DescriptionPrompt"><span class="hs-identifier hs-var">DescriptionPrompt</span></a></span></span><span> </span><span id="local-6989586621679253628"><span class="annot"><a href="#local-6989586621679253628"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="DescriptionPrompt"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#DescriptionPrompt"><span class="hs-identifier hs-var">DescriptionPrompt</span></a></span></span><span> </span><span class="hs-special">{</span><span id="getDescriptionPrompt"><span class="annot"><span class="annottext">forall a. DescriptionPrompt a -&gt; a
+</span><a href="Control.Monad.Prompt.Promptable.html#getDescriptionPrompt"><span class="hs-identifier hs-var hs-var">getDescriptionPrompt</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="#local-6989586621679253628"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">}</span><span>
+</span><span id="line-95"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="annot"><span class="hs-keyword">stock</span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679253736"><span id="local-6989586621679253739"><span class="annot"><span class="annottext">DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool
+(DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool)
+-&gt; (DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool)
+-&gt; Eq (DescriptionPrompt a)
+forall a.
+Eq a =&gt;
+DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: forall a.
+Eq a =&gt;
+DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool
+== :: DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool
+$c/= :: forall a.
+Eq a =&gt;
+DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool
+/= :: DescriptionPrompt a -&gt; DescriptionPrompt a -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679253745"><span id="local-6989586621679253750"><span id="local-6989586621679253754"><span class="annot"><span class="annottext">Int -&gt; DescriptionPrompt a -&gt; ShowS
+[DescriptionPrompt a] -&gt; ShowS
+DescriptionPrompt a -&gt; String
+(Int -&gt; DescriptionPrompt a -&gt; ShowS)
+-&gt; (DescriptionPrompt a -&gt; String)
+-&gt; ([DescriptionPrompt a] -&gt; ShowS)
+-&gt; Show (DescriptionPrompt a)
+forall a. Show a =&gt; Int -&gt; DescriptionPrompt a -&gt; ShowS
+forall a. Show a =&gt; [DescriptionPrompt a] -&gt; ShowS
+forall a. Show a =&gt; DescriptionPrompt a -&gt; String
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: forall a. Show a =&gt; Int -&gt; DescriptionPrompt a -&gt; ShowS
+showsPrec :: Int -&gt; DescriptionPrompt a -&gt; ShowS
+$cshow :: forall a. Show a =&gt; DescriptionPrompt a -&gt; String
+show :: DescriptionPrompt a -&gt; String
+$cshowList :: forall a. Show a =&gt; [DescriptionPrompt a] -&gt; ShowS
+showList :: [DescriptionPrompt a] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-96"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="annot"><span class="hs-keyword">newtype</span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679253760"><span id="local-6989586621679253764"><span id="local-6989586621679253768"><span id="local-6989586621679253772"><span id="local-6989586621679253776"><span class="annot"><span class="annottext">[DescriptionPrompt a] -&gt; Value
+[DescriptionPrompt a] -&gt; Encoding
+DescriptionPrompt a -&gt; Bool
+DescriptionPrompt a -&gt; Value
+DescriptionPrompt a -&gt; Encoding
+(DescriptionPrompt a -&gt; Value)
+-&gt; (DescriptionPrompt a -&gt; Encoding)
+-&gt; ([DescriptionPrompt a] -&gt; Value)
+-&gt; ([DescriptionPrompt a] -&gt; Encoding)
+-&gt; (DescriptionPrompt a -&gt; Bool)
+-&gt; ToJSON (DescriptionPrompt a)
+forall a. ToJSON a =&gt; [DescriptionPrompt a] -&gt; Value
+forall a. ToJSON a =&gt; [DescriptionPrompt a] -&gt; Encoding
+forall a. ToJSON a =&gt; DescriptionPrompt a -&gt; Bool
+forall a. ToJSON a =&gt; DescriptionPrompt a -&gt; Value
+forall a. ToJSON a =&gt; DescriptionPrompt a -&gt; Encoding
+forall a.
+(a -&gt; Value)
+-&gt; (a -&gt; Encoding)
+-&gt; ([a] -&gt; Value)
+-&gt; ([a] -&gt; Encoding)
+-&gt; (a -&gt; Bool)
+-&gt; ToJSON a
+$ctoJSON :: forall a. ToJSON a =&gt; DescriptionPrompt a -&gt; Value
+toJSON :: DescriptionPrompt a -&gt; Value
+$ctoEncoding :: forall a. ToJSON a =&gt; DescriptionPrompt a -&gt; Encoding
+toEncoding :: DescriptionPrompt a -&gt; Encoding
+$ctoJSONList :: forall a. ToJSON a =&gt; [DescriptionPrompt a] -&gt; Value
+toJSONList :: [DescriptionPrompt a] -&gt; Value
+$ctoEncodingList :: forall a. ToJSON a =&gt; [DescriptionPrompt a] -&gt; Encoding
+toEncodingList :: [DescriptionPrompt a] -&gt; Encoding
+$comitField :: forall a. ToJSON a =&gt; DescriptionPrompt a -&gt; Bool
+omitField :: DescriptionPrompt a -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">ToJSON</span></span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679253788"><span id="local-6989586621679253792"><span id="local-6989586621679253796"><span class="annot"><span class="annottext">Maybe (DescriptionPrompt a)
+Value -&gt; Parser [DescriptionPrompt a]
+Value -&gt; Parser (DescriptionPrompt a)
+(Value -&gt; Parser (DescriptionPrompt a))
+-&gt; (Value -&gt; Parser [DescriptionPrompt a])
+-&gt; Maybe (DescriptionPrompt a)
+-&gt; FromJSON (DescriptionPrompt a)
+forall a. FromJSON a =&gt; Maybe (DescriptionPrompt a)
+forall a. FromJSON a =&gt; Value -&gt; Parser [DescriptionPrompt a]
+forall a. FromJSON a =&gt; Value -&gt; Parser (DescriptionPrompt a)
+forall a.
+(Value -&gt; Parser a)
+-&gt; (Value -&gt; Parser [a]) -&gt; Maybe a -&gt; FromJSON a
+$cparseJSON :: forall a. FromJSON a =&gt; Value -&gt; Parser (DescriptionPrompt a)
+parseJSON :: Value -&gt; Parser (DescriptionPrompt a)
+$cparseJSONList :: forall a. FromJSON a =&gt; Value -&gt; Parser [DescriptionPrompt a]
+parseJSONList :: Value -&gt; Parser [DescriptionPrompt a]
+$comittedField :: forall a. FromJSON a =&gt; Maybe (DescriptionPrompt a)
+omittedField :: Maybe (DescriptionPrompt a)
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">FromJSON</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679253810"><span class="annot"><span class="annottext">Typeable (DescriptionPrompt a)
+Typeable (DescriptionPrompt a) =&gt;
+(Proxy (DescriptionPrompt a)
+ -&gt; Declare (Definitions Schema) NamedSchema)
+-&gt; ToSchema (DescriptionPrompt a)
+Proxy (DescriptionPrompt a)
+-&gt; Declare (Definitions Schema) NamedSchema
+forall a.
+Typeable a =&gt;
+(Proxy a -&gt; Declare (Definitions Schema) NamedSchema) -&gt; ToSchema a
+forall a. ToSchema a =&gt; Typeable (DescriptionPrompt a)
+forall a.
+ToSchema a =&gt;
+Proxy (DescriptionPrompt a)
+-&gt; Declare (Definitions Schema) NamedSchema
+$cdeclareNamedSchema :: forall a.
+ToSchema a =&gt;
+Proxy (DescriptionPrompt a)
+-&gt; Declare (Definitions Schema) NamedSchema
+declareNamedSchema :: Proxy (DescriptionPrompt a)
+-&gt; Declare (Definitions Schema) NamedSchema
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var">ToSchema</span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-97"></span><span>
+</span><span id="line-98"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253665"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Describable</span></span><span> </span><span class="annot"><a href="#local-6989586621679253665"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Describable</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#DescriptionPrompt"><span class="hs-identifier hs-type">DescriptionPrompt</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253665"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-99"></span><span>  </span><span id="local-6989586621679253834"><span class="annot"><span class="annottext">describeType :: Proxy (DescriptionPrompt a) -&gt; Text
+</span><a href="#local-6989586621679253834"><span class="hs-identifier hs-var hs-var hs-var">describeType</span></a></span></span><span> </span><span class="annot"><span class="annottext">Proxy (DescriptionPrompt a)
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Proxy a -&gt; Text
+forall a. Describable a =&gt; Proxy a -&gt; Text
+</span><span class="hs-identifier hs-var">describeType</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall t. Proxy t
+forall {k} (t :: k). Proxy t
+</span><span class="hs-identifier hs-var">Proxy</span></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679253665"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-100"></span><span>
+</span><span id="line-101"></span><span>  </span><span class="hs-comment">-- @description@ runs at @DescriptionPrompt a@ here, so forward what @a@</span><span>
+</span><span id="line-102"></span><span>  </span><span class="hs-comment">-- references. Not @reach @a@: that would list @a@ under itself.</span><span>
+</span><span id="line-103"></span><span>  </span><span class="hs-comment">-- The three methods below are the contract of a transparent wrapper, see</span><span>
+</span><span id="line-104"></span><span>  </span><span class="hs-comment">-- the 'describedIdentity' Haddock; 'Generically' is the other one.</span><span>
+</span><span id="line-105"></span><span>  </span><span id="local-6989586621679253838"><span class="annot"><span class="annottext">referencedTypes :: Proxy (DescriptionPrompt a) -&gt; [Described]
+</span><a href="#local-6989586621679253838"><span class="hs-identifier hs-var hs-var hs-var">referencedTypes</span></a></span></span><span> </span><span class="annot"><span class="annottext">Proxy (DescriptionPrompt a)
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Proxy a -&gt; [Described]
+forall a. Describable a =&gt; Proxy a -&gt; [Described]
+</span><span class="hs-identifier hs-var">referencedTypes</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall t. Proxy t
+forall {k} (t :: k). Proxy t
+</span><span class="hs-identifier hs-var">Proxy</span></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679253665"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-106"></span><span>  </span><span id="local-6989586621679253840"><span class="annot"><span class="annottext">hasOwnSection :: Proxy (DescriptionPrompt a) -&gt; Bool
+</span><a href="#local-6989586621679253840"><span class="hs-identifier hs-var hs-var hs-var">hasOwnSection</span></a></span></span><span> </span><span class="annot"><span class="annottext">Proxy (DescriptionPrompt a)
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">False</span></span><span>
+</span><span id="line-107"></span><span>  </span><span id="local-6989586621679253843"><span class="annot"><span class="annottext">describedIdentity :: Proxy (DescriptionPrompt a) -&gt; TypeRep
+</span><a href="#local-6989586621679253843"><span class="hs-identifier hs-var hs-var hs-var">describedIdentity</span></a></span></span><span> </span><span class="annot"><span class="annottext">Proxy (DescriptionPrompt a)
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Proxy a -&gt; TypeRep
+forall a. Describable a =&gt; Proxy a -&gt; TypeRep
+</span><span class="hs-identifier hs-var">describedIdentity</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall t. Proxy t
+forall {k} (t :: k). Proxy t
+</span><span class="hs-identifier hs-var">Proxy</span></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679253665"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-108"></span><span>
+</span><span id="line-109"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253673"><span id="local-6989586621679253855"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Surveyable</span></span><span> </span><span class="annot"><a href="#local-6989586621679253673"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Surveyable</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#DescriptionPrompt"><span class="hs-identifier hs-type">DescriptionPrompt</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253673"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-110"></span><span>  </span><span class="hs-keyword">type</span><span> </span><span id="Property"><span class="annot"><span class="hs-identifier hs-var">Property</span></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#DescriptionPrompt"><span class="hs-identifier hs-type">DescriptionPrompt</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253673"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Property</span></span><span> </span><span class="annot"><a href="#local-6989586621679253673"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-111"></span><span>  </span><span id="local-6989586621679253862"><span class="annot"><span class="annottext">describeProperties :: Proxy (DescriptionPrompt a)
+-&gt; Property (DescriptionPrompt a) -&gt; Maybe Text
+</span><a href="#local-6989586621679253862"><span class="hs-identifier hs-var hs-var hs-var">describeProperties</span></a></span></span><span> </span><span class="annot"><span class="annottext">Proxy (DescriptionPrompt a)
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Proxy a -&gt; Property a -&gt; Maybe Text
+forall a. Surveyable a =&gt; Proxy a -&gt; Property a -&gt; Maybe Text
+</span><span class="hs-identifier hs-var">describeProperties</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall t. Proxy t
+forall {k} (t :: k). Proxy t
+</span><span class="hs-identifier hs-var">Proxy</span></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679253673"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-112"></span><span>  </span><span id="local-6989586621679253865"><span class="annot"><span class="annottext">propertyHolds :: DescriptionPrompt a -&gt; Property (DescriptionPrompt a) -&gt; Bool
+</span><a href="#local-6989586621679253865"><span class="hs-identifier hs-var hs-var hs-var">propertyHolds</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#DescriptionPrompt"><span class="hs-identifier hs-type">DescriptionPrompt</span></a></span><span> </span><span id="local-6989586621679253867"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679253867"><span class="hs-identifier hs-var">x</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a -&gt; Property a -&gt; Bool
+forall a. Surveyable a =&gt; a -&gt; Property a -&gt; Bool
+</span><span class="hs-identifier hs-var">propertyHolds</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679253867"><span class="hs-identifier hs-var">x</span></a></span><span>
+</span><span id="line-113"></span><span>
+</span><span id="line-114"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253676"><span id="local-6989586621679253878"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Surveyable</span></span><span> </span><span class="annot"><a href="#local-6989586621679253676"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ToSchema</span></span><span> </span><span class="annot"><a href="#local-6989586621679253676"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FromJSON</span></span><span> </span><span class="annot"><a href="#local-6989586621679253676"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#DescriptionPrompt"><span class="hs-identifier hs-type">DescriptionPrompt</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679253676"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-115"></span><span>
+</span><span id="line-116"></span><span class="annot"><span class="hs-comment">{- $baseTypes
+#baseTypes#'Promptable' instances for the base types that &quot;Data.Shroom.Class&quot; gives
+'Surveyable' instances: 'Text', 'Int', 'Integer', 'Int64', 'Word', 'Natural',
+'Double', 'Float', 'Bool', 'Char', 'UTCTime', 'Day', and the containers @[a]@,
+@'NonEmpty' a@, @'Set' a@ and @'Maybe' a@. Each uses the default 'prompt', so a
+bare value is requested like any other type, from its 'description'.
+
+__Schema keywords Anthropic rejects.__ @openapi3@ renders some of these types
+with JSON Schema keywords that Anthropic's structured outputs answer with a
+400, and that @normalizeSchemaForStructuredOutput@ does not strip: 'Char'
+carries @minLength@ and @maxLength@, 'Natural' carries @exclusiveMinimum@, and
+'Double' and 'Float' carry a numeric @format@ (not confirmed against the API).
+A field of one of these types, or a bare 'prompt' of it, may therefore fail
+against Claude. The container instances pass the element's schema through
+unchanged, so they inherit the same limitation.
+-}</span></span><span>
+</span><span id="line-132"></span><span>
+</span><span id="line-133"></span><span class="annot"><span class="hs-comment">-- | See &quot;Control.Monad.Prompt.Promptable#baseTypes&quot; for what Anthropic rejects.</span></span><span>
+</span><span id="line-134"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253896"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span></span><span>
+</span><span id="line-135"></span><span>
+</span><span id="line-136"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253913"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span></span><span>
+</span><span id="line-137"></span><span>
+</span><span id="line-138"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253930"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Integer</span></span></span><span>
+</span><span id="line-139"></span><span>
+</span><span id="line-140"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253947"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int64</span></span></span><span>
+</span><span id="line-141"></span><span>
+</span><span id="line-142"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253964"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Word</span></span></span><span>
+</span><span id="line-143"></span><span>
+</span><span id="line-144"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253981"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Natural</span></span></span><span>
+</span><span id="line-145"></span><span>
+</span><span id="line-146"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253998"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Double</span></span></span><span>
+</span><span id="line-147"></span><span>
+</span><span id="line-148"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679254015"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Float</span></span></span><span>
+</span><span id="line-149"></span><span>
+</span><span id="line-150"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679254032"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bool</span></span></span><span>
+</span><span id="line-151"></span><span>
+</span><span id="line-152"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679254049"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Char</span></span></span><span>
+</span><span id="line-153"></span><span>
+</span><span id="line-154"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679254066"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">UTCTime</span></span></span><span>
+</span><span id="line-155"></span><span>
+</span><span id="line-156"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679254083"><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Day</span></span></span><span>
+</span><span id="line-157"></span><span>
+</span><span id="line-158"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253696"><span id="local-6989586621679254103"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Describable</span></span><span> </span><span class="annot"><a href="#local-6989586621679253696"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ToSchema</span></span><span> </span><span class="annot"><a href="#local-6989586621679253696"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FromJSON</span></span><span> </span><span class="annot"><a href="#local-6989586621679253696"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="#local-6989586621679253696"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">]</span></span></span><span>
+</span><span id="line-159"></span><span>
+</span><span id="line-160"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253702"><span id="local-6989586621679254123"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Describable</span></span><span> </span><span class="annot"><a href="#local-6989586621679253702"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ToSchema</span></span><span> </span><span class="annot"><a href="#local-6989586621679253702"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FromJSON</span></span><span> </span><span class="annot"><a href="#local-6989586621679253702"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">NonEmpty</span></span><span> </span><span class="annot"><a href="#local-6989586621679253702"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-161"></span><span>
+</span><span id="line-162"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253708"><span id="local-6989586621679254144"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Describable</span></span><span> </span><span class="annot"><a href="#local-6989586621679253708"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ToSchema</span></span><span> </span><span class="annot"><a href="#local-6989586621679253708"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FromJSON</span></span><span> </span><span class="annot"><a href="#local-6989586621679253708"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Ord</span></span><span> </span><span class="annot"><a href="#local-6989586621679253708"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Set</span></span><span> </span><span class="annot"><a href="#local-6989586621679253708"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-163"></span><span>
+</span><span id="line-164"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679253714"><span id="local-6989586621679254164"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Describable</span></span><span> </span><span class="annot"><a href="#local-6989586621679253714"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ToSchema</span></span><span> </span><span class="annot"><a href="#local-6989586621679253714"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FromJSON</span></span><span> </span><span class="annot"><a href="#local-6989586621679253714"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html#Promptable"><span class="hs-identifier hs-type">Promptable</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><a href="#local-6989586621679253714"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-165"></span></pre></body></html>

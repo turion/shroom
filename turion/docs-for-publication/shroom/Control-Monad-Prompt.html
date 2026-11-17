@@ -1,0 +1,57 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Control.Monad.Prompt</title><link href="linuwial.css" rel="stylesheet" type="text/css" title="Linuwial" /><link rel="stylesheet" type="text/css" href="quick-jump.css" /><link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=PT+Sans:400,400i,700" /><script src="haddock-bundle.min.js" async="async" type="text/javascript"></script><script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { processClass: "mathjax", ignoreClass: ".*" } });</script><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-AMS-MML_HTMLorMML" type="text/javascript"></script></head><body><div id="package-header"><span class="caption">shroom</span><ul class="links" id="page-menu"><li><a href="src/Control.Monad.Prompt.html">Source</a></li><li><a href="index.html">Contents</a></li><li><a href="doc-index.html">Index</a></li></ul></div><div id="content"><div id="module-header"><table class="info"><tr><th>Safe Haskell</th><td>None</td></tr><tr><th>Language</th><td>GHC2024</td></tr></table><p class="caption">Control.Monad.Prompt</p></div><div id="description"><p class="caption">Description</p><div class="doc"><p><code><a href="Control-Monad-Prompt-Promptable.html#v:prompt" title="Control.Monad.Prompt.Promptable">prompt</a></code> asks a language model for a value of any <code><a href="Control-Monad-Prompt-Promptable.html#t:Promptable" title="Control.Monad.Prompt.Promptable">Promptable</a></code> type. The model is
+told the type's description, properties and examples (see <a href="../shroom-class/Data-Shroom-Class.html">Data.Shroom.Class</a>), and
+its answer is parsed and checked against them, with a retry when it fails.</p><p>Programs that chain requests, add context or offer tools are written in
+<a href="Control-Monad-Prompt-Effect.html">Control.Monad.Prompt.Effect</a>, which also runs them against a backend (see
+<a href="Control-Monad-Prompt-Backend.html">Control.Monad.Prompt.Backend</a>). A backend for a real model comes from the
+<code class="inline-code">shroom-baikai</code> package; <a href="Control-Monad-Prompt-FileMock.html">Control.Monad.Prompt.FileMock</a> is one that needs no key and
+no network.</p><p>The example requests one <code class="inline-code">User</code> from Claude. It needs the packages <code class="inline-code">shroom</code>,
+<code class="inline-code">shroom-baikai</code>, <code class="inline-code">aeson</code>, <code class="inline-code">generics-sop</code>, <code class="inline-code">openapi3</code> and <code class="inline-code">text</code>, an <code class="inline-code">ANTHROPIC_API_KEY</code>
+in the environment, and the GHC flag <code class="inline-code">-haddock</code> for the module that declares <code class="inline-code">User</code>:
+the description is read from the Haddock comment (see <a href="../shroom-class/Data-Shroom-Class-TH.html">Data.Shroom.Class.TH</a>).</p><pre>{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
+
+module Main (main) where
+
+import Data.Aeson (FromJSON, ToJSON)
+import Data.OpenApi (ToSchema)
+import Data.Text (Text)
+import Data.Text qualified as T
+import Data.Text.IO qualified as T
+import GHC.Generics (Generic)
+import Generics.SOP qualified as SOP
+import System.Environment (getEnv)
+
+import Control.Monad.Prompt
+import Control.Monad.Prompt.Baikai (claudeBackend)
+import Control.Monad.Prompt.Effect (context, defaultPromptConfig, runPromptResultEff)
+import Data.Shroom.Class
+import Data.Shroom.Class.TH (deriveDescribable)
+
+-- | A user with a name and an email address.
+data User = User
+  { userName :: Text
+  -- ^ The user's full name.
+  , userEmail :: Text
+  -- ^ The user's email address.
+  }
+  deriving stock (Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+$(deriveDescribable ''User)
+
+instance Surveyable User
+
+instance Promptable User
+
+main :: IO ()
+main = do
+  apiKey &lt;- T.pack &lt;$&gt; getEnv &quot;ANTHROPIC_API_KEY&quot;
+  backend &lt;- claudeBackend apiKey
+  result &lt;- runPromptResultEff backend defaultPromptConfig $ do
+    context &quot;Alice Smith signed up with alice@example.org.&quot;
+    prompt @User
+  either T.putStrLn print result
+</pre></div></div><div id="interface"><h1>Documentation</h1><div class="top"><p class="src">module <a href="Control-Monad-Prompt-Promptable.html">Control.Monad.Prompt.Promptable</a></p></div><div class="top"><p class="src">module <a href="Control-Monad-Prompt-Generic.html">Control.Monad.Prompt.Generic</a></p></div></div></div><div id="footer"><p>Produced by <a href="http://www.haskell.org/haddock/">Haddock</a> version 2.32.0</p></div></body></html>

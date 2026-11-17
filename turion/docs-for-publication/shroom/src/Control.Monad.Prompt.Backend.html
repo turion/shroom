@@ -1,0 +1,335 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="annot"><span class="hs-comment">{- |
+Module      : Control.Monad.Prompt.Backend
+Description : What a language model transport provides to run a prompt program.
+
+A t'Backend' makes one raw chat call: it takes the conversation so far, the
+description and JSON schema of the expected result type and the tools on offer,
+and returns a 'BackendReply' or a 'BackendError'. The retry and tool loop around
+that call is in 'Control.Monad.Prompt.Effect.runPrompt'.
+
+A t'Backend' is a plain record, not a type class, so building one needs no
+instance and no dependency on shroom's other modules. An adapter can turn a
+@ToSchema@ instance into the schema the call needs with 'schemaWithDefs'.
+'Control.Monad.Prompt.FileMock.fileMockBackend' replays canned responses from
+files; the @shroom-baikai@ package builds a t'Backend' for real models.
+
+@
+constantBackend :: (Applicative m) =&gt; Text -&gt; Backend m
+constantBackend answer = Backend $ \\_ _ _ _ -&gt; pure (Right (BackendAnswer answer))
+@
+-}</span></span><span>
+</span><span id="line-21"></span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html"><span class="hs-identifier">Control.Monad.Prompt.Backend</span></a></span><span> </span><span class="hs-special">(</span><span>
+</span><span id="line-22"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Backends</span></span><span>
+</span><span id="line-23"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#Backend"><span class="hs-identifier">Backend</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-24"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendReply"><span class="hs-identifier">BackendReply</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-25"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendError"><span class="hs-identifier">BackendError</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-26"></span><span>
+</span><span id="line-27"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Conversation</span></span><span>
+</span><span id="line-28"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ContextItem"><span class="hs-identifier">ContextItem</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-29"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#renderContextItems"><span class="hs-identifier">renderContextItems</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-30"></span><span>
+</span><span id="line-31"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Tools</span></span><span>
+</span><span id="line-32"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Schema.html#ToolDef"><span class="hs-identifier">ToolDef</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-33"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCall"><span class="hs-identifier">ToolCall</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-34"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResult"><span class="hs-identifier">ToolResult</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-35"></span><span>
+</span><span id="line-36"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Schemas</span></span><span>
+</span><span id="line-37"></span><span>  </span><span class="annot"><a href="Control.Monad.Prompt.Schema.html#schemaWithDefs"><span class="hs-identifier">schemaWithDefs</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-38"></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-39"></span><span>
+</span><span id="line-40"></span><span class="hs-comment">-- text</span><span>
+</span><span id="line-41"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Text</span></span><span class="hs-special">)</span><span>
+</span><span id="line-42"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">T</span></span><span>
+</span><span id="line-43"></span><span>
+</span><span id="line-44"></span><span class="hs-comment">-- aeson</span><span>
+</span><span id="line-45"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Aeson</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Value</span></span><span class="hs-special">)</span><span>
+</span><span id="line-46"></span><span>
+</span><span id="line-47"></span><span class="hs-comment">-- shroom</span><span>
+</span><span id="line-48"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Schema.html"><span class="hs-identifier">Control.Monad.Prompt.Schema</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Schema.html#ToolDef"><span class="hs-identifier">ToolDef</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Schema.html#schemaWithDefs"><span class="hs-identifier">schemaWithDefs</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-49"></span><span>
+</span><span id="line-50"></span><span class="annot"><span class="hs-comment">-- * Tool calls and results</span></span><span>
+</span><span id="line-51"></span><span>
+</span><span id="line-52"></span><span class="annot"><span class="hs-comment">{- | A tool call the model requested, either in a 'BackendToolCalls' reply or,
+once dispatched, replayed in a 'ToolCallMessage'.
+-}</span></span><span>
+</span><span id="line-55"></span><span class="hs-keyword">data</span><span> </span><span id="ToolCall"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCall"><span class="hs-identifier hs-var">ToolCall</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="ToolCall"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCall"><span class="hs-identifier hs-var">ToolCall</span></a></span></span><span>
+</span><span id="line-56"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="toolCallId"><span class="annot"><span class="annottext">ToolCall -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#toolCallId"><span class="hs-identifier hs-var hs-var">toolCallId</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-57"></span><span>  </span><span class="annot"><span class="hs-comment">{- ^ The provider's own id for this call, echoed back unchanged in the
+  matching t'ToolResult' so the provider can link the two.
+  -}</span></span><span>
+</span><span id="line-60"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="toolCallName"><span class="annot"><span class="annottext">ToolCall -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#toolCallName"><span class="hs-identifier hs-var hs-var">toolCallName</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-61"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="toolCallArguments"><span class="annot"><span class="annottext">ToolCall -&gt; Value
+</span><a href="Control.Monad.Prompt.Backend.html#toolCallArguments"><span class="hs-identifier hs-var hs-var">toolCallArguments</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Value</span></span><span>
+</span><span id="line-62"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-63"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252051"><span id="local-6989586621679252058"><span class="annot"><span class="annottext">ToolCall -&gt; ToolCall -&gt; Bool
+(ToolCall -&gt; ToolCall -&gt; Bool)
+-&gt; (ToolCall -&gt; ToolCall -&gt; Bool) -&gt; Eq ToolCall
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: ToolCall -&gt; ToolCall -&gt; Bool
+== :: ToolCall -&gt; ToolCall -&gt; Bool
+$c/= :: ToolCall -&gt; ToolCall -&gt; Bool
+/= :: ToolCall -&gt; ToolCall -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252063"><span id="local-6989586621679252072"><span id="local-6989586621679252076"><span class="annot"><span class="annottext">Int -&gt; ToolCall -&gt; ShowS
+[ToolCall] -&gt; ShowS
+ToolCall -&gt; String
+(Int -&gt; ToolCall -&gt; ShowS)
+-&gt; (ToolCall -&gt; String) -&gt; ([ToolCall] -&gt; ShowS) -&gt; Show ToolCall
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; ToolCall -&gt; ShowS
+showsPrec :: Int -&gt; ToolCall -&gt; ShowS
+$cshow :: ToolCall -&gt; String
+show :: ToolCall -&gt; String
+$cshowList :: [ToolCall] -&gt; ShowS
+showList :: [ToolCall] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-64"></span><span>
+</span><span id="line-65"></span><span class="annot"><span class="hs-comment">-- | The outcome of dispatching one t'ToolCall', linked to it by 'toolResultId'.</span></span><span>
+</span><span id="line-66"></span><span class="hs-keyword">data</span><span> </span><span id="ToolResult"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResult"><span class="hs-identifier hs-var">ToolResult</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="ToolResult"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResult"><span class="hs-identifier hs-var">ToolResult</span></a></span></span><span>
+</span><span id="line-67"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="toolResultId"><span class="annot"><span class="annottext">ToolResult -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#toolResultId"><span class="hs-identifier hs-var hs-var">toolResultId</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-68"></span><span>  </span><span class="annot"><span class="hs-comment">-- ^ Echoes the originating t'ToolCall'\'s 'toolCallId'.</span></span><span>
+</span><span id="line-69"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="toolResultName"><span class="annot"><span class="annottext">ToolResult -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#toolResultName"><span class="hs-identifier hs-var hs-var">toolResultName</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-70"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="toolResultOutcome"><span class="annot"><span class="annottext">ToolResult -&gt; Either Text Text
+</span><a href="Control.Monad.Prompt.Backend.html#toolResultOutcome"><span class="hs-identifier hs-var hs-var">toolResultOutcome</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Either</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-71"></span><span>  </span><span class="annot"><span class="hs-comment">{- ^ 'Left' &#8212; the tool failed, with a message for the model. 'Right' &#8212;
+  the tool's own result text.
+  -}</span></span><span>
+</span><span id="line-74"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-75"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252084"><span id="local-6989586621679252090"><span class="annot"><span class="annottext">ToolResult -&gt; ToolResult -&gt; Bool
+(ToolResult -&gt; ToolResult -&gt; Bool)
+-&gt; (ToolResult -&gt; ToolResult -&gt; Bool) -&gt; Eq ToolResult
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: ToolResult -&gt; ToolResult -&gt; Bool
+== :: ToolResult -&gt; ToolResult -&gt; Bool
+$c/= :: ToolResult -&gt; ToolResult -&gt; Bool
+/= :: ToolResult -&gt; ToolResult -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252094"><span id="local-6989586621679252101"><span id="local-6989586621679252105"><span class="annot"><span class="annottext">Int -&gt; ToolResult -&gt; ShowS
+[ToolResult] -&gt; ShowS
+ToolResult -&gt; String
+(Int -&gt; ToolResult -&gt; ShowS)
+-&gt; (ToolResult -&gt; String)
+-&gt; ([ToolResult] -&gt; ShowS)
+-&gt; Show ToolResult
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; ToolResult -&gt; ShowS
+showsPrec :: Int -&gt; ToolResult -&gt; ShowS
+$cshow :: ToolResult -&gt; String
+show :: ToolResult -&gt; String
+$cshowList :: [ToolResult] -&gt; ShowS
+showList :: [ToolResult] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-76"></span><span>
+</span><span id="line-77"></span><span class="annot"><span class="hs-comment">-- * Context items</span></span><span>
+</span><span id="line-78"></span><span>
+</span><span id="line-79"></span><span class="annot"><span class="hs-comment">{- | One item of the conversation history. A t'Backend' maps each item to the
+message of its transport that has the matching role.
+-}</span></span><span>
+</span><span id="line-82"></span><span class="hs-keyword">data</span><span> </span><span id="ContextItem"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ContextItem"><span class="hs-identifier hs-var">ContextItem</span></a></span></span><span>
+</span><span id="line-83"></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-comment">-- | Instructions or persona, sent before any user turns.</span></span><span>
+</span><span id="line-84"></span><span>    </span><span id="SystemMessage"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#SystemMessage"><span class="hs-identifier hs-var">SystemMessage</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-85"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="hs-comment">-- | A user turn in the conversation.</span></span><span>
+</span><span id="line-86"></span><span>    </span><span id="UserMessage"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#UserMessage"><span class="hs-identifier hs-var">UserMessage</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-87"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="hs-comment">{- | A previous model response. Appended after each successful request so
+      that later prompts can refer to earlier answers.
+    -}</span></span><span>
+</span><span id="line-90"></span><span>    </span><span id="AssistantMessage"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#AssistantMessage"><span class="hs-identifier hs-var">AssistantMessage</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-91"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="hs-comment">{- | The tool calls the model requested in one turn. Parallel calls travel
+      together, so they replay as one assistant turn.
+    -}</span></span><span>
+</span><span id="line-94"></span><span>    </span><span id="ToolCallMessage"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCallMessage"><span class="hs-identifier hs-var">ToolCallMessage</span></a></span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCall"><span class="hs-identifier hs-type">ToolCall</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-95"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="hs-comment">{- | The results of dispatching the calls of a 'ToolCallMessage', one per
+      call, each linked to its call by 'toolResultId'.
+    -}</span></span><span>
+</span><span id="line-98"></span><span>    </span><span id="ToolResultMessage"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResultMessage"><span class="hs-identifier hs-var">ToolResultMessage</span></a></span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResult"><span class="hs-identifier hs-type">ToolResult</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-99"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252112"><span id="local-6989586621679252125"><span class="annot"><span class="annottext">ContextItem -&gt; ContextItem -&gt; Bool
+(ContextItem -&gt; ContextItem -&gt; Bool)
+-&gt; (ContextItem -&gt; ContextItem -&gt; Bool) -&gt; Eq ContextItem
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: ContextItem -&gt; ContextItem -&gt; Bool
+== :: ContextItem -&gt; ContextItem -&gt; Bool
+$c/= :: ContextItem -&gt; ContextItem -&gt; Bool
+/= :: ContextItem -&gt; ContextItem -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252129"><span id="local-6989586621679252144"><span id="local-6989586621679252148"><span class="annot"><span class="annottext">Int -&gt; ContextItem -&gt; ShowS
+[ContextItem] -&gt; ShowS
+ContextItem -&gt; String
+(Int -&gt; ContextItem -&gt; ShowS)
+-&gt; (ContextItem -&gt; String)
+-&gt; ([ContextItem] -&gt; ShowS)
+-&gt; Show ContextItem
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; ContextItem -&gt; ShowS
+showsPrec :: Int -&gt; ContextItem -&gt; ShowS
+$cshow :: ContextItem -&gt; String
+show :: ContextItem -&gt; String
+$cshowList :: [ContextItem] -&gt; ShowS
+showList :: [ContextItem] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-100"></span><span>
+</span><span id="line-101"></span><span class="annot"><span class="hs-comment">{- | Render a conversation as flat 'Text', joining the items with newlines and
+prefixing each with its role, except user messages. For display, or for a backend
+without structured message histories.
+-}</span></span><span>
+</span><span id="line-105"></span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#renderContextItems"><span class="hs-identifier hs-type">renderContextItems</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ContextItem"><span class="hs-identifier hs-type">ContextItem</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-106"></span><span id="renderContextItems"><span class="annot"><span class="annottext">renderContextItems :: [ContextItem] -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#renderContextItems"><span class="hs-identifier hs-var hs-var">renderContextItems</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; [Text] -&gt; Text
+</span><span class="hs-identifier hs-var">T.intercalate</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;\n&quot;</span></span><span> </span><span class="annot"><span class="annottext">([Text] -&gt; Text)
+-&gt; ([ContextItem] -&gt; [Text]) -&gt; [ContextItem] -&gt; Text
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">(ContextItem -&gt; Text) -&gt; [ContextItem] -&gt; [Text]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-identifier hs-var">fmap</span></span><span> </span><span class="annot"><span class="annottext">ContextItem -&gt; Text
+</span><a href="#local-6989586621679252152"><span class="hs-identifier hs-var">render</span></a></span><span>
+</span><span id="line-107"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-108"></span><span>    </span><span id="local-6989586621679252152"><span class="annot"><span class="annottext">render :: ContextItem -&gt; Text
+</span><a href="#local-6989586621679252152"><span class="hs-identifier hs-var hs-var">render</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#SystemMessage"><span class="hs-identifier hs-type">SystemMessage</span></a></span><span> </span><span id="local-6989586621679252166"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252166"><span class="hs-identifier hs-var">t</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;[system] &quot;</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text -&gt; Text
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252166"><span class="hs-identifier hs-var">t</span></a></span><span>
+</span><span id="line-109"></span><span>    </span><span class="annot"><a href="#local-6989586621679252152"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#UserMessage"><span class="hs-identifier hs-type">UserMessage</span></a></span><span> </span><span id="local-6989586621679252167"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252167"><span class="hs-identifier hs-var">t</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252167"><span class="hs-identifier hs-var">t</span></a></span><span>
+</span><span id="line-110"></span><span>    </span><span class="annot"><a href="#local-6989586621679252152"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#AssistantMessage"><span class="hs-identifier hs-type">AssistantMessage</span></a></span><span> </span><span id="local-6989586621679252168"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252168"><span class="hs-identifier hs-var">t</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;[assistant] &quot;</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text -&gt; Text
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252168"><span class="hs-identifier hs-var">t</span></a></span><span>
+</span><span id="line-111"></span><span>    </span><span class="annot"><a href="#local-6989586621679252152"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCallMessage"><span class="hs-identifier hs-type">ToolCallMessage</span></a></span><span> </span><span id="local-6989586621679252169"><span class="annot"><span class="annottext">[ToolCall]
+</span><a href="#local-6989586621679252169"><span class="hs-identifier hs-var">calls</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;[tool call] &quot;</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text -&gt; Text
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; [Text] -&gt; Text
+</span><span class="hs-identifier hs-var">T.intercalate</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;, &quot;</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(ToolCall -&gt; Text) -&gt; [ToolCall] -&gt; [Text]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-identifier hs-var">fmap</span></span><span> </span><span class="annot"><span class="annottext">ToolCall -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#toolCallName"><span class="hs-identifier hs-var">toolCallName</span></a></span><span> </span><span class="annot"><span class="annottext">[ToolCall]
+</span><a href="#local-6989586621679252169"><span class="hs-identifier hs-var">calls</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-112"></span><span>    </span><span class="annot"><a href="#local-6989586621679252152"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResultMessage"><span class="hs-identifier hs-type">ToolResultMessage</span></a></span><span> </span><span id="local-6989586621679252170"><span class="annot"><span class="annottext">[ToolResult]
+</span><a href="#local-6989586621679252170"><span class="hs-identifier hs-var">results</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;[tool result] &quot;</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text -&gt; Text
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; [Text] -&gt; Text
+</span><span class="hs-identifier hs-var">T.intercalate</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;, &quot;</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(ToolResult -&gt; Text) -&gt; [ToolResult] -&gt; [Text]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-identifier hs-var">fmap</span></span><span> </span><span class="annot"><span class="annottext">ToolResult -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#toolResultName"><span class="hs-identifier hs-var">toolResultName</span></a></span><span> </span><span class="annot"><span class="annottext">[ToolResult]
+</span><a href="#local-6989586621679252170"><span class="hs-identifier hs-var">results</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-113"></span><span>
+</span><span id="line-114"></span><span class="annot"><span class="hs-comment">{- | A chat backend, reduced to the one call every backend must make. The
+arguments of 'runBackendChat' are:
+
+  * the conversation so far,
+  * the description of the expected result type, appended as the final turn,
+  * the JSON schema the response must satisfy,
+  * the tools on offer for this call; empty means none.
+
+__Contract:__ an implementation must not throw IO exceptions; every failure
+comes back as a 'BackendError'.
+-}</span></span><span>
+</span><span id="line-125"></span><span class="hs-keyword">newtype</span><span> </span><span id="Backend"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#Backend"><span class="hs-identifier hs-var">Backend</span></a></span></span><span> </span><span id="local-6989586621679252028"><span class="annot"><a href="#local-6989586621679252028"><span class="hs-identifier hs-type">m</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="Backend"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#Backend"><span class="hs-identifier hs-var">Backend</span></a></span></span><span>
+</span><span id="line-126"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="runBackendChat"><span class="annot"><span class="annottext">forall (m :: * -&gt; *).
+Backend m
+-&gt; [ContextItem]
+-&gt; Text
+-&gt; Value
+-&gt; [ToolDef]
+-&gt; m (Either BackendError BackendReply)
+</span><a href="Control.Monad.Prompt.Backend.html#runBackendChat"><span class="hs-identifier hs-var hs-var">runBackendChat</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ContextItem"><span class="hs-identifier hs-type">ContextItem</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Value</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Schema.html#ToolDef"><span class="hs-identifier hs-type">ToolDef</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679252028"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Either</span></span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendError"><span class="hs-identifier hs-type">BackendError</span></a></span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendReply"><span class="hs-identifier hs-type">BackendReply</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-127"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-128"></span><span>
+</span><span id="line-129"></span><span class="annot"><span class="hs-comment">{- | The reply of one t'Backend' call: the model's final answer, or the tool
+calls it wants made before it answers. A backend without tools, such as a mock,
+always returns 'BackendAnswer'.
+-}</span></span><span>
+</span><span id="line-133"></span><span class="hs-keyword">data</span><span> </span><span id="BackendReply"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendReply"><span class="hs-identifier hs-var">BackendReply</span></a></span></span><span>
+</span><span id="line-134"></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-comment">-- | The model's final response text, still raw JSON.</span></span><span>
+</span><span id="line-135"></span><span>    </span><span id="BackendAnswer"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendAnswer"><span class="hs-identifier hs-var">BackendAnswer</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-136"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="hs-comment">{- | The model wants these tool calls made before it will answer.
+      More than one call means parallel tool calls: dispatch each, then
+      send all the results back together on the next 'runBackendChat' call.
+    -}</span></span><span>
+</span><span id="line-140"></span><span>    </span><span id="BackendToolCalls"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendToolCalls"><span class="hs-identifier hs-var">BackendToolCalls</span></a></span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCall"><span class="hs-identifier hs-type">ToolCall</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-141"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252174"><span id="local-6989586621679252181"><span class="annot"><span class="annottext">BackendReply -&gt; BackendReply -&gt; Bool
+(BackendReply -&gt; BackendReply -&gt; Bool)
+-&gt; (BackendReply -&gt; BackendReply -&gt; Bool) -&gt; Eq BackendReply
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: BackendReply -&gt; BackendReply -&gt; Bool
+== :: BackendReply -&gt; BackendReply -&gt; Bool
+$c/= :: BackendReply -&gt; BackendReply -&gt; Bool
+/= :: BackendReply -&gt; BackendReply -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252185"><span id="local-6989586621679252192"><span id="local-6989586621679252196"><span class="annot"><span class="annottext">Int -&gt; BackendReply -&gt; ShowS
+[BackendReply] -&gt; ShowS
+BackendReply -&gt; String
+(Int -&gt; BackendReply -&gt; ShowS)
+-&gt; (BackendReply -&gt; String)
+-&gt; ([BackendReply] -&gt; ShowS)
+-&gt; Show BackendReply
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; BackendReply -&gt; ShowS
+showsPrec :: Int -&gt; BackendReply -&gt; ShowS
+$cshow :: BackendReply -&gt; String
+show :: BackendReply -&gt; String
+$cshowList :: [BackendReply] -&gt; ShowS
+showList :: [BackendReply] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-142"></span><span>
+</span><span id="line-143"></span><span class="annot"><span class="hs-comment">{- | Why a t'Backend' call failed. The three cases are handled differently when
+retrying: a refusal is terminal, a truncated reply is retried with a request
+for a shorter one, and a transport failure is retried unchanged.
+-}</span></span><span>
+</span><span id="line-147"></span><span class="hs-keyword">data</span><span> </span><span id="BackendError"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendError"><span class="hs-identifier hs-var">BackendError</span></a></span></span><span>
+</span><span id="line-148"></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-comment">-- | The model declined to answer at all; no re-prompt fixes that.</span></span><span>
+</span><span id="line-149"></span><span>    </span><span id="BackendRefusal"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendRefusal"><span class="hs-identifier hs-var">BackendRefusal</span></a></span></span><span>
+</span><span id="line-150"></span><span>      </span><span class="hs-special">{</span><span> </span><span id="refusalCategory"><span class="annot"><span class="annottext">BackendError -&gt; Maybe Text
+</span><a href="Control.Monad.Prompt.Backend.html#refusalCategory"><span class="hs-identifier hs-var hs-var">refusalCategory</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-151"></span><span>      </span><span class="annot"><span class="hs-comment">-- ^ The category the provider names for the refusal, if it names one.</span></span><span>
+</span><span id="line-152"></span><span>      </span><span class="hs-special">,</span><span> </span><span id="refusalMessage"><span class="annot"><span class="annottext">BackendError -&gt; Text
+</span><a href="Control.Monad.Prompt.Backend.html#refusalMessage"><span class="hs-identifier hs-var hs-var">refusalMessage</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-153"></span><span>      </span><span class="annot"><span class="hs-comment">-- ^ The provider's own message text, for logging.</span></span><span>
+</span><span id="line-154"></span><span>      </span><span class="hs-special">}</span><span>
+</span><span id="line-155"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="hs-comment">{- | The reply was cut off by a length limit and is, at best, half a JSON
+    document. Carries the text that arrived, for logging only.
+    -}</span></span><span>
+</span><span id="line-158"></span><span>    </span><span id="BackendTruncated"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendTruncated"><span class="hs-identifier hs-var">BackendTruncated</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-159"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="hs-comment">-- | Anything else: an HTTP failure, a decode failure, a timeout.</span></span><span>
+</span><span id="line-160"></span><span>    </span><span id="BackendTransportError"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendTransportError"><span class="hs-identifier hs-var">BackendTransportError</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-161"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252204"><span id="local-6989586621679252214"><span class="annot"><span class="annottext">BackendError -&gt; BackendError -&gt; Bool
+(BackendError -&gt; BackendError -&gt; Bool)
+-&gt; (BackendError -&gt; BackendError -&gt; Bool) -&gt; Eq BackendError
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: BackendError -&gt; BackendError -&gt; Bool
+== :: BackendError -&gt; BackendError -&gt; Bool
+$c/= :: BackendError -&gt; BackendError -&gt; Bool
+/= :: BackendError -&gt; BackendError -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252218"><span id="local-6989586621679252229"><span id="local-6989586621679252233"><span class="annot"><span class="annottext">Int -&gt; BackendError -&gt; ShowS
+[BackendError] -&gt; ShowS
+BackendError -&gt; String
+(Int -&gt; BackendError -&gt; ShowS)
+-&gt; (BackendError -&gt; String)
+-&gt; ([BackendError] -&gt; ShowS)
+-&gt; Show BackendError
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; BackendError -&gt; ShowS
+showsPrec :: Int -&gt; BackendError -&gt; ShowS
+$cshow :: BackendError -&gt; String
+show :: BackendError -&gt; String
+$cshowList :: [BackendError] -&gt; ShowS
+showList :: [BackendError] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-162"></span></pre></body></html>

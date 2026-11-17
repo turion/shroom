@@ -1,0 +1,77 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="annot"><span class="hs-comment">{- |
+Module      : Control.Monad.Prompt
+Description : Ask a language model for a typed Haskell value.
+
+'prompt' asks a language model for a value of any 'Promptable' type. The model is
+told the type's description, properties and examples (see &quot;Data.Shroom.Class&quot;), and
+its answer is parsed and checked against them, with a retry when it fails.
+
+Programs that chain requests, add context or offer tools are written in
+&quot;Control.Monad.Prompt.Effect&quot;, which also runs them against a backend (see
+&quot;Control.Monad.Prompt.Backend&quot;). A backend for a real model comes from the
+@shroom-baikai@ package; &quot;Control.Monad.Prompt.FileMock&quot; is one that needs no key and
+no network.
+
+The example requests one @User@ from Claude. It needs the packages @shroom@,
+@shroom-baikai@, @aeson@, @generics-sop@, @openapi3@ and @text@, an @ANTHROPIC_API_KEY@
+in the environment, and the GHC flag @-haddock@ for the module that declares @User@:
+the description is read from the Haddock comment (see &quot;Data.Shroom.Class.TH&quot;).
+
+@
+{\-# LANGUAGE DeriveAnyClass #-\}
+{\-# LANGUAGE DerivingStrategies #-\}
+{\-# LANGUAGE OverloadedStrings #-\}
+{\-# LANGUAGE TemplateHaskell #-\}
+{\-# LANGUAGE TypeApplications #-\}
+
+module Main (main) where
+
+import Data.Aeson (FromJSON, ToJSON)
+import Data.OpenApi (ToSchema)
+import Data.Text (Text)
+import Data.Text qualified as T
+import Data.Text.IO qualified as T
+import GHC.Generics (Generic)
+import Generics.SOP qualified as SOP
+import System.Environment (getEnv)
+
+import Control.Monad.Prompt
+import Control.Monad.Prompt.Baikai (claudeBackend)
+import Control.Monad.Prompt.Effect (context, defaultPromptConfig, runPromptResultEff)
+import Data.Shroom.Class
+import Data.Shroom.Class.TH (deriveDescribable)
+
+-- | A user with a name and an email address.
+data User = User
+  { userName :: Text
+  -- ^ The user's full name.
+  , userEmail :: Text
+  -- ^ The user's email address.
+  }
+  deriving stock (Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+\$(deriveDescribable ''User)
+
+instance Surveyable User
+
+instance Promptable User
+
+main :: IO ()
+main = do
+  apiKey &lt;- T.pack \&lt;$\&gt; getEnv \&quot;ANTHROPIC_API_KEY\&quot;
+  backend &lt;- claudeBackend apiKey
+  result &lt;- runPromptResultEff backend defaultPromptConfig $ do
+    context &quot;Alice Smith signed up with alice\@example.org.&quot;
+    prompt \@User
+  either T.putStrLn print result
+@
+-}</span></span><span>
+</span><span id="line-70"></span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.html"><span class="hs-identifier">Control.Monad.Prompt</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html"><span class="hs-identifier">Control.Monad.Prompt.Promptable</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Generic.html"><span class="hs-identifier">Control.Monad.Prompt.Generic</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-71"></span><span>
+</span><span id="line-72"></span><span class="hs-comment">-- shroom</span><span>
+</span><span id="line-73"></span><span>
+</span><span id="line-74"></span><span class="hs-comment">-- Imported for its instances, which make @deriving via Generically X instance Promptable X@ work.</span><span>
+</span><span id="line-75"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Generic.html"><span class="hs-identifier">Control.Monad.Prompt.Generic</span></a></span><span>
+</span><span id="line-76"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html"><span class="hs-identifier">Control.Monad.Prompt.Promptable</span></a></span><span>
+</span><span id="line-77"></span></pre></body></html>
