@@ -19,7 +19,9 @@ the description is read from the Haddock comment (see &quot;Data.Shroom.Class.TH
 
 @
 {\-# LANGUAGE DeriveAnyClass #-\}
+{\-# LANGUAGE DeriveGeneric #-\}
 {\-# LANGUAGE DerivingStrategies #-\}
+{\-# LANGUAGE ImportQualifiedPost #-\}
 {\-# LANGUAGE OverloadedStrings #-\}
 {\-# LANGUAGE TemplateHaskell #-\}
 {\-# LANGUAGE TypeApplications #-\}
@@ -67,11 +69,11 @@ main = do
   either T.putStrLn print result
 @
 -}</span></span><span>
-</span><span id="line-70"></span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.html"><span class="hs-identifier">Control.Monad.Prompt</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html"><span class="hs-identifier">Control.Monad.Prompt.Promptable</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Generic.html"><span class="hs-identifier">Control.Monad.Prompt.Generic</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
-</span><span id="line-71"></span><span>
-</span><span id="line-72"></span><span class="hs-comment">-- shroom</span><span>
+</span><span id="line-72"></span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.html"><span class="hs-identifier">Control.Monad.Prompt</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html"><span class="hs-identifier">Control.Monad.Prompt.Promptable</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Generic.html"><span class="hs-identifier">Control.Monad.Prompt.Generic</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
 </span><span id="line-73"></span><span>
-</span><span id="line-74"></span><span class="hs-comment">-- Imported for its instances, which make @deriving via Generically X instance Promptable X@ work.</span><span>
-</span><span id="line-75"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Generic.html"><span class="hs-identifier">Control.Monad.Prompt.Generic</span></a></span><span>
-</span><span id="line-76"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html"><span class="hs-identifier">Control.Monad.Prompt.Promptable</span></a></span><span>
-</span><span id="line-77"></span></pre></body></html>
+</span><span id="line-74"></span><span class="hs-comment">-- shroom</span><span>
+</span><span id="line-75"></span><span>
+</span><span id="line-76"></span><span class="hs-comment">-- Imported for its instances, which make @deriving via Generically X instance Promptable X@ work.</span><span>
+</span><span id="line-77"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Generic.html"><span class="hs-identifier">Control.Monad.Prompt.Generic</span></a></span><span>
+</span><span id="line-78"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Promptable.html"><span class="hs-identifier">Control.Monad.Prompt.Promptable</span></a></span><span>
+</span><span id="line-79"></span></pre></body></html>

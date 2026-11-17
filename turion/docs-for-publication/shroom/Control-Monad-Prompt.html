@@ -8,7 +8,9 @@ no network.</p><p>The example requests one <code class="inline-code">User</code>
 <code class="inline-code">shroom-baikai</code>, <code class="inline-code">aeson</code>, <code class="inline-code">generics-sop</code>, <code class="inline-code">openapi3</code> and <code class="inline-code">text</code>, an <code class="inline-code">ANTHROPIC_API_KEY</code>
 in the environment, and the GHC flag <code class="inline-code">-haddock</code> for the module that declares <code class="inline-code">User</code>:
 the description is read from the Haddock comment (see <a href="../shroom-class/Data-Shroom-Class-TH.html">Data.Shroom.Class.TH</a>).</p><pre>{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}

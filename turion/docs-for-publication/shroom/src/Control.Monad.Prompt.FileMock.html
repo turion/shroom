@@ -54,7 +54,7 @@ Each file holds the JSON that a model would answer with for that step.
   -}</span></span><span>
 </span><span id="line-52"></span><span>  </span><span class="hs-special">}</span><span>
 </span><span id="line-53"></span><span>
-</span><span id="line-54"></span><span class="annot"><span class="hs-comment">{- | A 'FileMockConfig' that reads the files in @dev\/mock-responses\/@ of the @shroom@ data
+</span><span id="line-54"></span><span class="annot"><span class="hs-comment">{- | A t'FileMockConfig' that reads the files in @dev\/mock-responses\/@ of the @shroom@ data
 directory and prints prompts to stdout.
 -}</span></span><span>
 </span><span id="line-57"></span><span class="annot"><a href="Control.Monad.Prompt.FileMock.html#defaultFileMockConfig"><span class="hs-identifier hs-type">defaultFileMockConfig</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><a href="Control.Monad.Prompt.FileMock.html#FileMockConfig"><span class="hs-identifier hs-type">FileMockConfig</span></a></span><span>
@@ -72,7 +72,7 @@ forall a. a -&gt; IO (IORef a)
 </span><span id="line-65"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Control.Monad.Prompt.FileMock.html#stepCounter"><span class="hs-identifier hs-var">stepCounter</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679257316"><span class="hs-identifier hs-type">counter</span></a></span><span>
 </span><span id="line-66"></span><span>      </span><span class="hs-special">}</span><span>
 </span><span id="line-67"></span><span>
-</span><span id="line-68"></span><span class="annot"><span class="hs-comment">{- | The t'Backend' for a 'FileMockConfig'. It ignores the offered tools, so every reply
+</span><span id="line-68"></span><span class="annot"><span class="hs-comment">{- | The t'Backend' for a t'FileMockConfig'. It ignores the offered tools, so every reply
 is a 'BackendAnswer', and it answers a missing response file with
 'BackendTransportError'.
 -}</span></span><span>

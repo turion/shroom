@@ -18,7 +18,7 @@ was not given. <code><a href="Control-Monad-Prompt-Effect.html#v:maxToolSteps" t
 content with it, <code class="inline-code"><code><a href="https://hackage.haskell.org/package/base-4.21.2.0/docs/Data-Maybe.html#v:Just" title="Data.Maybe">Just</a></code> v'</code> means the model returned a corrected whole value
 <code class="inline-code">v'</code>.</p><p>The request shows the value as JSON in a scoped <code><a href="Control-Monad-Prompt-Backend.html#v:UserMessage" title="Control.Monad.Prompt.Backend">UserMessage</a></code> (not kept in the
 context) and asks for one verdict object,
-<code class="inline-code">{&quot;verdict&quot;: &quot;fine&quot; | &quot;improved&quot;, &quot;value&quot;: <a href="a">a</a>}</code>. As for <code><a href="Control-Monad-Prompt-Effect.html#v:promptSingle" title="Control.Monad.Prompt.Effect">promptSingle</a></code>, the
+<code class="inline-code">{&quot;verdict&quot;: &quot;fine&quot; | &quot;improved&quot;, &quot;value&quot;: &lt;a&gt;}</code>. As for <code><a href="Control-Monad-Prompt-Effect.html#v:promptSingle" title="Control.Monad.Prompt.Effect">promptSingle</a></code>, the
 raw reply is appended to the context as an <code><a href="Control-Monad-Prompt-Backend.html#v:AssistantMessage" title="Control.Monad.Prompt.Backend">AssistantMessage</a></code>.</p><p>The reply goes through the same retry path as any request. An <code class="inline-code">improved</code> value
 that fails to parse or violates a property is re-prompted; so is a <code class="inline-code">fine</code>
 verdict when the value passed in violates a property. So <code><a href="https://hackage.haskell.org/package/base-4.21.2.0/docs/Data-Maybe.html#v:Nothing" title="Data.Maybe">Nothing</a></code> always means
