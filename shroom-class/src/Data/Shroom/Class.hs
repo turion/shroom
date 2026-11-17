@@ -276,8 +276,10 @@ A field of type @[a]@, @'NonEmpty' a@, @'Set' a@ or @'Maybe' a@ has no propertie
 own (its 'Property' is 'Void'), whatever @a@ has. So under a bare instance the
 properties of the elements of a @[Speaker]@ or of a @Maybe Name@ field are
 neither checked nor told to the model. Lift them by hand with 'everyHolds' and
-'describeEvery' in a custom 'Property' combined with @t'Structural' X@, as the
-@Speakers@ example under 'everyHolds' does.
+'describeEvery' in a custom 'Property', as the @Speakers@ example under
+'everyHolds' does: it combines the type's own property with the element's
+property. Add a @t'Structural' X@ half, as above, only where the properties of
+the type's own fields are wanted too.
 
 == Recursive types
 
