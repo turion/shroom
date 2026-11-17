@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+* **Breaking: the Template Haskell module moved from `Control.Monad.Prompt.TH` to
+  `Data.Shroom.Class.TH`** (same exports: `deriveDescribable`, `deriveDescribableExp`), under the
+  module prefix of the package that ships it. No `Control.Monad.Prompt.TH` remains; change the
+  import. `shroom` re-exports the new name.
+
 * **New: `description` also describes every type reachable from the requested one, once each.**
   After the examples it appends a section ("The types above refer to the following types:") with,
   for each type reachable through the new `Describable` method `referencedTypes`, a header line

@@ -44,9 +44,9 @@ import Control.Monad.Prompt
 import Control.Monad.Prompt.Backend (ContextItem)
 import Control.Monad.Prompt.Effect (Prompt, context)
 import Control.Monad.Prompt.Effect qualified as Effect
-import Control.Monad.Prompt.TH (deriveDescribable)
 import Control.Monad.Prompt.Tool (ToolBinding)
 import Data.Shroom.Class
+import Data.Shroom.Class.TH (deriveDescribable)
 
 -- * Types
 

@@ -29,8 +29,8 @@ import Data.Universe.Class (Universe)
 -- shroom
 
 import Control.Monad.Prompt.Promptable (Promptable)
-import Control.Monad.Prompt.TH (deriveDescribable)
 import Data.Shroom.Class
+import Data.Shroom.Class.TH (deriveDescribable)
 
 -- | A user with a name and an email address.
 data User = User

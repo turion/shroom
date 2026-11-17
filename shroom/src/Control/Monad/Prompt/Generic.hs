@@ -14,7 +14,7 @@ build-depends: shroom, generics-sop
 @
 
 and in the module (it needs @DerivingVia@, @StandaloneDeriving@, @DeriveAnyClass@,
-@DeriveGeneric@ and, for 'Control.Monad.Prompt.TH.deriveDescribable',
+@DeriveGeneric@ and, for 'Data.Shroom.Class.TH.deriveDescribable',
 @TemplateHaskell@):
 
 @

@@ -42,8 +42,8 @@ common opts
 library
   import: opts
   exposed-modules:
-    Control.Monad.Prompt.TH
     Data.Shroom.Class
+    Data.Shroom.Class.TH
 
   hs-source-dirs: src
   default-language: GHC2024

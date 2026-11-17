@@ -3,7 +3,7 @@
 {- | Template Haskell utilities for deriving 'Describable' instances from Haddock
 documentation comments.
 -}
-module Control.Monad.Prompt.TH (deriveDescribable, deriveDescribableExp) where
+module Data.Shroom.Class.TH (deriveDescribable, deriveDescribableExp) where
 
 -- base
 import Data.Kind qualified as Kind

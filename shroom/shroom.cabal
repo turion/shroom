@@ -88,8 +88,8 @@ library
     Control.Monad.Prompt.Tool.Web
 
   reexported-modules:
-    Control.Monad.Prompt.TH,
     Data.Shroom.Class,
+    Data.Shroom.Class.TH,
 
   other-modules:
     Control.Monad.Prompt.Schema
