@@ -78,10 +78,10 @@ import Control.Monad.Prompt.Effect qualified as Eff
 import Control.Monad.Prompt.Generic ()
 import Control.Monad.Prompt.Promptable (Promptable)
 import Control.Monad.Prompt.Promptable qualified as Promptable
-import Control.Monad.Prompt.TH (deriveDescribable)
 import Control.Monad.Prompt.Tool (Tool, ToolHandler (..), Toolable, runTool, toolBinding, toolDefsRaw, toolName)
 import Control.Monad.Prompt.Tool.Web
 import Data.Shroom.Class (Describable (..), Surveyable (..), description, reach)
+import Data.Shroom.Class.TH (deriveDescribable)
 
 -- test
 import TestUtils

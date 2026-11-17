@@ -133,7 +133,7 @@ import Generics.SOP (All, All2, Code, ConstructorInfo (..), FieldInfo (..), Gene
 
 Minimal complete definition: 'describeType'.
 
-Use @$(deriveDescribable ''MyType)@ from "Control.Monad.Prompt.TH" to derive
+Use @$(deriveDescribable ''MyType)@ from "Data.Shroom.Class.TH" to derive
 this automatically from all Haddock comments on the type declaration.
 
 'Typeable' is a superclass so that 'description' can tell types apart when it

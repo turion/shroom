@@ -46,8 +46,8 @@ import Data.Universe.Class (Universe, universe)
 -- shroom
 import Control.Monad.Prompt.Generic ()
 import Control.Monad.Prompt.Promptable (Promptable)
-import Control.Monad.Prompt.TH (deriveDescribable)
 import Data.Shroom.Class
+import Data.Shroom.Class.TH (deriveDescribable)
 
 -- | A musician, with a name and the city they are from.
 data Musician = Musician

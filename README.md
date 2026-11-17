@@ -21,7 +21,7 @@ wrong.
 import Control.Monad.Prompt                         -- Promptable, and its method `prompt`
 import Control.Monad.Prompt.Baikai (claudeBackend)  -- from shroom-baikai
 import Control.Monad.Prompt.Effect (context, defaultPromptConfig, runPromptResultEff)
-import Control.Monad.Prompt.TH (deriveDescribable)
+import Data.Shroom.Class.TH (deriveDescribable)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.OpenApi (ToSchema)
 import Data.Shroom.Class (Surveyable (..))
@@ -118,7 +118,7 @@ Describable          — describeType: one sentence (auto-derived from Haddock)
 ```
 
 - **`Describable`** — attach a one-sentence description to a type.
-  Use `$(deriveDescribable ''MyType)` from `Control.Monad.Prompt.TH` to derive
+  Use `$(deriveDescribable ''MyType)` from `Data.Shroom.Class.TH` to derive
   `describeType` automatically from your Haddock comment. The prompt text then also carries the
   docs of **every type `MyType` refers to**, once each (a type's constructors and fields, record
   or positional, are documented too). So **every field type needs a `Describable` instance**, from
@@ -344,7 +344,7 @@ See [TODO.md](TODO.md) for planned features.
 The source holds three packages:
 
 - **`shroom-class`** — describes types: `Describable`, `Surveyable` and `deriveDescribable`
-  (`Data.Shroom.Class`, `Control.Monad.Prompt.TH`). It has no program layer and no LLM client.
+  (`Data.Shroom.Class`, `Data.Shroom.Class.TH`). It has no program layer and no LLM client.
 - **`shroom`** — prompts: `Promptable`, the `Prompt` effect and the rest of the program layer. It
   depends on `shroom-class` and re-exports both of its modules, so a package that depends on
   `shroom` needs no new import and no new `build-depends` entry.
