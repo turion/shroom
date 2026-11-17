@@ -1,11 +1,15 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-{- | Tool use support.
+{- |
+Module      : Control.Monad.Prompt.Tool
+Description : Tools a language model can call, as effectful effects.
 
-Define a tool as a Haskell type with a Haddock comment plus a handler, give
-the program's type @'Tool' MySearch ':>' es@, offer
-@'toolBinding' \@MySearch@ to 'Control.Monad.Prompt.Effect.promptTools', and
-interpret with @'runTool' mySearchHandler@:
+A tool is a Haskell type that the model fills in, together with a t'ToolHandler'
+that runs it. The type is documented with a Haddock comment, which becomes the
+description the model reads. A program lists the tools it may call in its
+constraints, @'Tool' MySearch ':>' es@, offers them to the model with
+'toolBinding' and 'Control.Monad.Prompt.Effect.promptTools', and is run with
+'runTool' supplying the handler:
 
 @
 -- | A web search query.
@@ -26,8 +30,28 @@ myProgram = promptTools [toolBinding \@MySearch]
 
 result <- runPromptResultEff backend defaultPromptConfig (runTool mySearchHandler myProgram)
 @
+
+"Control.Monad.Prompt.Tool.Web" provides ready-made tools for fetching pages and searching.
 -}
-module Control.Monad.Prompt.Tool (module Control.Monad.Prompt.Tool) where
+module Control.Monad.Prompt.Tool (
+  -- * Defining a tool
+  Toolable (..),
+  toolName,
+
+  -- * Handling a tool
+  ToolHandler (..),
+  toolDefsRaw,
+
+  -- * Tools as effects
+  Tool (..),
+  callTool,
+  runTool,
+
+  -- * Offering tools to the model
+  ToolBinding (..),
+  toolBinding,
+  dispatchBindings,
+) where
 
 -- base
 import Control.Monad.IO.Class (MonadIO (..))
@@ -63,33 +87,23 @@ import Data.Shroom.Class (Surveyable, describeType)
 
 -- * Tool typeclass
 
-{- | A type whose values the LLM can supply as tool inputs.
+{- | A type whose values the model supplies as the input of a tool call.
 
-The LLM receives the tool name (derived from the type name in snake_case),
-a description (from 'describeType', optionally extended by 'toolDescription'),
-and the JSON schema of @t@.  When the model requests a tool call, the runner
-parses the input as @t@, calls the 'ToolHandler', and feeds the 'Text'
-result back before continuing.
-
-Minimal complete definition: none — all methods have defaults.
-
-Superclasses: 'Surveyable', 'ToSchema', 'FromJSON', 'Typeable' — deliberately
-not 'Control.Monad.Prompt.Promptable.Promptable': a tool's input type is
-described and schema'd the same way a 'Promptable' one is, but it is never
-itself the target of a 'prompt' call, so requiring 'Promptable' would only
-add an unused method and, worse, a dependency this module does not otherwise
-need on "Control.Monad.Prompt.Effect".
+The model is told the tool's name ('toolName'), a description made of
+'describeType' followed by 'toolDescription', and the JSON schema of @t@.
+When it calls the tool, the input is parsed as @t@ and passed to a t'ToolHandler',
+whose result is sent back to the model.
 -}
 class (Surveyable t, ToSchema t, FromJSON t, Typeable t) => Toolable t where
-  {- | Additional description appended to 'describeType' when sending tool
-  metadata to the LLM.  Use this for operational details not obvious from
-  the type (e.g. rate limits, return format).  'Nothing' means no extra text.
+  {- | Text appended to 'describeType' in the tool's description, for details
+  the type does not show, such as rate limits or the format of the result.
+  'Nothing' adds nothing.
   -}
   toolDescription :: Proxy t -> Maybe Text
   toolDescription _ = Nothing
 
-{- | Derive the tool name from the type name: convert @CamelCase@ to
-@snake_case@, e.g. @WebSearch@ → @"web_search"@.
+{- | The name the model calls tool @t@ by: the type's name in snake case, so
+@WebSearch@ becomes @"web_search"@.
 -}
 toolName :: forall t. (Typeable t) => Proxy t -> Text
 toolName p =
@@ -103,18 +117,19 @@ toolName p =
 
 -- * Tool handler
 
-{- | A handler for tool @t@: receives the parsed input and returns either a
-failure message (@Left@) or a success result (@Right@) fed back to the LLM.
-Failures are reported to the model but do __not__ consume step budget.
+{- | The code that runs tool @t@: it receives the parsed input and returns
+@Left@ with a failure message or @Right@ with a result, either of which is
+sent back to the model. A failure does __not__ count against the limit on tool rounds.
 -}
 newtype ToolHandler t = ToolHandler
   { runToolHandler :: t -> IO (Either Text Text)
+  -- ^ Run the tool on one input.
   }
 
 -- * Tool metadata
 
-{- | Extract 'ToolDef' values for all tools in an 'NP'.
-Passed to backends so they can register the tools with the LLM API.
+{- | The t'ToolDef' of every tool in a list of handlers, for a backend to
+register with the model's API.
 -}
 toolDefsRaw ::
   forall tools.
@@ -136,67 +151,42 @@ toolDefsRaw = hcollapse . hcmap (Proxy @Toolable) extract
 
 -- * Tools as effects
 
-{- | A dynamic effect for calling tool @t@.  @'Tool' t ':>' es@ in a
-program's constraints is what "a program's type names the tools it may
-call" means: a program that tries to call a tool without that constraint
-does not compile.  For example, given
+{- | The effect of calling tool @t@.
 
-@
-badProgram :: (Prompt ':>' es) => Eff es (Either Text Text)
-badProgram = callTool (WebFetch "https://example.com")
-@
-
-GHC (9.12.3, via @cabal repl@ against this module, 2026-09-29) reports:
-
-@
-    - Could not deduce \'Tool WebFetch :> es\'
-        arising from a use of \'callTool\'
-      from the context: Prompt :> es
-        bound by the type signature for:
-                   badProgram :: forall (es :: [Effect]).
-                                 (Prompt :> es) =>
-                                 Eff es (Either Text Text)
-    - In the expression: callTool (WebFetch "https://example.com")
-      In an equation for \'badProgram\':
-          badProgram = callTool (WebFetch "https://example.com")
-@
-
-A handler is supplied as an interpreter — 'runTool' — rather than passed
-as a runtime argument the way 'NP' 'ToolHandler' is: that is what "a
-handler is supplied as an interpreter" means.  Because @es@ is an ordinary
-type-level list, a sub-program needing only some of the caller's tools
-(@(Tool A ':>' es) => Eff es b@) runs unchanged inside a caller whose @es@
-also has @Tool B@ — a strict superset satisfies the subset's constraint
-for free.
+A program that calls a tool has @'Tool' t ':>' es@ in its constraints, and
+calling it without that constraint does not type-check. A sub-program that
+needs only some tools runs unchanged inside a program that has more.
+'runTool' interprets the effect with a t'ToolHandler'.
 -}
 data Tool t :: Effect where
+  -- | Call the tool with the given input.
   CallTool :: t -> Tool t m (Either Text Text)
 
 type instance DispatchOf (Tool t) = Dynamic
 
--- | Call tool @t@. Requires @'Tool' t ':>' es@ — see the module Haddock.
+-- | Call tool @t@ and return its result, or the failure message of its handler.
 callTool :: forall t es. (Tool t :> es) => t -> Eff es (Either Text Text)
 callTool = send . CallTool
 
-{- | Interpret @'Tool' t@ against a 'ToolHandler': this is the interpreter
-that "supplies" the handler named in the module Haddock.
--}
+-- | Interpret @'Tool' t@ with a t'ToolHandler', running the handler in 'IO'.
 runTool :: forall t es a. (IOE :> es) => ToolHandler t -> Eff (Tool t : es) a -> Eff es a
 runTool (ToolHandler run) = interpret $ \_ (CallTool t) -> liftIO (run t)
 
-{- | A tool offered to one particular prompt call: its 'ToolDef' metadata
-paired with a way to invoke it inside the current effect stack.  Build one
-with 'toolBinding'.
+-- * Offering tools to the model
+
+{- | A tool offered to one prompt call: its t'ToolDef' paired with the action
+that calls it. Build one with 'toolBinding'.
 -}
 data ToolBinding m = ToolBinding
   { toolBindingDef :: ToolDef
+  -- ^ The name, description and schema the model is sent.
   , toolBindingCall :: Value -> m (Either Text Text)
+  -- ^ Parse the model's input and call the tool; a parse failure is a @Left@.
   }
 
-{- | Offer tool @t@ to a prompt call. Only compiles when @'Tool' t ':>' es@
-is in scope — a program cannot offer a tool it was not itself given. Name
-and description come from 'toolName' and 'describeType' \/ 'toolDescription',
-exactly as for the 'NP' 'ToolHandler' path.
+{- | Offer tool @t@ to a prompt call. It needs @'Tool' t ':>' es@, so a program
+can only offer a tool it has been given. The name and description are those
+of 'toolDefsRaw'.
 -}
 toolBinding :: forall t es. (Toolable t, Tool t :> es) => ToolBinding (Eff es)
 toolBinding =
@@ -214,14 +204,10 @@ toolBinding =
   where
     p = Proxy @t
 
-{- | Resolve a runtime @(tool_name, input_value)@ pair against a list of
-'ToolBinding's — the dispatch half of the effect surface.  Each binding's
-'toolBindingCall' has already closed over its own tool type, so this scans
-a plain list keyed by name; that is the tool's arc bail-out firing for
-/dispatch/ only: 'Tool' \/ 'toolBinding'\'s compile-time membership is
-unaffected, and only the run-time lookup by name — unavoidable once the
-model has emitted a bare tool name string — is a runtime registry.  See
-@decisions.md@ for why full type-level dispatch was not attempted.
+{- | Call the tool of the given name, from a list of bindings, on a JSON
+input. An unknown name gives a @Left@ that lists the available tools.
+
+The lookup by name happens at run time, since the model sends only a name.
 -}
 dispatchBindings :: (Applicative m) => [ToolBinding m] -> Text -> Value -> m (Either Text Text)
 dispatchBindings bindings name v =
