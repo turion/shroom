@@ -126,21 +126,39 @@ jobs:
           path: ${{ steps.setup.outputs.cabal-store }}
           key: ${{ steps.cache.outputs.cache-primary-key }}
       - name: Build the documentation
-        run: cabal haddock all -f-anthropic -f-ollama --haddock-hyperlink-source --haddock-quickjump
+        run: cabal haddock all -f-anthropic -f-ollama --haddock-hyperlink-source --haddock-quickjump --haddock-html-location='https://hackage.haskell.org/package/$pkg-$version/docs'
       - name: Collect the documentation
-        # Haddock links one local package to another by an absolute file:// path into
-        # dist-newstyle, which breaks once the artifact is downloaded; rewrite those links to
-        # the sibling directory. Pages in src/ sit one level deeper.
+        # --haddock-html-location points every link into a dependency at Hackage, but it also
+        # points the links between shroom's own packages there, and those pages do not exist
+        # until a release. Rewrite those to the sibling directory on this site; pages in src/
+        # (and any other nested page) sit one level deeper than the module pages. Links that
+        # Haddock made as absolute file:// paths into dist-newstyle get the same rewrite, in the
+        # pages and in the quickjump index (doc-index.json), which holds HTML snippets too.
         run: |
           mkdir haddocks
           for d in dist-newstyle/build/*/*/*/doc/html/*/; do cp -r "$d" haddocks/; done
-          find haddocks -mindepth 2 -maxdepth 2 -name '*.html' -exec sed -i -E 's#file://[^"]*/dist-newstyle/build/[^"]*/doc/html/([^/"]+)/#../\1/#g' {} +
-          find haddocks -mindepth 3 -name '*.html' -exec sed -i -E 's#file://[^"]*/dist-newstyle/build/[^"]*/doc/html/([^/"]+)/#../../\1/#g' {} +
-          {
-            echo '<!DOCTYPE html><meta charset="utf-8"><title>shroom documentation</title><ul>'
-            for p in haddocks/*/; do p=$(basename "$p"); echo "<li><a href=\"$p/index.html\">$p</a></li>"; done
-            echo '</ul>'
-          } > haddocks/index.html
+          own='https://hackage\.haskell\.org/package/(shroom|shroom-class|shroom-baikai)-[0-9][0-9.]*/docs/'
+          local='file://[^"]*/dist-newstyle/build/[^"]*/doc/html/([^/"]+)/'
+          find haddocks -mindepth 2 -maxdepth 2 \( -name '*.html' -o -name doc-index.json \) -exec sed -i -E "s#$own#../\1/#g; s#$local#../\1/#g" {} +
+          find haddocks -mindepth 3 -name '*.html' -exec sed -i -E "s#$own#../../\1/#g; s#$local#../../\1/#g" {} +
+          cat > haddocks/index.html <<'HTML'
+          <!DOCTYPE html>
+          <meta charset="utf-8">
+          <title>shroom documentation</title>
+          <h1>shroom documentation</h1>
+          <p><strong>Start here:</strong> begin with <code>Control.Monad.Prompt</code> in
+          <a href="shroom/index.html">shroom</a>. Add <a href="shroom-baikai/index.html">shroom-baikai</a>
+          to talk to a real model, and use <a href="shroom-class/index.html">shroom-class</a> on its own
+          when you only want the type-description classes.</p>
+          <ul>
+          <li><a href="shroom/index.html">shroom</a>: type-safe, structured LLM prompting for Haskell;
+          the monadic prompt interface and the tools a model can call.</li>
+          <li><a href="shroom-baikai/index.html">shroom-baikai</a>: runs a shroom program against Claude or an
+          OpenAI-compatible server, such as a local Ollama, through baikai.</li>
+          <li><a href="shroom-class/index.html">shroom-class</a>: the classes that describe a Haskell type to a
+          model, with Template Haskell that derives them from Haddock comments.</li>
+          </ul>
+          HTML
       - name: Publish the documentation on GitHub Pages
         # Each branch gets its own directory on gh-pages, so a pull request's docs and main's
         # live side by side. A fork's pull request has no token to push with, so it builds the
@@ -254,11 +272,11 @@ jobs:
         # keep this line; it is cheap on a warm cache and the failure it prevents is obscure.
         run: nix develop .#ghc912 --accept-flake-config -c cabal update -f-anthropic
       - name: Open the SSH tunnel to the maintainer's Ollama
-        # See research/remote-ollama-ci.md in the plan directory for the mechanism and the
-        # threat model. The server-side ACL (permitopen + command="") is enforced by sshd via
-        # nix/ollama-shroom.nix; this step only has to reach it. ssh-keyscan pins the host key
-        # instead of StrictHostKeyChecking=no, so a redirected DNS name fails loudly rather
-        # than tunnelling to somewhere else.
+        # The AGENTS.md at the repo root describes the mechanism and the threat model. The
+        # server-side ACL (permitopen + command="") is enforced by sshd via nix/ollama-shroom.nix;
+        # this step only has to reach it. ssh-keyscan pins the host key instead of
+        # StrictHostKeyChecking=no, so a redirected DNS name fails loudly rather than tunnelling
+        # to somewhere else.
         run: |
           install -d -m 700 ~/.ssh
           # A herestring writes whatever it's handed — CRLF, a missing trailing newline, even
@@ -285,7 +303,7 @@ jobs:
           echo
       - name: Cabal test against the tunnelled Ollama
         # Bare host:port, no scheme and no /v1 — Ollama's own convention. -f-anthropic is
-        # todo 2's "everything but Anthropic" invocation; the ollama flag stays at its
+        # the invocation that builds everything but Anthropic; the ollama flag stays at its
         # default (on). OLLAMA_MODEL must match services.ollama.shroom.model on the server
         # (nix/ollama-shroom.nix, default "llama3.2:1b" — the server is 2 cores / 12 GB,
         # no GPU, and an 8B model there runs at roughly 1-2 tokens/second). The suite's own
