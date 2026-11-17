@@ -45,8 +45,9 @@ import Test.Tasty.Golden (goldenVsString)
 import Test.Tasty.HUnit (assertBool, testCase, (@?=))
 
 -- shroom-class
-import Control.Monad.Prompt.TH (deriveDescribable)
+
 import Data.Shroom.Class
+import Data.Shroom.Class.TH (deriveDescribable)
 
 -- | A person with a name and an age.
 data Person = Person
