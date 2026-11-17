@@ -87,7 +87,7 @@ tests =
     ]
 
 {- | The request body names the cap @max_tokens@ — the only spelling Ollama's
-OpenAI-compatible layer reads — and no longer carries the
+OpenAI-compatible layer reads — and does not carry the
 @max_completion_tokens@ it ignores.
 -}
 assertTokenCap :: ByteString -> IO ()

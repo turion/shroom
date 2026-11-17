@@ -3,8 +3,8 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-{- | The two examples from the issues that asked for @deriving via Generically@
-(a record, #21, and a sum, #22), written the way a user would write them:
+{- | The two examples of @deriving via Generically@
+(a record and a sum), written the way a user would write them:
 shared by the integration cases of @shroom-baikai@, so a failure of the
 strategy against a real provider has a minimal reproduction.
 

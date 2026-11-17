@@ -3,10 +3,14 @@ name: shroom-baikai
 version: 0.1.0.0
 synopsis: The baikai transport adapter for shroom
 description:
-  Implements shroom's 'Control.Monad.Prompt.Backend.Backend' interface by
-  interpreting @baikai-effectful@'s @Baikai@ effect, so a shroom program
+  shroom-baikai implements the @Backend@ interface of @shroom@ by
+  interpreting the @Baikai@ effect of @baikai-effectful@, so a shroom program
   runs unchanged against Claude (@baikai-claude@) or any OpenAI-compatible
-  host, including a local Ollama, (@baikai-openai@).
+  host, including a local Ollama (@baikai-openai@). Front-door constructors
+  build a backend from an API key or a base URL and a model name; a program
+  that needs a different transport interprets the effect itself. Use it with
+  @shroom@, which holds the prompt monad, and @shroom-class@, which describes
+  the types.
 
 license: BSD-3-Clause
 license-file: LICENSE

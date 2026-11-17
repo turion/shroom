@@ -37,10 +37,8 @@ main = do
   let model = maybe "llama3.2:1b" pack mModel
   ollamaIntegrationTests model >>= defaultMain
 
-{- | 'localOllamaBackend' honours @OLLAMA_HOST@ itself, so this suite no
-longer reads it directly the way it once did, back when it built the old
-@Control.Monad.Prompt.Ollama@ module's @defaultOllamaBackendConfig@ — both
-deleted along with that module.
+{- | 'localOllamaBackend' honours @OLLAMA_HOST@ itself, so this suite does not
+read it directly.
 
 The second backend built here calls 'Control.Monad.Prompt.Baikai.openAICompatBackend'
 itself, the front-door constructor, rather than going around it: the same
