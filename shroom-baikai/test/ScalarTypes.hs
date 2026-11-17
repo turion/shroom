@@ -2,11 +2,10 @@
 {-# LANGUAGE DeriveGeneric #-}
 
 {- | Non-object top-level response types, used only in "Integration.Ollama"
-to prove that a bare scalar or array root schema still round-trips through
-a real local model now that the old @Control.Monad.Prompt.Ollama@ module —
-deleted, along with its @{\"result\": ...}@ wrapper — is gone: @baikai@\'s own
+to prove that a bare scalar or array root schema round-trips through a real
+local model unchanged: @baikai@\'s own
 'Baikai.ResponseFormat.jsonSchemaFormat' passes the schema straight through
-as a raw JSON 'Data.Aeson.Value', so there is nothing left to unwrap.
+as a raw JSON 'Data.Aeson.Value', so the root needs no wrapper object.
 
 Each is a thin newtype over the type it stands in for ('Int', 'Text',
 @['Int']@) rather than an instance directly on that type, so the
