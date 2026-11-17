@@ -5,6 +5,8 @@
 * **Breaking: the Template Haskell module `Control.Monad.Prompt.TH` is now `Data.Shroom.Class.TH`**
   (same exports, defined in `shroom-class`); `shroom` re-exports it under the new name and no
   `Control.Monad.Prompt.TH` remains. Change the import.
+* **Breaking: `Control.Monad.Prompt.Tool.Web` no longer exports `DDGResponse`, `userAgentHeader` and
+  `trySynchronous`**, which were internals of the web tools. The tools themselves are unchanged.
 
 **shroom becomes a layer.** shroom stops owning any LLM transport. A new package,
 `shroom-baikai`, provides the adapters instead; `shroom` itself now depends on no LLM client at

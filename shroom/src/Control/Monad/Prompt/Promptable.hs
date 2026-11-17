@@ -2,7 +2,7 @@
 Module      : Control.Monad.Prompt.Promptable
 Description : Request a value of a type from a language model, with a default strategy.
 
-The class 'Promptable', the newtype 'DescriptionPrompt' to derive it via, and
+The class 'Promptable', the newtype t'DescriptionPrompt' to derive it via, and
 'Promptable' instances for the base types. This module belongs to @shroom@; the
 classes it builds on, 'Surveyable' and 'Describable', are in "Data.Shroom.Class"
 from @shroom-class@.
@@ -68,6 +68,9 @@ request:
 instance Promptable Recipe where
   prompt = withContext "Always prefer metric units." promptSingle
 @
+
+The instances for the base types, and what Anthropic rejects in some of their
+schemas, are described in "Control.Monad.Prompt.Promptable#baseTypes".
 -}
 class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
   {- | Request a value of type @a@ from the model.
@@ -130,7 +133,6 @@ against Claude. The container instances pass the element's schema through
 unchanged, so they inherit the same limitation.
 -}
 
--- | See "Control.Monad.Prompt.Promptable#baseTypes" for what Anthropic rejects.
 instance Promptable Text
 
 instance Promptable Int

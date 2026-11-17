@@ -24,8 +24,10 @@ field uses is derived before the type that has the field.
 {\-# LANGUAGE DeriveGeneric #-\}
 {\-# LANGUAGE DerivingStrategies #-\}
 {\-# LANGUAGE DerivingVia #-\}
+{\-# LANGUAGE ImportQualifiedPost #-\}
 {\-# LANGUAGE StandaloneDeriving #-\}
 {\-# LANGUAGE TemplateHaskell #-\}
+{\-# LANGUAGE TypeApplications #-\}
 
 import Data.Aeson (FromJSON, ToJSON)
 import Data.OpenApi (ToSchema)
@@ -185,8 +187,9 @@ instance Promptable Cue
 
 -- * The constructor choice
 
-{- | The constructor of an @a@ to build, one of the constructors of @a@. The first
-thing the model is asked for when building an @a@ part by part.
+{- | The constructor of an @a@ to build, one of the constructors of @a@. When building
+an @a@ part by part, the model is asked for it first, and only for a type with several
+constructors.
 
 On the wire it is a string, one of the constructor names, and nothing else is
 accepted; its schema is a string enum named after @a@, so the choices of two
