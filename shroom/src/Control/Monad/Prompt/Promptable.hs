@@ -1,46 +1,20 @@
-{- | The 'Promptable' typeclass: defines the default way to request a value of
-a type from an LLM backend.
+{- |
+Module      : Control.Monad.Prompt.Promptable
+Description : Request a value of a type from a language model, with a default strategy.
 
-@
-class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
-  prompt :: forall es. (Prompt :> es, State [ContextItem] :> es) => Eff es a
-  prompt = Effect.promptSingle
-@
-
-The default 'prompt' is 'Control.Monad.Prompt.Effect.promptSingle': it sends a
-'Control.Monad.Prompt.Effect.RequestPrompt' effect, which uses 'description'
-to build the prompt text from the type's 'Surveyable' metadata.
-
-Override 'prompt' to add type-specific context, fallback logic, or any other
-custom program. The method has @State [ContextItem]@ in scope, so an override
-can scope context with 'Control.Monad.Prompt.Effect.withContext':
-
-@
-instance Promptable MyType where
-  prompt = withContext "Always prefer metric units." Effect.promptSingle
-@
-
-Typical usage (no override needed):
-
-@
-\$(deriveDescribable ''MyType)
-
-instance Surveyable MyType where ...
-
-instance Promptable MyType
-@
-
-== Pure\/effectful boundary
-
-This module is the effectful side of the line drawn against "Data.Shroom.Class",
-and the package boundary coincides with it: "Data.Shroom.Class" lives in
-@shroom-class@, this module in @shroom@.
-'Promptable'\'s method is an 'Eff' program requiring the 'Prompt' effect, so
-anything that names 'Promptable' or 'DescriptionPrompt' depends on the
-program layer and must live under "Control.Monad.Prompt", never under
-@Data.Shroom.@. Nothing under @Data.Shroom.@ may import this module.
+The class 'Promptable', the newtype 'DescriptionPrompt' to derive it via, and
+'Promptable' instances for the base types. This module belongs to @shroom@; the
+classes it builds on, 'Surveyable' and 'Describable', are in "Data.Shroom.Class"
+from @shroom-class@.
 -}
-module Control.Monad.Prompt.Promptable (module Control.Monad.Prompt.Promptable) where
+module Control.Monad.Prompt.Promptable (
+  -- * Promptable
+  Promptable (..),
+  DescriptionPrompt (..),
+
+  -- * Base types
+  -- $baseTypes
+) where
 
 -- base
 import Data.Int (Int64)
@@ -74,43 +48,47 @@ import Control.Monad.Prompt.Effect (Prompt)
 import Control.Monad.Prompt.Effect qualified as Effect
 import Data.Shroom.Class
 
--- * Promptable
-
 {- | Attach a default prompting strategy to a type.
 
-The single method 'prompt' is an 'Eff' program that requests a value of
-type @a@ from the LLM.  The default implementation sends
-'Control.Monad.Prompt.Effect.RequestPrompt', which builds the prompt from
-'description' (the type description, properties, and examples from the
-'Surveyable' instance).
+'prompt' is an 'Eff' program that requests a value of type @a@ from the model.
+The default, 'Control.Monad.Prompt.Effect.promptSingle', sends the request to the
+'Prompt' effect, which builds the prompt text from 'description' (the type's
+description, properties and examples) and checks the model's answer against the
+type's properties. Most types need no override, and an empty instance is enough:
 
-Superclasses: 'Surveyable', 'ToSchema', 'FromJSON'.
+@
+instance Promptable User
+@
+
+Override 'prompt' to change what a request to this type does. The override below
+adds one line of context to the default request, and keeps it out of every other
+request:
+
+@
+instance Promptable Recipe where
+  prompt = withContext "Always prefer metric units." promptSingle
+@
 -}
 class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
-  {- | An 'Eff' program that requests a value of type @a@ from the LLM.
+  {- | Request a value of type @a@ from the model.
 
-  Override to add type-specific context, fallback logic, parallel sub-prompts,
-  or any other custom behaviour. The @State [ContextItem]@ constraint is what
-  lets an override scope context with 'Control.Monad.Prompt.Effect.withContext'
-  or 'Control.Monad.Prompt.Effect.withContextItem'; it is the same state
-  'Control.Monad.Prompt.Effect.context' adds to, so a caller that already
-  chains prompts has it.
+  An override can also add fallbacks or run sub-prompts in parallel. Its
+  @State [ContextItem]@ constraint is the state that
+  'Control.Monad.Prompt.Effect.context' adds to, so an override can scope context
+  with 'Control.Monad.Prompt.Effect.withContext'.
   -}
   prompt :: forall es. (Prompt :> es, State [ContextItem] :> es) => Eff es a
   prompt = Effect.promptSingle
 
-{- | Helper newtype for using the default description-based prompting strategy
-via @DerivingVia@.
+{- | Newtype for deriving the default 'Promptable' instance with @DerivingVia@, as an
+alternative to the empty instance.
 
 @
-data MyType = MyType { ... }
+\$(deriveDescribable ''Recipe)
 
-\$(deriveDescribable ''MyType)
+instance Surveyable Recipe
 
-instance Surveyable MyType where ...
-
--- Must come after TH call, hence standalone deriving:
-deriving via DescriptionPrompt MyType instance Promptable MyType
+deriving via DescriptionPrompt Recipe instance Promptable Recipe
 @
 -}
 newtype DescriptionPrompt a = DescriptionPrompt {getDescriptionPrompt :: a}
@@ -133,29 +111,26 @@ instance (Surveyable a) => Surveyable (DescriptionPrompt a) where
   describeProperties _ = describeProperties (Proxy @a)
   propertyHolds (DescriptionPrompt x) = propertyHolds x
 
--- | Uses the default 'prompt' = 'Control.Monad.Prompt.Effect.promptSingle'.
 instance (Surveyable a, ToSchema a, FromJSON a) => Promptable (DescriptionPrompt a)
 
--- * Base types
-
-{- | Flat 'Promptable' instances for the base types that "Data.Shroom.Class"
-gives 'Surveyable' instances: 'Text', 'Int', 'Integer', 'Int64', 'Word', 'Natural', 'Double',
-'Float', 'Bool', 'Char', 'UTCTime', 'Day', and the containers @[a]@,
-@'NonEmpty' a@, @'Set' a@ and @'Maybe' a@. Each uses the default 'prompt', so a bare value
-is requested like any other type, from its 'description'.
-
-They live in this module, next to the class, so they are not orphans.
+{- $baseTypes
+#baseTypes#'Promptable' instances for the base types that "Data.Shroom.Class" gives
+'Surveyable' instances: 'Text', 'Int', 'Integer', 'Int64', 'Word', 'Natural',
+'Double', 'Float', 'Bool', 'Char', 'UTCTime', 'Day', and the containers @[a]@,
+@'NonEmpty' a@, @'Set' a@ and @'Maybe' a@. Each uses the default 'prompt', so a
+bare value is requested like any other type, from its 'description'.
 
 __Schema keywords Anthropic rejects.__ @openapi3@ renders some of these types
 with JSON Schema keywords that Anthropic's structured outputs answer with a
-400, and that @normalizeSchemaForStructuredOutput@
-does not strip: 'Char' carries @minLength@ and @maxLength@, 'Natural' carries
-@exclusiveMinimum@, and 'Double' and 'Float' carry a numeric @format@ (not
-confirmed against the API). A field of one of these types, or a bare
-'prompt' of it, may therefore fail against Claude until the normaliser strips
-those keywords. The container instances pass the element's schema through
+400, and that @normalizeSchemaForStructuredOutput@ does not strip: 'Char'
+carries @minLength@ and @maxLength@, 'Natural' carries @exclusiveMinimum@, and
+'Double' and 'Float' carry a numeric @format@ (not confirmed against the API).
+A field of one of these types, or a bare 'prompt' of it, may therefore fail
+against Claude. The container instances pass the element's schema through
 unchanged, so they inherit the same limitation.
 -}
+
+-- | See "Control.Monad.Prompt.Promptable#baseTypes" for what Anthropic rejects.
 instance Promptable Text
 
 instance Promptable Int
