@@ -6,8 +6,9 @@ description:
   shroom-class holds the type-description classes of shroom: 'Data.Shroom.Class.Describable'
   names a type for a model, and 'Data.Shroom.Class.Surveyable' adds the
   properties its values must satisfy, with examples. Template Haskell derives
-  both from Haddock comments, so the documentation of a type is the
-  description the model reads. The package has no prompting runtime and
+  'Data.Shroom.Class.Describable' from Haddock comments, so the documentation
+  of a type is the description the model reads, and an empty
+  'Data.Shroom.Class.Surveyable' instance does the rest. The package has no prompting runtime and
   depends on no HTTP client and no effect system. It is the base of @shroom@,
   which runs prompts, and of @shroom-baikai@, which connects them to a real
   model.
