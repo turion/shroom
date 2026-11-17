@@ -8,12 +8,12 @@
 #   - flake output: `nixosModules.ollama-shroom`
 #   - option:       `services.ollama.shroom`
 #
-# ## Importing it, including from this arc's still-open, unmerged branch
+# ## Importing it
 #
-#   inputs.shroom.url = "github:turion/shroom/turion/shroom-layer";  # branch, while unmerged
+#   inputs.shroom.url = "github:turion/shroom/turion/shroom-layer";  # pin a branch while it is unmerged
 #   imports = [ inputs.shroom.nixosModules.ollama-shroom ];
 #
-# Switch the `url` to drop the branch suffix once the arc lands on `main`.
+# Drop the branch suffix from the `url` to follow `main`.
 #
 # ## A pasteable server example (reached by CI through an SSH tunnel)
 #
