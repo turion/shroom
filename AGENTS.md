@@ -20,12 +20,21 @@ Please always speak like a 1970s British working class person!
 - After each finished plan, run `cabal test` and summarize the test results.
 - The golden files of `shroom-class` (`shroom-class/test/golden/`) are regenerated with `cabal test shroom-class-test --test-options=--accept`; review the diff afterwards.
 - Before every push, run `jj fix` (fourmolu, cabal-gild, `hlint --refactor`; CI checks the first two and hlint) and then the build and test gates again. Build afterwards, because a tool can change meaning: fourmolu once rewrote `OverloadedRecordDot` access `a.b` into `a . b`, and an hlint refactor can introduce a partial function such as `head`, which `-Werror` rejects.
+- Prefer `$` over parentheses in code as well as in examples.
 
 # Documentation standard
 
 - Every PR re-reads the generated haddocks of each file it changes. Build them as CI does: `cabal haddock all -f-anthropic -f-ollama --haddock-hyperlink-source --haddock-quickjump --haddock-html-location='https://hackage.haskell.org/package/$pkg-$version/docs'`. The HTML of each package lands in `dist-newstyle/build/*/*/<package>-<version>/doc/html/<package>/`; open its `index.html` and read the pages of the modules the PR touched. A haddock run passes with unresolved links, so only reading the page shows that a link resolves and that the markup renders as meant.
 - A Haddock or code comment describes what the code does, never how it came about. No plan, arc or todo references, no issue numbers, no "as before", "used to", "old behaviour" or "no longer". A real limitation stays, stated plainly. History goes in the CHANGELOG.
 - A fact that a future agent needs but a user does not goes in the package's own `AGENTS.md`, imported by a `CLAUDE.md` beside it that holds `@AGENTS.md`.
+- Write from the user's side. The user wants or chooses something, never the type. A class doc is a guide for a user who writes an instance for their own type. Behaviour of the library's own instances goes in those instances' docs or in code comments.
+- A doc opens with a short description of the thing and the reason to use it, before how it works. A class doc opens "A class for ...".
+- User-facing Haddocks hold no internals, such as the prompt's wording, wire and JSON encodings or a provider's schema quirks. An agent that needs such a fact finds it in the package's `AGENTS.md`.
+- Don't repeat what the generated page shows already, such as the instance list or a hand-kept list of base types.
+- Write plain sentences. Don't open a clause or sentence with "what" as a noun phrase, don't chain colons, and split a long sentence joined by ", and" in two.
+- Examples use realistic named types, not `X` or `Foo`. They carry no pragma or import preamble. Prefer `$` over parentheses.
+- Document function arguments with per-argument Haddocks, not in prose. Write them in the leading form (`-- |` or `{- | -}` above the argument), because fourmolu rewrites a trailing `-- ^` on an argument into it. Record fields keep `-- ^`; a record field of function type keeps one field-level doc, since per-argument docs do not render there.
+- Every identifier Haddock can link is a link, and the CI doc build has no Haddock warnings.
 - The maintainer's documentation standard is the Hackage documentation of rhine, changeset and essence-of-live-coding.
 
 # Key dependency patterns
