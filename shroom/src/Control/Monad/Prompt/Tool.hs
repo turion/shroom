@@ -4,6 +4,14 @@
 Module      : Control.Monad.Prompt.Tool
 Description : Tools a language model can call, as effectful effects.
 
+To complete an answer, a model may want to call a tool, for example a web
+search with t'Control.Monad.Prompt.Tool.Web.DuckDuckGoSearch' or a lookup in your own
+data. Tools run right here in your program, so a tool is an effect that the
+model triggers: the program decides what a tool may do, and the model decides
+when to call it. shroom gives the same grip on tools as on any other effect. A
+program can only offer a tool whose @'Tool' t@ effect is in its effect row, and
+the compiler checks that.
+
 A tool is a Haskell type that the model fills in, together with a t'ToolHandler'
 that runs it. The type is documented with a Haddock comment, which becomes the
 description the model reads. A program lists the tools it may call in its

@@ -15,6 +15,10 @@ own machine via Ollama, or any other OpenAI- or Anthropic-compatible host —
 and get back a typed Haskell value, or a `Text` error explaining what went
 wrong.
 
+A model may also want to call a tool, such as a web search or a lookup in your data, to complete an
+answer. Tools run in your program, so a tool is an effect that the model triggers: your program
+decides what it may do, the model decides when, and a program can only offer the tools its type lists.
+
 ```haskell
 {-# LANGUAGE DeriveAnyClass, DeriveGeneric, OverloadedStrings, TemplateHaskell, TypeFamilies #-}
 
