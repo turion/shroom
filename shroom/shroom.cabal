@@ -3,6 +3,8 @@ name: shroom
 version: 0.1.0.0
 synopsis: Type-safe structured LLM prompting for Haskell
 description:
+  If the model hallucinates, at least it will be a well-typed hallucination.
+
   shroom builds typed LLM conversations. A monadic program written with
   @context@ and @prompt@ returns a typed Haskell value, or a descriptive
   error: a type is described to the model through its schema, the response is
@@ -11,6 +13,10 @@ description:
   interface, deriving via @Generically@, tool calls, and a mock backend that reads responses from files. The
   classes describing types live in @shroom-class@, which this package
   re-exports.
+
+  A tool call is an effect that the model triggers. The program decides what a
+  tool may do and the model decides when to call it, and a program can only
+  offer the tools its type lists.
 
   shroom ships no backend for a real model: @shroom-baikai@ supplies one for
   Claude and for OpenAI-compatible hosts such as a local Ollama.
