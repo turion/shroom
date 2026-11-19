@@ -10,7 +10,7 @@ error ('failWith', 'orElse') and parallel requests use "Effectful.Concurrent.Asy
 
 In ordinary code, request a value with 'Control.Monad.Prompt.Promptable.prompt',
 which follows the type's 'Control.Monad.Prompt.Promptable.Promptable' strategy.
-'promptSingle' is the flat request that method defaults to, 'promptTools' offers
+'promptSingle' is the single request that method defaults to, 'promptTools' offers
 the model tools to call, and 'improve' asks it to correct a value.
 -}
 module Control.Monad.Prompt.Effect (
@@ -114,8 +114,9 @@ data Prompt (m :: Type -> Type) (result :: Type) where
 
 type instance DispatchOf Prompt = Dynamic
 
-{- | Request a value of type @a@ in one flat request: the prompt text is the
-type's 'description' and the schema its 'ToSchema'.
+{- | Request a value of type @a@ in a single request, one call to the backend for
+the whole value: the prompt text is the type's 'description' and the schema its
+'ToSchema'.
 
 Note that this skips the type's 'Control.Monad.Prompt.Promptable.Promptable'
 strategy, such as a @deriving via Generically@. It is the default of
@@ -163,7 +164,7 @@ that the original value satisfies every 'Data.Shroom.Class.Property' of @a@.
 Only the properties 'Surveyable' checks in code are enforced, not informal ones
 that only the model can judge.
 
-Like 'promptSingle', 'improve' is flat: it does not call the type's own
+Like 'promptSingle', 'improve' is a single request: it does not call the type's own
 'Control.Monad.Prompt.Promptable.prompt', so a prompt strategy may call it
 without recursing into itself.
 -}
@@ -347,13 +348,13 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
       (maxToolSteps promptCfg)
   RequestImprove original -> runImprove original
   where
-    -- The tool setup of a flat request: no tool definitions, a dispatcher
+    -- The tool setup of a single request: no tool definitions, a dispatcher
     -- that refuses every call, and zero tool steps. Shared by 'RequestPrompt'
     -- and 'RequestImprove'.
     noTools :: ([ToolDef], ToolDispatcher (Eff es), Maybe Int)
     noTools = ([], \_ _ -> pure (Left "no tools"), Just 0)
 
-    -- 'RequestImprove': a flat request, no tools, whose reply is a 'Verdict'.
+    -- 'RequestImprove': a single request, no tools, whose reply is a 'Verdict'.
     -- The scoped 'UserMessage' showing the value goes onto the context the
     -- backend sees but not the one left behind; only the raw reply is kept.
     -- A @fine@ verdict is judged by the properties of the value passed in,
