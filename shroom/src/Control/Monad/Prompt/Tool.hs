@@ -212,12 +212,21 @@ toolBinding =
   where
     p = Proxy @t
 
-{- | Call the tool of the given name, from a list of bindings, on a JSON
-input. An unknown name gives a @Left@ that lists the available tools.
+{- | Call the tool that the model named, on the input it sent.
 
 The lookup by name happens at run time, since the model sends only a name.
 -}
-dispatchBindings :: (Applicative m) => [ToolBinding m] -> Text -> Value -> m (Either Text Text)
+dispatchBindings ::
+  (Applicative m) =>
+  -- | The tools on offer.
+  [ToolBinding m] ->
+  {- | The name of the tool, as the model sent it. An unknown name gives a @Left@ that
+  lists the available tools.
+  -}
+  Text ->
+  -- | The input of the tool, as the model sent it.
+  Value ->
+  m (Either Text Text)
 dispatchBindings bindings name v =
   case [call | ToolBinding {toolBindingDef, toolBindingCall = call} <- bindings, toolDefName toolBindingDef == name] of
     (call : _) -> call v

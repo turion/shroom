@@ -38,9 +38,6 @@ sending the result back, is left to the caller as for every backend (see
 The four constructors have these in common:
 
 * Each registers its @baikai@ provider when it runs, so each returns in 'IO'.
-* The base URL of 'anthropicCompatBackend' and 'openAICompatBackend' takes no
-  trailing @\/v1@. The transport appends its own, so one given
-  here would produce @\/v1\/v1\/...@.
 * A reply is limited to 4096 tokens. The context window and output limit set on the
   'Model' are the published ones for the model of 'claudeBackend', and the placeholders
   8192 and 4096 for the other constructors, whose model is not known; they do not
@@ -120,14 +117,19 @@ import Control.Monad.Prompt.Backend (
 
 -- * Converting shroom's context to baikai's
 
-{- | Turn shroom's context items plus the type-description turn into the request 'Context' of baikai, for a hand-written t'Backend' built on baikai.
+{- | Turn shroom's context items into the request 'Context' of baikai, for a hand-written t'Backend' built on baikai.
 
 Its 'SystemMessage' items are joined with newlines into the one
 @systemPrompt@. 'ToolCallMessage' becomes one assistant message with a tool-call
 block per call, and 'ToolResultMessage' one tool-result message per result. The
 @tools@ field stays empty, for 'baikaiBackend' to set.
 -}
-contextItemsToBaikai :: [ContextItem] -> Text -> Context
+contextItemsToBaikai ::
+  -- | The conversation so far.
+  [ContextItem] ->
+  -- | The description of the expected result type, which becomes the final user turn.
+  Text ->
+  Context
 contextItemsToBaikai items typeDesc =
   emptyContext
     { systemPrompt = case [t | SystemMessage t <- items] of
@@ -224,9 +226,8 @@ fromBaikaiToolCall bc =
 -- * The adapter
 
 {- | Build a t'Backend' that makes one @baikai-effectful@ 'complete' call per
-'runBackendChat', against the given 'Model' and base 'Options'. The four constructors
-of this module are built on it; use it directly for another provider, or for 'Options'
-they do not set.
+'runBackendChat'. The four constructors of this module are built on it; use it
+directly for another provider, or for 'Options' they do not set.
 
 The schema of the requested type goes out as the structured-output format on every
 call, with or without tools, and with @strict = True@: OpenAI enforces it, and the
@@ -239,7 +240,13 @@ back as 'BackendTransportError'. /Asynchronous/ exceptions
 cancellation) propagate, so that a @timeout@ around a hung call returns 'Nothing'
 instead of being retried as a backend error.
 -}
-baikaiBackend :: (MonadIO m) => Model -> Options -> Backend m
+baikaiBackend ::
+  (MonadIO m) =>
+  -- | The model to call, which names the provider and the host.
+  Model ->
+  -- | The options of every call. The response format is set per call, to the schema of the requested type, and replaces one given here.
+  Options ->
+  Backend m
 baikaiBackend model baseOpts =
   Backend $ \ctx typeDesc schema toolDefs -> liftIO $ do
     let bCtx = (contextItemsToBaikai ctx typeDesc) {tools = V.fromList (fmap toBaikaiTool toolDefs)}
@@ -269,26 +276,37 @@ anthropicModel baseUrl modelId = do
   ClaudeProvider.register
   pure (mkModel AnthropicMessages modelId baseUrl)
 
-{- | The Claude API at @api.anthropic.com@, via @baikai-claude@. Takes an Anthropic API
-key. The model is @claude-haiku-4-5-20251001@, with its published limits (200000
-tokens of context, 8192 of output) as the 'Model' limits. For another Claude model
-use 'anthropicCompatBackend' with the base URL @https:\/\/api.anthropic.com@.
+{- | The Claude API at @api.anthropic.com@, via @baikai-claude@. The model is
+@claude-haiku-4-5-20251001@, with its published limits (200000 tokens of context,
+8192 of output) as the 'Model' limits. For another Claude model use
+'anthropicCompatBackend' with the base URL @https:\/\/api.anthropic.com@.
 -}
-claudeBackend :: (MonadIO m) => Text -> IO (Backend m)
+claudeBackend ::
+  (MonadIO m) =>
+  -- | The Anthropic API key.
+  Text ->
+  IO (Backend m)
 claudeBackend apiKey = do
   model <- anthropicModel "https://api.anthropic.com" "claude-haiku-4-5-20251001"
   let model' = model {contextWindow = 200000, maxOutputTokens = 8192}
       opts = emptyOptions {apiKey = Just (ApiKeyLiteral apiKey), maxTokens = Just 4096}
   pure (baikaiBackend model' opts)
 
-{- | Any host that speaks the Anthropic Messages API, via @baikai-claude@. Takes the
-base URL, the model id and the API key.
-
-Unlike the key of 'openAICompatBackend', this one is not a 'Maybe': a hosted
-Anthropic-compatible host checks a real key, and a local proxy that does not still
-needs a placeholder, which only the caller can choose. The key is passed on as it is.
--}
-anthropicCompatBackend :: (MonadIO m) => Text -> Text -> Text -> IO (Backend m)
+-- | Any host that speaks the Anthropic Messages API, via @baikai-claude@.
+anthropicCompatBackend ::
+  (MonadIO m) =>
+  {- | The base URL of the host, without a trailing @\/v1@. The transport appends its
+  own, so one given here would produce @\/v1\/v1\/...@.
+  -}
+  Text ->
+  -- | The id of the model, as the host names it.
+  Text ->
+  {- | The API key, passed on as it is. Unlike the key of 'openAICompatBackend', it is
+  not a 'Maybe': a hosted Anthropic-compatible host checks a real key, and a local
+  proxy that does not still needs a placeholder, which only the caller can choose.
+  -}
+  Text ->
+  IO (Backend m)
 anthropicCompatBackend baseUrl modelId apiKey = do
   model <- anthropicModel baseUrl modelId
   let model' = model {contextWindow = 8192, maxOutputTokens = 4096}
@@ -300,7 +318,11 @@ anthropicCompatBackend baseUrl modelId apiKey = do
 @OLLAMA_HOST@, read through 'normaliseOllamaHost'; without @OLLAMA_HOST@ it is
 @http:\/\/127.0.0.1:11434@.
 -}
-localOllamaBackend :: (MonadIO m) => Text -> IO (Backend m)
+localOllamaBackend ::
+  (MonadIO m) =>
+  -- | The id of the model, as Ollama names it.
+  Text ->
+  IO (Backend m)
 localOllamaBackend modelId = do
   mHost <- lookupEnv "OLLAMA_HOST"
   let baseUrl = maybe "http://127.0.0.1:11434" (normaliseOllamaHost . T.pack) mHost
@@ -327,18 +349,26 @@ normaliseOllamaHost h
   | otherwise = "http://" <> h <> ":11434"
 
 {- | Any host that speaks the OpenAI Chat Completions API, hosted or self-hosted (vLLM,
-the llama.cpp server), via @baikai-openai@. Takes the base URL, the model id and
-the API key.
-
-The key is a 'Maybe': @Nothing@ for a host that checks no credential, such as a bare
-Ollama or llama.cpp server, and @Just@ the key for a host that does.
+the llama.cpp server), via @baikai-openai@.
 
 The token cap is sent as @max_tokens@, not as @max_completion_tokens@, which
 @baikai-openai@ sends by default and Ollama ignores. The host's other auto-detected
 quirks are kept. @api.openai.com@ itself keeps @max_completion_tokens@, because its
 newer models reject @max_tokens@.
 -}
-openAICompatBackend :: (MonadIO m) => Text -> Text -> Maybe Text -> IO (Backend m)
+openAICompatBackend ::
+  (MonadIO m) =>
+  {- | The base URL of the host, without a trailing @\/v1@. The transport appends its
+  own, so one given here would produce @\/v1\/v1\/...@.
+  -}
+  Text ->
+  -- | The id of the model, as the host names it.
+  Text ->
+  {- | The API key. @Nothing@ for a host that checks no credential, such as a bare
+  Ollama or llama.cpp server, and @Just@ the key for a host that does.
+  -}
+  Maybe Text ->
+  IO (Backend m)
 openAICompatBackend baseUrl modelId mApiKey = do
   OpenAIProvider.register
   let model =
