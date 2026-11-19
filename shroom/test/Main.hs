@@ -113,7 +113,7 @@ barrierBackend entered expected =
 
 {- | A mock 'Backend' whose first @n@ calls come back 'BackendTruncated' (with
 a half-finished JSON document as the partial text) and whose later calls
-answer with @answer@, recording each call's context as flat text.
+answer with @answer@, recording each call's context as one rendered text.
 -}
 truncatedBackend :: (MonadIO m) => Int -> Text -> IORef Int -> IORef [Text] -> Backend m
 truncatedBackend n answer callRef seenCtxs =

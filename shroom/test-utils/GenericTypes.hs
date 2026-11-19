@@ -14,8 +14,8 @@ real provider has a minimal reproduction.
 
 The composite types, t'Musician' and t'Fruit', derive 'Promptable' via
 the t'Generically' wrapper, so a prompt of one builds its parts one request at a time and
-makes them cohere. Their leaves, t'Name', t'City', t'Apple' and t'Banana', are flat:
-a single request each, as the guide in "Control.Monad.Prompt.Generic" advises.
+makes them cohere. Their leaves, t'Name', t'City', t'Apple' and t'Banana', each make a single request,
+as the guide in "Control.Monad.Prompt.Generic" advises.
 -}
 module GenericTypes (
   Musician (..),
@@ -137,7 +137,7 @@ instance Surveyable Musician
 
 instance Surveyable Fruit
 
--- Leaves are flat: a single request each.
+-- Leaves make a single request each.
 instance Promptable Name
 
 instance Promptable City
