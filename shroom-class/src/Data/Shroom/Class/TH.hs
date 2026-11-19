@@ -209,7 +209,7 @@ instance Describable MyType where
 __This returns the 'describeType' body only.__ It does not collect the referenced types:
 a hand-written instance must write 'referencedTypes' itself, or its field types are not
 described to the model. For a record, write the @reach \@t@ of each of its field types,
-as 'deriveDescribable' generates. A transparent wrapper forwards to the wrapped type's
+as 'deriveDescribable' generates. A transparent newtype wrapper forwards to the wrapped type's
 'referencedTypes' instead, see 'Describable'.
 
 For a type with several constructors, each constructor is listed as

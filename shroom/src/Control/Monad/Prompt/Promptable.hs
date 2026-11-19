@@ -128,7 +128,7 @@ instance (Describable a) => Describable (DescriptionPrompt a) where
 
   -- @description@ runs at @DescriptionPrompt a@ here, so forward what @a@
   -- references. Not @reach @a@: that would list @a@ under itself.
-  -- The three methods below are the contract of a transparent wrapper, see
+  -- The three methods below are the contract of a transparent newtype wrapper, see
   -- the 'describedIdentity' Haddock; 'Generically' is the other one.
   referencedTypes _ = referencedTypes (Proxy @a)
   hasOwnSection _ = False
