@@ -121,7 +121,7 @@ Derive the leaves flat, with a bare @instance Promptable@, as asking for a scala
 part by part would pay a cue and an @improve@ for nothing; use @Generically@ for
 the records and sums whose parts must cohere.
 
-== What the strategy does not do
+== The limits of the strategy
 
 A field of type @[a]@, @NonEmpty a@, @Set a@ or @Maybe a@ is prompted whole, in one
 request for the container, and the properties of its elements are neither checked

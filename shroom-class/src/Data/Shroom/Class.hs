@@ -107,7 +107,7 @@ this from the Haddock comments on the type declaration.
 'Typeable' is a superclass so that 'description' can tell types apart when it
 lists each reachable type once.
 
-== What reaches the model
+== The descriptions that reach the model
 
 'description' sends the requested type's own 'describeType', and then, in a
 section of their own, the 'describeType' of every type it can reach through
@@ -134,22 +134,20 @@ class (ToJSON a, Typeable a) => Describable a where
   referencedTypes _ = []
 
   {- | Whether the type gets a section of its own in the list of reachable
-    types. Defaults to 'True'. The base types ('Text', 'Int', …) and the
-    containers (@[a]@, 'Maybe', …) set it to 'False': they need no section, as
-    their 'describeType' is a sentence that the types using them already quote.
+    types. Defaults to 'True'.
   -}
   hasOwnSection :: Proxy a -> Bool
   hasOwnSection _ = True
 
   {- | The identity of the type that 'description' reports on, by which
     'reachableTypes' keeps that type out of its own list of reachable types.
-    Defaults to the type's own 'TypeRep'. A transparent wrapper (@t'Generically' X@,
+    Defaults to the type's own 'TypeRep'. A transparent newtype wrapper (@t'Generically' X@,
     @DescriptionPrompt X@) forwards to the wrapped type's, because @description@ runs at
     the wrapper while the types that refer back to @X@ name @X@ itself.
 
-    == Writing a transparent wrapper
+    == Writing a transparent newtype wrapper
 
-    A transparent wrapper @W a@ stands for @a@ without being a type of its own to
+    A transparent newtype wrapper @W a@ stands for @a@ without being a type of its own to
     the model. Its 'Describable' instance must forward 'describeType', and the
     three methods beyond it:
 
@@ -167,7 +165,7 @@ class (ToJSON a, Typeable a) => Describable a where
   describedIdentity = typeRep
 
 {- | A type of which only the 'Describable' instance is known, to put types of
-different kinds into one list: what 'referencedTypes' returns.
+different kinds into one list. Used by 'referencedTypes'.
 -}
 data Described
   = -- | Packs the type behind the t'Proxy', together with its 'Describable' instance.
@@ -373,6 +371,8 @@ class (Describable a, Universe (Property a)) => Surveyable a where
 -- Instances for common base types, so that a type with a field of one of them
 -- can derive its own instances. Each describes the type in a short plain
 -- sentence and has no properties: 'Property' is 'Void', written out explicitly.
+-- They set 'hasOwnSection' to 'False': they need no section, as their
+-- 'describeType' is a sentence that the types using them already quote.
 --
 -- They live in this module itself, not a sibling: here they are not orphans,
 -- and modules importing only "Data.Shroom.Class" see them.
@@ -461,39 +461,46 @@ instance Describable Day where
 instance Surveyable Day where
   type Property Day = Void
 
--- | A list, described through its element type. The element's properties are not lifted, see 'Surveyable'.
+-- The containers set 'hasOwnSection' to 'False' like the base types: the types
+-- using them already quote their 'describeType'.
+
+-- | A list, described through its element type.
 instance (Describable a) => Describable [a] where
   describeType _ = "A list of values of the following type: " <> describeType (Proxy @a)
   referencedTypes _ = reach @a
   hasOwnSection _ = False
 
+-- | A list has no properties of its own. The properties of its elements are not lifted, see 'Surveyable'.
 instance (Describable a) => Surveyable [a] where
   type Property [a] = Void
 
--- | A non-empty list, described through its element type. The element's properties are not lifted, see 'Surveyable'.
+-- | A non-empty list, described through its element type.
 instance (Describable a) => Describable (NonEmpty a) where
   describeType _ = "A non-empty list of values of the following type: " <> describeType (Proxy @a)
   referencedTypes _ = reach @a
   hasOwnSection _ = False
 
+-- | A non-empty list has no properties of its own. The properties of its elements are not lifted, see 'Surveyable'.
 instance (Describable a) => Surveyable (NonEmpty a) where
   type Property (NonEmpty a) = Void
 
--- | A set, described through its element type. The element's properties are not lifted, see 'Surveyable'.
+-- | A set, described through its element type.
 instance (Describable a) => Describable (Set a) where
   describeType _ = "A set of distinct values of the following type: " <> describeType (Proxy @a)
   referencedTypes _ = reach @a
   hasOwnSection _ = False
 
+-- | A set has no properties of its own. The properties of its elements are not lifted, see 'Surveyable'.
 instance (Describable a) => Surveyable (Set a) where
   type Property (Set a) = Void
 
--- | An optional value, described through its element type. The element's properties are not lifted, see 'Surveyable'.
+-- | An optional value, described through its element type.
 instance (Describable a) => Describable (Maybe a) where
   describeType _ = "A value that may be absent (null), and otherwise of the following type: " <> describeType (Proxy @a)
   referencedTypes _ = reach @a
   hasOwnSection _ = False
 
+-- | An optional value has no properties of its own. The properties of its element are not lifted, see 'Surveyable'.
 instance (Describable a) => Surveyable (Maybe a) where
   type Property (Maybe a) = Void
 
@@ -514,7 +521,7 @@ instance (Describable a, ToJSON (Generically a)) => Describable (Generically a) 
 
   -- Like a container, but transparent: @a@ is the type being described, so it
   -- must not appear as a section of its own under it ('reach' would list it).
-  -- The three methods below are the contract of a transparent wrapper, see
+  -- The three methods below are the contract of a transparent newtype wrapper, see
   -- 'describedIdentity'.
   referencedTypes _ = referencedTypes (Proxy @a)
   hasOwnSection _ = False
@@ -573,8 +580,8 @@ deriving instance (Eq (Property x)) => Eq (PropertyOf x)
 
 deriving instance (Show (Property x)) => Show (PropertyOf x)
 
-{- | The properties of a type that follow from its structure: a property of
-one field of one constructor, which is a property of the field's own type.
+{- | The properties of a type that follow from its structure: the properties of
+every field of every constructor, each a property of the field's own type.
 
 A t'Structural' value picks a constructor of @a@, then one of that
 constructor's fields, then one of the properties of the field's type. It is the
@@ -668,9 +675,8 @@ fieldNameAt i (Record _ fields) = case drop i (hcollapse (hmap (\(FieldInfo name
   [] -> Nothing
 fieldNameAt _ _ = Nothing
 
-{- | What 'propertyHolds' and 'describeProperties' do when an instance does not
-write them, chosen by the instance's 'Property' type @p@: nothing for 'Void',
-the structural properties of the fields for @t'Structural' a@.
+{- | A class for those property types that have default 'propertyHolds' and
+'describeProperties' implementations.
 
 Exported only because GHC names it in the error for a custom 'Property' whose
 instance leaves 'propertyHolds' or 'describeProperties' out, see 'Surveyable'.
