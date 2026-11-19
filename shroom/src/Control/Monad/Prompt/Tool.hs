@@ -126,7 +126,7 @@ toolName p =
 -- * Tool handler
 
 {- | The code that runs tool @t@: it receives the parsed input and returns
-@Left@ with a failure message or @Right@ with a result, either of which is
+'Left' with a failure message or 'Right' with a result, either of which is
 sent back to the model. A failure does __not__ count against the limit on tool rounds.
 -}
 newtype ToolHandler t = ToolHandler
@@ -189,7 +189,7 @@ data ToolBinding m = ToolBinding
   { toolBindingDef :: ToolDef
   -- ^ The name, description and schema the model is sent.
   , toolBindingCall :: Value -> m (Either Text Text)
-  -- ^ Parse the model's input and call the tool; a parse failure is a @Left@.
+  -- ^ Parse the model's input and call the tool; a parse failure is a 'Left'.
   }
 
 {- | Offer tool @t@ to a prompt call. It needs @'Tool' t ':>' es@, so a program
@@ -220,7 +220,7 @@ dispatchBindings ::
   (Applicative m) =>
   -- | The tools on offer.
   [ToolBinding m] ->
-  {- | The name of the tool, as the model sent it. An unknown name gives a @Left@ that
+  {- | The name of the tool, as the model sent it. An unknown name gives a 'Left' that
   lists the available tools.
   -}
   Text ->

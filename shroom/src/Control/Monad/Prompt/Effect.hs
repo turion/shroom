@@ -9,7 +9,7 @@ error ('failWith', 'orElse') and parallel requests use "Effectful.Concurrent.Asy
 ('promptPar'). 'runPromptResultEff' runs a program against a t'Backend'.
 
 In ordinary code, request a value with 'Control.Monad.Prompt.Promptable.prompt',
-which follows the type's 'Control.Monad.Prompt.Promptable.Promptable' strategy.
+which follows the type's t'Control.Monad.Prompt.Promptable.Promptable' strategy.
 'promptSingle' is the single request that method defaults to, 'promptTools' offers
 the model tools to call, and 'improve' asks it to correct a value.
 -}
@@ -118,7 +118,7 @@ type instance DispatchOf Prompt = Dynamic
 the whole value: the prompt text is the type's 'description' and the schema its
 'ToSchema'.
 
-Note that this skips the type's 'Control.Monad.Prompt.Promptable.Promptable'
+Note that this skips the type's t'Control.Monad.Prompt.Promptable.Promptable'
 strategy, such as a @deriving via Generically@. It is the default of
 'Control.Monad.Prompt.Promptable.prompt', which honours the strategy and is the
 usual choice; call 'promptSingle' directly inside a strategy itself.
@@ -145,7 +145,7 @@ promptTools ::
   (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) =>
   {- | The tools the model may call. Build each t'ToolBinding' with
   'Control.Monad.Prompt.Tool.toolBinding', which needs the tool's
-  'Control.Monad.Prompt.Tool.Tool' effect in @es@: a program cannot offer a tool it
+  t'Control.Monad.Prompt.Tool.Tool' effect in @es@: a program cannot offer a tool it
   was not given.
   -}
   [ToolBinding (Eff es)] ->
@@ -162,7 +162,7 @@ As for 'promptSingle', the reply is appended to the context as an 'AssistantMess
 The reply goes through the same retry path as any request. An @improved@ value
 that fails to parse or violates a property is re-prompted; so is a @fine@
 verdict when the value passed in violates a property. So 'Nothing' always means
-that the original value satisfies every 'Data.Shroom.Class.Property' of @a@.
+that the original value satisfies every t'Data.Shroom.Class.Property' of @a@.
 Only the properties 'Surveyable' checks in code are enforced, not informal ones
 that only the model can judge.
 
@@ -235,7 +235,7 @@ violatedProperties v =
 
 {- | Run two programs concurrently via "Effectful.Concurrent.Async", returning
 both results. Parallelism is an explicit call here, rather than hiding
-inside an @Applicative@\'s @('<*>')@.
+inside the @('<*>')@ of an 'Applicative'.
 -}
 promptPar :: (Concurrent :> es) => Eff es a -> Eff es b -> Eff es (a, b)
 promptPar = concurrently
@@ -262,8 +262,8 @@ data PromptConfig = PromptConfig
   -}
   , debugLog :: Maybe (Text -> IO ())
   {- ^ Optional logger called before each LLM call and after each response.
-  Receives a human-readable 'Text' summary. Pass @Just putStrLn@, from
-  "Data.Text.IO", for stdout, or @tasty-hunit@\'s @step@ callback in tests.
+  Receives a human-readable 'Text' summary. Pass @'Just' 'Data.Text.IO.putStrLn'@
+  for stdout, or @tasty-hunit@\'s @step@ callback in tests.
   Default: 'Nothing'.
   -}
   }
@@ -602,7 +602,7 @@ their branches concurrently.
 Build the t'Backend' with, for example, the @shroom-baikai@ package's
 <https://hackage.haskell.org/package/shroom-baikai/docs/Control-Monad-Prompt-Baikai.html#v:claudeBackend claudeBackend>
 or 'Control.Monad.Prompt.FileMock.fileMockBackend'. Both build a @t'Backend' m@ for
-any @MonadIO m@, so the result fits here without an annotation.
+any @t'Control.Monad.IO.Class.MonadIO' m@, so the result fits here without an annotation.
 -}
 runPromptResultEff ::
   Backend (Eff '[State [ContextItem], Error Text, Concurrent, IOE]) ->

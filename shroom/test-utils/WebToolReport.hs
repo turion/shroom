@@ -4,10 +4,13 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_HADDOCK hide #-}
 
-{- | A tool-testing report type parametrised by the list of tools under test.
+{- |
+Module      : WebToolReport
+Description : A tool-testing report type parametrised by the list of tools under test.
 
-'WebToolReport tools' holds a list of 'ToolResult' records, one per tool,
+'WebToolReport tools' holds a list of t'ToolResult' records, one per tool,
 recording success (no error) or failure (error message).
 -}
 module WebToolReport (
@@ -68,7 +71,7 @@ data ToolResult = ToolResult
 
 {- | A report of tool tests.
 
-A list of one 'ToolResult' per available tool.
+A list of one t'ToolResult' per available tool.
 -}
 newtype WebToolReport (tools :: [Type]) = WebToolReport
   { results :: [ToolResult]
@@ -129,7 +132,7 @@ expectedNames =
 {- | A tool type that is both 'Toolable' and offered in @es@ — the two
 constraints 'toolBindingsFor' needs to build a 'ToolBinding' for it. A
 separate, named class rather than a bare tuple constraint because
-'hcpure' needs one 'Proxy'-able class to instantiate at each element of
+'hcpure' needs one t'Proxy'-able class to instantiate at each element of
 @tools@.
 -}
 class (Toolable t, Tool t :> es) => ToolableIn es t
@@ -153,7 +156,7 @@ toolBindingsFor =
 -- * Chain
 
 {- | A prompt chain that asks the model to test every available tool and
-return a 'WebToolReport'.  The type description already instructs the model
+return a t'WebToolReport'.  The type description already instructs the model
 to record success\/failure per tool, so no extra context is needed. Every
 tool named in @tools@ must also be in @es@ (via 'Tool'), which is what lets
 'toolBindingsFor' build a binding for each of them.
