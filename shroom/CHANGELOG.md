@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+* **Breaking: the Template Haskell module `Control.Monad.Prompt.TH` is now `Data.Shroom.Class.TH`**
+  (same exports, defined in `shroom-class`); `shroom` re-exports it under the new name and no
+  `Control.Monad.Prompt.TH` remains. Change the import.
+* **Breaking: `Control.Monad.Prompt.Tool.Web` no longer exports `DDGResponse`, `userAgentHeader` and
+  `trySynchronous`**, which were internals of the web tools. The tools themselves are unchanged.
+
 **shroom becomes a layer.** shroom stops owning any LLM transport. A new package,
 `shroom-baikai`, provides the adapters instead; `shroom` itself now depends on no LLM client at
 all. The program vocabulary moved onto `effectful`, and a program's tools are now part of its
@@ -122,7 +128,7 @@ type.
   it never calls the type's own `Promptable.prompt`. Informal properties, which only the model can
   judge, are still #26.
 * **New: `deriving via Generically X instance Promptable X`** prompts a single-constructor record
-  field by field (#21). `Control.Monad.Prompt.Generic` (re-exported by `Control.Monad.Prompt`) gives
+  field by field (#21). `Control.Monad.Prompt.Promptable` (re-exported by `Control.Monad.Prompt`) gives
   `GHC.Generics.Generically a` a `Promptable` instance that, inside one snapshot of the context,
   asks the model for a short `Cue` (a steer every field follows), then prompts each field in order
   through **its own type's** `Promptable.prompt`, told the parent's description, the cue and the
@@ -137,9 +143,9 @@ type.
   `Promptable` instance for every field type. It takes effect through the class method
   `Promptable.prompt`; `Control.Monad.Prompt.Effect.promptSingle` stays flat.
   `Describable`/`Surveyable (Generically a)` are in
-  `Data.Shroom.Class`; `shroom` carries two orphan instances, `ToSchema (Generically a)` (which
-  `openapi3` lacks) and `Promptable (Generically a)` itself, so import `Control.Monad.Prompt` or
-  `Control.Monad.Prompt.Generic` for them to apply.
+  `Data.Shroom.Class`; `shroom` carries `Promptable (Generically a)` itself and the orphan `ToSchema (Generically a)`
+  (which `openapi3` lacks), so import `Control.Monad.Prompt` or
+  `Control.Monad.Prompt.Promptable` for them to apply.
 * **`deriving via Generically X` also builds sum types** (#22): a type with several constructors is
   prompted by first asking the model which constructor to build, through the new
   `ConstructorChoice X` (a string enum of the constructor names, described with the constructors'

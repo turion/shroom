@@ -15,13 +15,17 @@ own machine via Ollama, or any other OpenAI- or Anthropic-compatible host —
 and get back a typed Haskell value, or a `Text` error explaining what went
 wrong.
 
+A model may also want to call a tool, such as a web search or a lookup in your data, to complete an
+answer. Tools run in your program, so a tool is an effect that the model triggers: your program
+decides what it may do, the model decides when, and a program can only offer the tools its type lists.
+
 ```haskell
 {-# LANGUAGE DeriveAnyClass, DeriveGeneric, OverloadedStrings, TemplateHaskell, TypeFamilies #-}
 
 import Control.Monad.Prompt                         -- Promptable, and its method `prompt`
 import Control.Monad.Prompt.Baikai (claudeBackend)  -- from shroom-baikai
 import Control.Monad.Prompt.Effect (context, defaultPromptConfig, runPromptResultEff)
-import Control.Monad.Prompt.TH (deriveDescribable)
+import Data.Shroom.Class.TH (deriveDescribable)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.OpenApi (ToSchema)
 import Data.Shroom.Class (Surveyable (..))
@@ -118,7 +122,7 @@ Describable          — describeType: one sentence (auto-derived from Haddock)
 ```
 
 - **`Describable`** — attach a one-sentence description to a type.
-  Use `$(deriveDescribable ''MyType)` from `Control.Monad.Prompt.TH` to derive
+  Use `$(deriveDescribable ''MyType)` from `Data.Shroom.Class.TH` to derive
   `describeType` automatically from your Haddock comment. The prompt text then also carries the
   docs of **every type `MyType` refers to**, once each (a type's constructors and fields, record
   or positional, are documented too). So **every field type needs a `Describable` instance**, from
@@ -141,7 +145,7 @@ Describable          — describeType: one sentence (auto-derived from Haddock)
 - **`Promptable`** — a single method,
   `prompt :: (Prompt :> es, State [ContextItem] :> es) => Eff es a`,
   the `effectful` program that requests a value of the type from the LLM.
-  The default is `Control.Monad.Prompt.Effect.promptSingle`, one flat request: it sends
+  The default is `Control.Monad.Prompt.Effect.promptSingle`, a single request: it sends
   `RequestPrompt`, which renders the prompt from the type's description, properties and examples,
   annotated with JSON field types, and never consults the type's `Promptable` instance.
   `instance Promptable MyType` with no body is the normal case; override `prompt` to add
@@ -159,9 +163,9 @@ deriving via Generically Musician instance Promptable Musician
 `prompt` then builds a `Musician` field by field (for a sum, it first asks which constructor),
 steered by a short cue and finished by an `improve` pass, each field through its own type's
 `Promptable`. It needs `SOP.Generic` and `SOP.HasDatatypeInfo` for the type (and `generics-sop` in
-your `build-depends`), and takes effect only through the class method `Promptable.prompt`, not the
-flat `Control.Monad.Prompt.Effect.promptSingle`. Derive the leaves flat and `Generically` only the composites.
-The module Haddock of `Control.Monad.Prompt.Generic` is the guide: what each call does, what it
+your `build-depends`), and takes effect only through the class method `Promptable.prompt`, not
+`Control.Monad.Prompt.Effect.promptSingle`. Derive the leaves with single requests and `Generically` only the composites.
+The module Haddock of `Control.Monad.Prompt.Promptable` is the guide: what each call does, what it
 costs, how containers and recursive types behave.
 
 ## Prompt chaining
@@ -214,7 +218,7 @@ leak to sibling branches or to subsequent steps in the chain.
   all subsequent prompts in the chain.
 - `withContext "..." (prompt @T)` sends a *prompt-local* extra message alongside one
   specific request — it doesn't accumulate into the global context. (`promptSingleWith @T "..."`
-  is the same for the flat request that skips `T`'s `Promptable` strategy.)
+  is the same for the single request that skips `T`'s `Promptable` strategy.)
 - For fine-grained control, `addContextItem` and `withContextItem` accept
   `ContextItem` values (`SystemMessage`, `UserMessage`, or `AssistantMessage`)
   directly, letting you build structured multi-turn conversation history.
@@ -319,8 +323,7 @@ types shroom already describes, instead of shikumi's callers writing that prose 
 **Schema / `FromJSON` consistency.** None of the three enforce automatically that the schema sent
 to the LLM and the type used to parse its response agree on the wire format — the schema instructs
 the LLM what to produce, and the codec deserialises what it produces. A custom `FromJSON` that
-expects a different encoding than the schema describes will silently fail to parse. (Arc B on
-[TODO.md](TODO.md) is one definition yielding both, which would close this gap for shroom itself.)
+expects a different encoding than the schema describes will silently fail to parse. (A planned feature, listed in [TODO.md](TODO.md), is one definition yielding both, which would close this gap for shroom itself.)
 
 ### Prompt chaining best practices
 
@@ -344,7 +347,7 @@ See [TODO.md](TODO.md) for planned features.
 The source holds three packages:
 
 - **`shroom-class`** — describes types: `Describable`, `Surveyable` and `deriveDescribable`
-  (`Data.Shroom.Class`, `Control.Monad.Prompt.TH`). It has no program layer and no LLM client.
+  (`Data.Shroom.Class`, `Data.Shroom.Class.TH`). It has no program layer and no LLM client.
 - **`shroom`** — prompts: `Promptable`, the `Prompt` effect and the rest of the program layer. It
   depends on `shroom-class` and re-exports both of its modules, so a package that depends on
   `shroom` needs no new import and no new `build-depends` entry.
@@ -399,7 +402,7 @@ to live where `shroom` is a dependency, typically the package that runs the prom
 
 ### Building from source
 
-None of these is on Hackage yet (see [TODO.md](TODO.md), arc A). For now, point your `cabal.project`
+None of these is on Hackage yet (a release is planned, see [TODO.md](TODO.md)). For now, point your `cabal.project`
 at the source, which holds them as sibling directories:
 
 ```

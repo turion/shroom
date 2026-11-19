@@ -1,32 +1,43 @@
-{- | Re-exports 'Control.Monad.Prompt.Promptable.Promptable', the typeclass
-that attaches a default prompting strategy to a type.
+{- |
+Module      : Control.Monad.Prompt
+Description : Ask a language model for a typed Haskell value.
 
-The program vocabulary itself — 'Control.Monad.Prompt.Effect.promptSingle',
-'Control.Monad.Prompt.Effect.context', 'Control.Monad.Prompt.Effect.promptTools'
-and the rest — lives in "Control.Monad.Prompt.Effect", expressed as
-@effectful@ effects rather than as a bespoke monad transformer. Runner
-configuration ('Control.Monad.Prompt.Effect.PromptConfig') and the
-interpreters ('Control.Monad.Prompt.Effect.runPrompt',
-'Control.Monad.Prompt.Effect.runPromptResultEff') live there too.
+'prompt' asks a language model for a value of any 'Promptable' type. The model is
+told the type's description, properties and examples (see "Data.Shroom.Class"), and
+its answer is parsed and checked against them, with a retry when it fails.
 
-The class method 'Control.Monad.Prompt.Promptable.prompt' comes from this module, the
-runner and 'Control.Monad.Prompt.Effect.context' from "Control.Monad.Prompt.Effect",
-so a program imports both (the names do not clash, since "Control.Monad.Prompt.Effect"
-exports no @prompt@):
+Programs that chain requests, add context or offer tools are written in
+"Control.Monad.Prompt.Effect". The program below asks for one @User@. Its
+description is read from the Haddock comments, so the module that declares @User@
+needs the GHC flag @-haddock@ (see "Data.Shroom.Class.TH").
 
 @
-import Control.Monad.Prompt
-import Control.Monad.Prompt.Effect (context, defaultPromptConfig, runPromptResultEff)
+-- | A user with a name and an email address.
+data User = User
+  { userName :: Text
+  -- ^ The user's full name.
+  , userEmail :: Text
+  -- ^ The user's email address.
+  }
+  deriving stock (Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
-result <- runPromptResultEff backend defaultPromptConfig $ do
-  context "The user's name is Alice."
+\$(deriveDescribable ''User)
+
+instance Surveyable User
+
+instance Promptable User
+
+signUp :: (Prompt :> es, State [ContextItem] :> es) => Eff es User
+signUp = do
+  context \"Alice Smith signed up with alice\@example.org.\"
   prompt \@User
 @
+
+To run the program against a backend, see "Control.Monad.Prompt.Backend" and the
+<https://hackage.haskell.org/package/shroom-baikai shroom-baikai> package.
 -}
-module Control.Monad.Prompt (module Control.Monad.Prompt.Promptable, module Control.Monad.Prompt.Generic) where
+module Control.Monad.Prompt (module Control.Monad.Prompt.Promptable) where
 
 -- shroom
-
--- Imported for its instances, which make @deriving via Generically X instance Promptable X@ work.
-import Control.Monad.Prompt.Generic
 import Control.Monad.Prompt.Promptable

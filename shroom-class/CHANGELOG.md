@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+* **Breaking: the Template Haskell module moved from `Control.Monad.Prompt.TH` to
+  `Data.Shroom.Class.TH`** (same exports: `deriveDescribable`, `deriveDescribableExp`), under the
+  module prefix of the package that ships it. No `Control.Monad.Prompt.TH` remains; change the
+  import. `shroom` re-exports the new name.
+
+* **Breaking: `Data.Shroom.Class` has an explicit export list.** It used to export every
+  top-level name; the helpers `universeConstructors`, `universeFields`, `holdsConstructor`,
+  `holdsField`, `describeConstructor`, `describeField` and `describeOne`, which only implement
+  `Structural`, are no longer exported, and neither are the constructors of `Structural` and `PropertyOf` (the types stay).
+  Everything an instance needs is still exported.
+
 * **New: `description` also describes every type reachable from the requested one, once each.**
   After the examples it appends a section ("The types above refer to the following types:") with,
   for each type reachable through the new `Describable` method `referencedTypes`, a header line

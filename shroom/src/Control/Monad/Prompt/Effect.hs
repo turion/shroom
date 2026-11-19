@@ -1,77 +1,51 @@
-{- | shroom's program vocabulary expressed as 'effectful' effects: context,
-scoping, failure, fallback, parallelism and typed prompting, each an
-ordinary effect rather than a constructor in a bespoke DSL.
+{- |
+Module      : Control.Monad.Prompt.Effect
+Description : Programs that prompt a language model, built from @effectful@ effects.
 
-== Context, scoping, failure, fallback, parallelism
+A shroom program is an @'Eff' es@ computation with 'Prompt' in @es@, where
+'Eff' is the monad of the <https://hackage.haskell.org/package/effectful effectful>
+package. Context is plain state ('addContextItem', 'withContext'), failure is an
+error ('failWith', 'orElse') and parallel requests use "Effectful.Concurrent.Async"
+('promptPar'). 'runPromptResultEff' runs a program against a t'Backend'.
 
-* Context — held in "Effectful.State.Static.Local" ('addContextItem' \/
-  'context')
-* Scoping — @local@-style, over that same state ('withContextItem' \/
-  'withContext')
-* The typed request itself — the 'Prompt' dynamic effect ('promptSingle' \/
-  'promptSingleWith' \/ 'promptTools')
-* Failure — "Effectful.Error.Static" with 'Text' ('failWith')
-* Fallback — 'catchError' plus context restoration ('orElse')
-* Parallelism — "Effectful.Concurrent.Async", explicit rather than hiding in
-  an @Applicative@ instance ('promptPar' \/ 'promptsParallel')
-
-== Which request to reach for
-
-In ordinary code call the class method 'Control.Monad.Prompt.Promptable.prompt'
-(from "Control.Monad.Prompt"), which honours a type's 'Control.Monad.Prompt.Promptable.Promptable'
-strategy. 'promptSingle' is the flat request that method defaults to: one
-request, never consulting 'Control.Monad.Prompt.Promptable.Promptable'. So
-@'withContext' t ('Control.Monad.Prompt.Promptable.prompt' \@a)@ is the
-strategy-aware equivalent of @'promptSingleWith' t@.
-
-Tool use (todo 10 of the shroom arc) is 'promptTools' plus
-"Control.Monad.Prompt.Tool"\'s 'Control.Monad.Prompt.Tool.Tool' effect and
-'Control.Monad.Prompt.Tool.toolBinding': a program names the tools it may
-call in its own @es@, and 'promptTools' assembles the ones it is given into
-a @['Control.Monad.Prompt.Schema.ToolDef']@ plus a dispatcher, which
-'runPrompt'\'s own tool loop (below) drives one 'Control.Monad.Prompt.Backend.runBackendChat'
-call at a time.
-
-'runPrompt' interprets 'Prompt' against a 'Backend' — todo 11's narrow
-adapter seam — which can tell a refusal ('BackendRefusal', terminal — no
-re-prompt fixes a model declining outright) apart from a transport failure
-('BackendTransportError', exactly what a retry is for). Because a 'Backend'
-makes one raw call and nothing more, the propose\/dispatch\/observe tool
-cycle runs here, one call at a time, rather than inside each backend; see
-'toolLoop' (below): a round costs one step only when at least one tool call
-succeeds, failed calls are free, and once the budget is spent the model gets
-one final tool-free call to answer with what it already has.
+In ordinary code, request a value with 'Control.Monad.Prompt.Promptable.prompt',
+which follows the type's t'Control.Monad.Prompt.Promptable.Promptable' strategy.
+'promptSingle' is the single request that method defaults to, 'promptTools' offers
+the model tools to call, and 'improve' asks it to correct a value.
 -}
 module Control.Monad.Prompt.Effect (
-  -- * The 'Prompt' effect
+  -- * Requesting values
   Prompt,
   promptSingle,
   promptSingleWith,
   promptTools,
   improve,
-  promptPar,
-  promptsParallel,
-  runPrompt,
-  runPromptResultEff,
 
-  -- * Runner configuration
+  -- * Running a program
+  runPromptResultEff,
+  runPrompt,
   PromptConfig (..),
   defaultPromptConfig,
 
-  -- * Context ("Effectful.State.Static.Local")
+  -- * Context
   addContextItem,
   context,
   withContextItem,
   withContext,
 
-  -- * Failure and fallback ("Effectful.Error.Static")
+  -- * Failure and fallback
   failWith,
   orElse,
+
+  -- * Parallel requests
+  promptPar,
+  promptsParallel,
 ) where
 
 -- base
 import Control.Monad.IO.Class (liftIO)
 import Data.Functor ((<&>))
+import Data.Kind (Type)
 import Data.Proxy (Proxy (..))
 
 -- text
@@ -88,7 +62,7 @@ import Data.OpenApi (ToSchema)
 import Data.Universe.Class (universe)
 
 -- effectful
-import Effectful (Dispatch (Dynamic), DispatchOf, Eff, Effect, IOE, runEff, (:>))
+import Effectful (Dispatch (Dynamic), DispatchOf, Eff, IOE, runEff, (:>))
 import Effectful.Concurrent.Async (Concurrent, concurrently, mapConcurrently, runConcurrent)
 import Effectful.Dispatch.Dynamic (interpret, localSeqUnlift, send)
 import Effectful.Error.Static (Error, catchError, runErrorNoCallStack, throwError)
@@ -109,10 +83,28 @@ import Data.Shroom.Class (Surveyable, describeProperties, description, propertyH
 
 -- * The Prompt effect
 
-{- | Dynamic effect: request a typed value from the model, using whatever
-context is currently held in "Effectful.State.Static.Local".
+{- | The effect signature of a shroom program: the operations it can perform
+against a language model. Put @Prompt ':>' es@ in a program's constraints to let
+it prompt. An interpreter such as 'runPrompt' handles the operations, with the
+conversation held in the @'State' ['ContextItem']@ effect.
+
+The signature offers three operations:
+
+* Request a value of a type, sent by 'promptSingle' (and so by
+  'Control.Monad.Prompt.Promptable.prompt', through its default).
+* Request a value while the model may call tools, sent by 'promptTools'.
+* Improve a value, sent by 'improve'.
+
+For example, a program that requests a @User@ and lets the model correct it:
+
+@
+refinedUser :: ('Prompt' ':>' es) => 'Eff' es User
+refinedUser = do
+  user <- 'promptSingle'
+  fromMaybe user \<$> 'improve' user
+@
 -}
-data Prompt :: Effect where
+data Prompt (m :: Type -> Type) (result :: Type) where
   RequestPrompt :: (Surveyable a, ToSchema a, FromJSON a) => Prompt m a
   RequestPromptTools ::
     (Surveyable a, ToSchema a, FromJSON a) =>
@@ -122,40 +114,40 @@ data Prompt :: Effect where
 
 type instance DispatchOf Prompt = Dynamic
 
-{- | Request a value of type @a@ from the LLM in one flat request: the prompt
-text is the type's own 'description', and the schema is the type's own
-'ToSchema'. It never consults a 'Control.Monad.Prompt.Promptable.Promptable'
-instance, so a type's prompt strategy (a @deriving via Generically@, a
-hand-written override) is silently skipped. It is the default of the class
-method 'Control.Monad.Prompt.Promptable.prompt', which is what to reach for in
-ordinary code: for a type with the default strategy the two coincide, and for
-any other 'Control.Monad.Prompt.Promptable.prompt' honours the strategy while
-this does not. Reach for 'promptSingle' only when a flat request is the point
-(inside a strategy itself, or to compare against it).
+{- | Request a value of type @a@ in a single request, one call to the backend for
+the whole value: the prompt text is the type's 'description' and the schema its
+'ToSchema'. The reply joins the context as an 'AssistantMessage'.
+
+Note that this skips the type's t'Control.Monad.Prompt.Promptable.Promptable'
+strategy, such as a @deriving via Generically@. It is the default of
+'Control.Monad.Prompt.Promptable.prompt', which honours the strategy and is the
+usual choice; call 'promptSingle' directly inside a strategy itself.
 -}
 promptSingle :: forall a es. (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) => Eff es a
 promptSingle = send RequestPrompt
 
-{- | Like 'promptSingle', with an extra piece of context scoped to this request
-only. Equally flat: it never consults 'Control.Monad.Prompt.Promptable.Promptable'.
-The strategy-aware equivalent is @'withContext' t ('Control.Monad.Prompt.Promptable.prompt' \@a)@.
+{- | Like 'promptSingle', with an extra piece of context scoped to this request.
+The strategy-aware counterpart is 'withContext' around 'Control.Monad.Prompt.Promptable.prompt'.
 -}
 promptSingleWith ::
   forall a es.
   (Prompt :> es, State [ContextItem] :> es, Surveyable a, ToSchema a, FromJSON a) =>
+  -- | The context, a piece of user-turn text that this request sees and no other.
   Text ->
   Eff es a
 promptSingleWith txt = withContext txt (promptSingle @a)
 
-{- | Like 'promptSingle', but the model may call any of the given tools. Build each
-'ToolBinding' with 'Control.Monad.Prompt.Tool.toolBinding' — that is only
-possible when the tool's 'Control.Monad.Prompt.Tool.Tool' effect is in
-@es@, which is the compile-time denial: a program cannot offer a tool it
-was not itself given.
+{- | Like 'promptSingle', but the model may call tools. 'maxToolSteps' limits the
+number of tool rounds. See "Control.Monad.Prompt.Tool" for how to define and run tools.
 -}
 promptTools ::
   forall a es.
   (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) =>
+  {- | The tools the model may call. Build each t'ToolBinding' with
+  'Control.Monad.Prompt.Tool.toolBinding', which needs the tool's
+  t'Control.Monad.Prompt.Tool.Tool' effect in @es@: a program cannot offer a tool it
+  was not given.
+  -}
   [ToolBinding (Eff es)] ->
   Eff es a
 promptTools bindings = send (RequestPromptTools bindings)
@@ -165,32 +157,23 @@ promptTools bindings = send (RequestPromptTools bindings)
 content with it, @'Just' v'@ means the model returned a corrected whole value
 @v'@.
 
-The request scopes one 'UserMessage' onto the current context, showing the
-value as JSON and asking whether it is a good value of the type and satisfies
-every listed property, and the reply is one verdict object,
-@{"verdict": "fine" | "improved", "value": <a>}@, with @value@ always present:
-the corrected value for @improved@, the given value unchanged for @fine@ (where
-it is ignored; a @fine@ reply that omits it is still accepted). The type's
-description (see 'description') goes with it, as for
-'promptSingle'. The scoped message is not kept; the raw reply is appended to the
-context as an 'AssistantMessage', as for 'promptSingle'.
+As for 'promptSingle', the reply is appended to the context as an 'AssistantMessage'.
 
-The reply goes through the same retry path as any request: an @improved@ value
-that fails to parse or violates a property is re-prompted. A @fine@ verdict
-is accepted only if the value passed in satisfies every 'Data.Shroom.Class.Property'
-of @a@; otherwise it is retried in just the same way, the correction message naming
-the violated properties. So 'Nothing' always means \"the original value is valid
-and the model is content with it\".
+The reply goes through the same retry path as any request. An @improved@ value
+that fails to parse or violates a property is re-prompted; so is a @fine@
+verdict when the value passed in violates a property. So 'Nothing' always means
+that the original value satisfies every t'Data.Shroom.Class.Property' of @a@.
+Only the properties 'Surveyable' checks in code are enforced, not informal ones
+that only the model can judge.
 
-'improve' is flat by construction: it never calls the type's own
+Like 'promptSingle', 'improve' is a single request: it does not call the type's own
 'Control.Monad.Prompt.Promptable.prompt', so a prompt strategy may call it
-without recursing into itself. Only the properties 'Surveyable' can check in
-code are enforced; informal ones, which only the model can judge, are
-tracked as #26.
+without recursing into itself.
 -}
 improve ::
   forall a es.
   (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) =>
+  -- | The value to improve. The model is shown it for this request only.
   a ->
   Eff es (Maybe a)
 improve = send . RequestImprove
@@ -252,7 +235,7 @@ violatedProperties v =
 
 {- | Run two programs concurrently via "Effectful.Concurrent.Async", returning
 both results. Parallelism is an explicit call here, rather than hiding
-inside an @Applicative@\'s @('<*>')@.
+inside the @('<*>')@ of an 'Applicative'.
 -}
 promptPar :: (Concurrent :> es) => Eff es a -> Eff es b -> Eff es (a, b)
 promptPar = concurrently
@@ -266,23 +249,26 @@ promptsParallel = mapConcurrently id
 -- | Model-independent configuration for 'runPrompt' \/ 'runPromptResultEff'.
 data PromptConfig = PromptConfig
   { maxRetries :: Int
-  {- ^ Maximum number of re-prompts when a parsed value fails property
-  validation, on a 'Control.Monad.Prompt.Backend.BackendTruncated' reply, or
-  on a 'Control.Monad.Prompt.Backend.BackendTransportError'.
-  Default: 3.
+  {- ^ Maximum number of re-prompts per request. A reply that fails to parse,
+  a parsed value that violates a property, a 'BackendTruncated' reply and a
+  'BackendTransportError' each spend one; a 'BackendRefusal' is terminal and
+  spends none. Default: 3.
   -}
   , maxToolSteps :: Maybe Int
-  {- ^ Maximum number of tool-call iterations per 'promptTools' call before
-  giving up. 'Nothing' means no limit. Default: 10.
+  {- ^ Maximum number of tool rounds per 'promptTools' call; 'Nothing' means no
+  limit. A round costs one step only when at least one of its calls succeeds.
+  Once the steps are spent, the model gets one last call without tools to answer
+  with what it already has. Default: 10.
   -}
   , debugLog :: Maybe (Text -> IO ())
   {- ^ Optional logger called before each LLM call and after each response.
-  Receives a human-readable 'Text' summary.  Pass @Just TIO.putStrLn@ for
-  stdout, or @tasty-hunit@\'s @step@ callback in tests.  Default: 'Nothing'.
+  Receives a human-readable 'Text' summary. Pass @'Just' 'Data.Text.IO.putStrLn'@
+  for stdout, or @tasty-hunit@\'s @step@ callback in tests.
+  Default: 'Nothing'.
   -}
   }
 
--- | Default 'PromptConfig': up to 3 retries, up to 10 tool steps, no debug logging.
+-- | Default t'PromptConfig': up to 3 retries, up to 10 tool steps, no debug logging.
 defaultPromptConfig :: PromptConfig
 defaultPromptConfig = PromptConfig {maxRetries = 3, maxToolSteps = Just 10, debugLog = Nothing}
 
@@ -296,8 +282,9 @@ addContextItem item = modify (\ctx -> ctx <> [item] :: [ContextItem])
 context :: (State [ContextItem] :> es) => Text -> Eff es ()
 context = addContextItem . UserMessage
 
-{- | Scope a 'ContextItem' to a sub-computation: visible only within @act@, and
-not carried past it — including anything @act@ itself added.
+{- | Scope a 'ContextItem' to a computation: visible only within the given
+computation, and not carried past it, including anything that computation itself
+added.
 -}
 withContextItem :: (State [ContextItem] :> es) => ContextItem -> Eff es a -> Eff es a
 withContextItem item act = do
@@ -317,34 +304,38 @@ withContext = withContextItem . UserMessage
 failWith :: (Error Text :> es) => Text -> Eff es a
 failWith = throwError
 
-{- | Try the left computation; on failure, restore the context to how it stood
-before the attempt, discarding anything the failing branch added, and run
-the right computation from there.
+{- | Try one computation and, on failure, run another. The context is restored to
+how it stood before the attempt, discarding anything the failing computation added,
+and the other computation runs from there.
 -}
-orElse :: (Error Text :> es, State [ContextItem] :> es) => Eff es a -> Eff es a -> Eff es a
+orElse ::
+  (Error Text :> es, State [ContextItem] :> es) =>
+  -- | The computation to try first.
+  Eff es a ->
+  -- | The computation to run if the first fails.
+  Eff es a ->
+  Eff es a
 orElse l r = do
   (saved :: [ContextItem]) <- get
   l `catchError` \_ (_ :: Text) -> put saved >> r
 
 -- * Interpreter
 
-{- | Interpret 'Prompt' against a 'Backend', threading context through
+{- | Interpret 'Prompt' against a t'Backend', threading context through
 "Effectful.State.Static.Local" and surfacing failure via
-"Effectful.Error.Static". On a parse failure, a property violation or a
-'BackendTransportError' the request is retried up to 'maxRetries' times,
-each time appending the offending response (as an 'AssistantMessage') and a
-'UserMessage' naming what went wrong. A 'BackendTruncated' reply is retried
-the same way, but appends only a 'UserMessage' saying the reply was cut off
-at the length limit — the half-finished text is not replayed. A 'BackendRefusal' is terminal and
-consumes no retry budget — the model declining outright is not something a
-re-prompt fixes. 'debugLog' emits the same before\/after-call lines with the
-same OK \/ PARSE FAIL \/ VALIDATION FAIL \/ ERROR outcomes as before.
+"Effectful.Error.Static".
 
-'RequestPrompt' passes no tools. 'RequestPromptTools' turns its
-@['ToolBinding']@ into the @['ToolDef']@ \/ dispatcher pair 'toolLoop'
-drives — via 'localSeqUnlift', since a binding's call runs in the caller's
-local effect stack. 'RequestImprove' (see 'improve') passes no tools either,
-and goes through the same retry path with a verdict schema of its own.
+A request is retried up to 'maxRetries' times. After a parse failure or a
+property violation, the retry appends the offending response (as an
+'AssistantMessage') and a 'UserMessage' naming what went wrong. After a
+'BackendTruncated' reply it appends only a 'UserMessage' saying the reply was
+cut off, and a 'BackendTransportError' is retried with the context unchanged.
+A 'BackendRefusal' is terminal and consumes no retry.
+
+The t'Backend' makes one raw call at a time, so this function runs the tool
+cycle of 'promptTools' itself: it dispatches the calls the model requests,
+appends their results to the context and calls the t'Backend' again, within
+'maxToolSteps'. 'debugLog' reports each call and its outcome.
 -}
 runPrompt ::
   forall es a.
@@ -354,7 +345,7 @@ runPrompt ::
   Eff (Prompt : es) a ->
   Eff es a
 runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) b) -> case request of
-  -- No tools for 'RequestPrompt' (unchanged from before todo 10).
+  -- No tools for 'RequestPrompt'.
   RequestPrompt -> let (toolDefs, dispatch, maxSteps) = noTools in runRequest toolDefs dispatch maxSteps
   -- 'RequestPromptTools': build the dispatcher out of the bindings by
   -- unlifting each binding's call — which runs in the request's own local
@@ -366,13 +357,13 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
       (maxToolSteps promptCfg)
   RequestImprove original -> runImprove original
   where
-    -- The tool setup of a flat request: no tool definitions, a dispatcher
+    -- The tool setup of a single request: no tool definitions, a dispatcher
     -- that refuses every call, and zero tool steps. Shared by 'RequestPrompt'
     -- and 'RequestImprove'.
     noTools :: ([ToolDef], ToolDispatcher (Eff es), Maybe Int)
     noTools = ([], \_ _ -> pure (Left "no tools"), Just 0)
 
-    -- 'RequestImprove': a flat request, no tools, whose reply is a 'Verdict'.
+    -- 'RequestImprove': a single request, no tools, whose reply is a 'Verdict'.
     -- The scoped 'UserMessage' showing the value goes onto the context the
     -- backend sees but not the one left behind; only the raw reply is kept.
     -- A @fine@ verdict is judged by the properties of the value passed in,
@@ -544,8 +535,7 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
 
     -- \| Drive one prompt request's worth of tool calling against 'backend',
     --    one 'runBackendChat' call at a time, until it answers or the step
-    --    budget is spent. Typed concretely over @['ContextItem']@\/'BackendReply'
-    --    rather than a backend-native @ctx@\/@resp@ pair.
+    --    budget is spent.
     --
     --    Budget rules:
     --    a round costs one step only when at least one call succeeds, failed
@@ -605,22 +595,20 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
                   ctx' = ctx <> [ToolCallMessage calls, ToolResultMessage results]
               toolLoop toolDefs dispatch newStepsLeft ctx' typeDesc schema
 
-{- | Run a 'Prompt' program end to end against a 'Backend': interpret
-'Prompt', thread context via "Effectful.State.Static.Local" starting from an
-empty history, catch failure into an 'Either', and provide
-"Effectful.Concurrent.Async" so 'promptPar' \/ 'promptsParallel' branches
-run concurrently.
-
-The 'Backend' is a value, not a typeclass instance — build one with e.g.
-@shroom-baikai@\'s @Control.Monad.Prompt.Baikai.claudeBackend@ or
-'Control.Monad.Prompt.FileMock.fileMockBackend', applied to your config.
-Those builders are themselves polymorphic in @m@ (given @'MonadIO' m@), so
-passing one straight to this function instantiates it at the effect stack
-below without any extra annotation.
+{- | Run a 'Prompt' program against a t'Backend', starting from an empty context
+and returning a failure as 'Left'. 'promptPar' and 'promptsParallel' run
+their branches concurrently.
 -}
 runPromptResultEff ::
+  {- | Where the requests go. Build it with, for example, the @shroom-baikai@ package's
+  <https://hackage.haskell.org/package/shroom-baikai/docs/Control-Monad-Prompt-Baikai.html#v:claudeBackend claudeBackend>
+  or 'Control.Monad.Prompt.FileMock.fileMockBackend'. Both build a @t'Backend' m@ for
+  any @t'Control.Monad.IO.Class.MonadIO' m@, so the result fits here without an annotation.
+  -}
   Backend (Eff '[State [ContextItem], Error Text, Concurrent, IOE]) ->
+  -- | The retry and tool limits, and the debug log.
   PromptConfig ->
+  -- | The program to run.
   Eff '[Prompt, State [ContextItem], Error Text, Concurrent, IOE] a ->
   IO (Either Text a)
 runPromptResultEff backend promptCfg program =

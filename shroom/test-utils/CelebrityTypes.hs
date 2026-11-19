@@ -2,8 +2,11 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_HADDOCK hide #-}
 
-{- | Types and prompt chain for a celebrity trivia scenario.
+{- |
+Module      : CelebrityTypes
+Description : Types and prompt chain for a celebrity trivia scenario.
 
 The chain has two steps:
 
@@ -44,9 +47,9 @@ import Control.Monad.Prompt
 import Control.Monad.Prompt.Backend (ContextItem)
 import Control.Monad.Prompt.Effect (Prompt, context)
 import Control.Monad.Prompt.Effect qualified as Effect
-import Control.Monad.Prompt.TH (deriveDescribable)
 import Control.Monad.Prompt.Tool (ToolBinding)
 import Data.Shroom.Class
+import Data.Shroom.Class.TH (deriveDescribable)
 
 -- * Types
 
@@ -58,7 +61,7 @@ newtype CelebrityList = CelebrityList
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema)
 
--- | A property of a 'CelebrityList' that should hold.
+-- | A property of a t'CelebrityList' that should hold.
 data CelebrityListProperty = CelebrityListHasThree
   deriving (Bounded, Enum, Universe, Eq, Ord, Show)
 
@@ -72,7 +75,7 @@ data CelebrityFact = CelebrityFact
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema)
 
--- | A property of a 'CelebrityFact' that should hold.
+-- | A property of a t'CelebrityFact' that should hold.
 data CelebrityFactProperty
   = CelebrityFactNameNotEmpty
   | CelebrityFactTriviaNotEmpty
@@ -106,8 +109,9 @@ instance Promptable CelebrityFact
 2. Pick one (deterministically), look up their Wikipedia page using
    @web_search@ and @web_fetch@, and return one surprising trivia fact.
 
-The tools ('duckDuckGoSearchHandler', 'wikipediaSearchHandler',
-'webFetchHandler') are offered only at the second step, via the
+The tools ('Control.Monad.Prompt.Tool.Web.duckDuckGoSearchHandler',
+'Control.Monad.Prompt.Tool.Web.wikipediaSearchHandler',
+'Control.Monad.Prompt.Tool.Web.webFetchHandler') are offered only at the second step, via the
 @bindings@ this takes — build each with
 'Control.Monad.Prompt.Tool.toolBinding' and interpret with
 'Control.Monad.Prompt.Tool.runTool'.

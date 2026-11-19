@@ -75,13 +75,12 @@ import Effectful.State.Static.Local (State, get)
 import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..), ContextItem (..), ToolCall (..), ToolDef (..), renderContextItems, schemaWithDefs)
 import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Effect qualified as Eff
-import Control.Monad.Prompt.Generic ()
 import Control.Monad.Prompt.Promptable (Promptable)
 import Control.Monad.Prompt.Promptable qualified as Promptable
-import Control.Monad.Prompt.TH (deriveDescribable)
 import Control.Monad.Prompt.Tool (Tool, ToolHandler (..), Toolable, runTool, toolBinding, toolDefsRaw, toolName)
 import Control.Monad.Prompt.Tool.Web
 import Data.Shroom.Class (Describable (..), Surveyable (..), description, reach)
+import Data.Shroom.Class.TH (deriveDescribable)
 
 -- test
 import TestUtils
@@ -113,7 +112,7 @@ barrierBackend entered expected =
 
 {- | A mock 'Backend' whose first @n@ calls come back 'BackendTruncated' (with
 a half-finished JSON document as the partial text) and whose later calls
-answer with @answer@, recording each call's context as flat text.
+answer with @answer@, recording each call's context as one rendered text.
 -}
 truncatedBackend :: (MonadIO m) => Int -> Text -> IORef Int -> IORef [Text] -> Backend m
 truncatedBackend n answer callRef seenCtxs =
@@ -195,9 +194,8 @@ callerProgram = subProgram
 {- | A record two named-schema hops away from a would-be top level — the
 shape 'Quexnorbs' below needs, and the shape the existing suite never had:
 a nested array of records referencing another record. Field names are
-deliberately made up (matching todo 20's own diagnostic vocabulary) so a
-passing test can only mean the schema carried them, never that a model
-guessed something plausible.
+deliberately made up so a passing test can only mean the schema carried them,
+never that a model guessed something plausible.
 -}
 data Zblorf = Zblorf
   { zblorfSnorkfirst :: Text
@@ -515,7 +513,7 @@ main =
           "structured-output schema (Control.Monad.Prompt.Schema.schemaWithDefs, via toolDefsRaw)"
           [ testCase "a nested array-of-records type carries no unresolved $ref/$defs, and keeps its field names" $ do
               let dummyHandler = ToolHandler $ \_ -> pure (Right "")
-              -- The bug this guards against (todo 20): a live Ollama resolves one
+              -- The bug this guards against: a live Ollama resolves one
               -- '$ref' hop correctly but silently stops enforcing the schema at a
               -- second one — exactly what a nested array-of-records type produces
               -- unless the schema handed to the wire is fully self-contained.

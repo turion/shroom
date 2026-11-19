@@ -2,16 +2,20 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_HADDOCK hide #-}
 
-{- | The two examples from the issues that asked for @deriving via Generically@
-(a record, #21, and a sum, #22), written the way a user would write them:
-shared by the integration cases of @shroom-baikai@, so a failure of the
-strategy against a real provider has a minimal reproduction.
+{- |
+Module      : GenericTypes
+Description : The two examples of @deriving via Generically@, a record and a sum.
 
-The composite types, 'Musician' and 'Fruit', derive 'Promptable' via
-'Generically', so a prompt of one builds its parts one request at a time and
-makes them cohere. Their leaves ('Name', 'City', 'Apple', 'Banana') are flat:
-a single request each, as the guide in "Control.Monad.Prompt.Generic" advises.
+Both are written the way a user would write them, and shared by the
+integration cases of @shroom-baikai@, so a failure of the strategy against a
+real provider has a minimal reproduction.
+
+The composite types, t'Musician' and t'Fruit', derive 'Promptable' via
+the t'Generically' wrapper, so a prompt of one builds its parts one request at a time and
+makes them cohere. Their leaves, t'Name', t'City', t'Apple' and t'Banana', each make a single request,
+as the guide in "Control.Monad.Prompt.Promptable" advises.
 -}
 module GenericTypes (
   Musician (..),
@@ -44,10 +48,9 @@ import Generics.SOP qualified as SOP
 import Data.Universe.Class (Universe, universe)
 
 -- shroom
-import Control.Monad.Prompt.Generic ()
 import Control.Monad.Prompt.Promptable (Promptable)
-import Control.Monad.Prompt.TH (deriveDescribable)
 import Data.Shroom.Class
+import Data.Shroom.Class.TH (deriveDescribable)
 
 -- | A musician, with a name and the city they are from.
 data Musician = Musician
@@ -133,7 +136,7 @@ instance Surveyable Musician
 
 instance Surveyable Fruit
 
--- Leaves are flat: a single request each.
+-- Leaves make a single request each.
 instance Promptable Name
 
 instance Promptable City
@@ -142,7 +145,7 @@ instance Promptable Apple
 
 instance Promptable Banana
 
--- Composites are prompted part by part, see "Control.Monad.Prompt.Generic".
+-- Composites are prompted part by part, see "Control.Monad.Prompt.Promptable".
 deriving via Generically Musician instance Promptable Musician
 
 deriving via Generically Fruit instance Promptable Fruit

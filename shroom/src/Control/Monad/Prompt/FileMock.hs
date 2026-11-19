@@ -1,28 +1,21 @@
-{- | A file-based mock 'Backend' for development and prompt inspection.
+{- |
+Module      : Control.Monad.Prompt.FileMock
+Description : A backend that replies from files, to test a prompt program without a model.
 
-Instead of calling a real LLM, 'FileMockConfig' reads pre-written JSON
-responses from numbered files on disk (@response-001.json@, etc.) and
-prints the full prompt text to stdout (or any 'IO' action you provide)
-before each call.
-
-This lets you:
-
-* See exactly what prompt text is sent to the LLM for each step
-* Edit individual response files to test different scenarios
-* Iterate on prompt quality without incurring API costs
-
-Usage:
+To test a shroom program, or to write a golden test for it, you want no network,
+no API key and the same replies on every run. 'fileMockBackend' is a t'Backend'
+that gives you that. It answers each request with the next numbered JSON file
+(@response-001.json@, @response-002.json@, …) instead of calling a model. It also
+prints the prompt of each request, so you see exactly what is sent for each step,
+and you can edit the replies to try other scenarios.
 
 @
 cfg <- defaultFileMockConfig
-result <- runPromptResultEff (fileMockBackend cfg) defaultPromptConfig myChain
+result <- runPromptResultEff (fileMockBackend cfg) defaultPromptConfig (prompt \@User)
 @
 
-Response files are read from the package's @dev\/mock-responses\/@ directory by
-default, resolved against the package root rather than the process's current
-working directory — so @cabal run shroom-dev@ finds them regardless of where
-it is invoked from. Create @response-001.json@, @response-002.json@, etc. with
-the JSON that a real LLM would return for each step.
+Here @User@ is any t'Control.Monad.Prompt.Promptable.Promptable' type, for example the one in "Control.Monad.Prompt".
+Each file holds the JSON that a model would answer with for that step.
 -}
 module Control.Monad.Prompt.FileMock (FileMockConfig (..), defaultFileMockConfig, fileMockBackend) where
 
@@ -45,22 +38,23 @@ import Paths_shroom (getDataDir)
 -- | Configuration for the file-based mock backend.
 data FileMockConfig = FileMockConfig
   { responseDir :: FilePath
-  {- ^ Directory containing numbered response files (@response-001.json@, …).
-    Default: the package's @dev\/mock-responses\/@, resolved via the Cabal-generated
-    'getDataDir' so it works regardless of the process's current working directory.
+  {- ^ Directory holding the numbered response files. The default is
+    @dev\/mock-responses\/@ in the data directory of @shroom@ (@getDataDir@ of the
+    Cabal-generated @Paths_shroom@), so it does not depend on the current working
+    directory. Set it to read your own files.
   -}
   , promptLogFn :: Text -> IO ()
-  {- ^ Called with the full prompt text (context \<\> type description) before
-    each LLM call.  Default: 'TIO.putStrLn'.
+  {- ^ Called before each reply with the full prompt text (context followed by the
+    type description). The default prints it to stdout.
   -}
   , stepCounter :: IORef Int
-  {- ^ Internal counter tracking which response file to read next (0-indexed
-    internally, 1-indexed in filenames).  Created by 'defaultFileMockConfig'.
+  {- ^ Counts the replies given so far, so that the next request reads the next file.
+    'defaultFileMockConfig' creates it at zero.
   -}
   }
 
-{- | Create a 'FileMockConfig' with default settings:
-reads from the package's @dev\/mock-responses\/@ directory, logs prompts to stdout.
+{- | A t'FileMockConfig' that reads the files in @dev\/mock-responses\/@ of the @shroom@ data
+directory and prints prompts to stdout.
 -}
 defaultFileMockConfig :: IO FileMockConfig
 defaultFileMockConfig = do
@@ -73,10 +67,9 @@ defaultFileMockConfig = do
       , stepCounter = counter
       }
 
-{- | 'Backend' for the file-based mock. The mock has no tool concept, so the
-offered tools are ignored and every reply is a 'BackendAnswer'. The mock
-never distinguishes error kinds either, so a missing response file always
-lands as 'BackendTransportError'.
+{- | The t'Backend' for a t'FileMockConfig'. It ignores the offered tools, so every reply
+is a 'BackendAnswer', and it answers a missing response file with
+'BackendTransportError'.
 -}
 fileMockBackend :: (MonadIO m) => FileMockConfig -> Backend m
 fileMockBackend cfg =

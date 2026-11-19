@@ -1,9 +1,17 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-{- | Template Haskell utilities for deriving 'Describable' instances from Haddock
-documentation comments.
+{- |
+Module      : Data.Shroom.Class.TH
+Description : Derive Describable instances from Haddock comments with Template Haskell.
+
+'deriveDescribable' generates a complete 'Describable' instance for a type from its
+Haddock comments and its fields. 'deriveDescribableExp' generates the
+'describeType' body alone, for a hand-written instance.
+
+The type's own module must be compiled with the @-haddock@ GHC flag, because the
+splices read the Haddock comments from the compiler. See 'deriveDescribable'.
 -}
-module Control.Monad.Prompt.TH (deriveDescribable, deriveDescribableExp) where
+module Data.Shroom.Class.TH (deriveDescribable, deriveDescribableExp) where
 
 -- base
 import Data.Kind qualified as Kind
@@ -19,10 +27,9 @@ import Data.Text (pack)
 -- shroom
 import Data.Shroom.Class (Describable (describeType, referencedTypes), reach)
 
-{- | Generate a complete 'Describable' instance for a type, deriving
-'describeType' from its Haddock documentation comment and
-'referencedTypes' from its fields.  Use this when
-you don't need to customise the description:
+{- | Generate a complete 'Describable' instance for a type: 'describeType' from
+the type's Haddock comment, 'referencedTypes' from its fields. Use it when the
+description needs no customising:
 
 @
 -- | A user with a name and an email address.
@@ -35,11 +42,11 @@ This generates:
 
 @
 instance Describable User where
-  describeType = \_ -> pack "A user with a name and an email address.\\n..."
+  describeType = \\_ -> pack "A user with a name and an email address.\\n..."
   referencedTypes _ = reach \@Text <> (reach \@Text <> mempty)
 @
 
-'referencedTypes' is the concatenation, in declaration order, of @reach \@t@ for
+'referencedTypes' is the concatenation, in declaration order, of @'reach' \@t@ for
 the type @t@ of every field of every constructor, record and positional alike. So
 the types of the fields reach the model through 'Data.Shroom.Class.description':
 each is described once, in a section after the examples, however often and however
@@ -52,7 +59,7 @@ are derived in a single splice, @\$(concat \<$\> traverse deriveDescribable [''A
 self-recursive type needs nothing special.
 
 A parameterised type derives too, with one @'Describable' a@ constraint for each type
-variable of kind @Type@:
+variable of kind t'Data.Kind.Type':
 
 @
 -- | One of two alternatives.
@@ -62,12 +69,12 @@ data Choice a = Pick a | Skip
 @
 
 generates @instance ('Describable' a) => 'Describable' (Choice a)@, where a field of type
-@a@ contributes @reach \@a@, so that @Choice Fuel@ makes @Fuel@ reachable.
+@a@ contributes @'reach' \@a@, so that @Choice Fuel@ makes @Fuel@ reachable.
 
-A type variable of any other kind (a @Symbol@ or @Nat@ unit, a dimension, or an
+A type variable of any other kind (a t'GHC.TypeLits.Symbol' or t'GHC.TypeLits.Nat' unit, a dimension, or an
 unannotated phantom parameter, which GHC2024 makes poly-kinded) can never be the
 type of a field, so it needs no 'Describable'. It is annotated with its kind in the
-instance head and needs only @Typeable@, as does each kind variable its kind
+instance head and needs only 'Typeable', as does each kind variable its kind
 mentions:
 
 @
@@ -97,12 +104,17 @@ instance Describable MyType where
   referencedTypes _ = reach \@Inner
 @
 
-This requires the module to be compiled with the @-haddock@ GHC flag,
-which is set automatically when using this package's build configuration.
+The module that declares the type must be compiled with the @-haddock@ GHC flag,
+which GHC does not set by default. Add @ghc-options: -haddock@ to the
+@.cabal@ stanza of the library, executable or test suite that holds the type. Without it,
+GHC discards the comments and the splice fails with the error below.
 
 __Error__: A compile-time error is raised if no Haddock documentation is found.
 -}
-deriveDescribable :: Name -> Q [Dec]
+deriveDescribable ::
+  -- | The type to describe, as a quoted name such as @''User@.
+  Name ->
+  Q [Dec]
 deriveDescribable name = do
   body <- deriveDescribableExp name
   (typeVars, fieldTypes) <- getTypeShape name
@@ -199,8 +211,9 @@ instance Describable MyType where
 
 __This returns the 'describeType' body only.__ It does not collect the referenced types:
 a hand-written instance must write 'referencedTypes' itself, or its field types are not
-described to the model. For a wrapper that is @referencedTypes _ = reach \@a@; for a
-record, the @reach \@t@ of each of its field types, as 'deriveDescribable' generates.
+described to the model. For a record, write the @'reach' \@t@ of each of its field types,
+as 'deriveDescribable' generates. A transparent newtype wrapper forwards to the wrapped type's
+'referencedTypes' instead, see 'Describable'.
 
 For a type with several constructors, each constructor is listed as
 @- Constructor: doc@ (by name alone if undocumented), followed by its documented
@@ -238,7 +251,10 @@ that fourmolu rewrites the trailing comments into, and it renders unchanged.
 
 Prefer 'deriveDescribable' for the common case where a full instance is needed.
 -}
-deriveDescribableExp :: Name -> Q Exp
+deriveDescribableExp ::
+  -- | The type to describe, as a quoted name such as @''MyType@.
+  Name ->
+  Q Exp
 deriveDescribableExp name = do
   mdoc <- getDoc (DeclDoc name)
   doc <- case mdoc of

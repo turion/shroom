@@ -1,7 +1,6 @@
 {- | "Control.Monad.Prompt" and "Control.Monad.Prompt.Effect" imported
-unqualified, side by side, the way a user's program does (#27). The flat
-request used to be called @prompt@ too, so @prompt@ was ambiguous here; now it
-is the class method alone, and the flat request is 'promptSingle'.
+unqualified, side by side, the way a user's program does. @prompt@ is the class method alone, and the
+one-request prompt is 'promptSingle', so the two do not clash.
 -}
 module UnqualifiedImports (tests) where
 
@@ -31,9 +30,9 @@ tests =
     result <- runPromptResultEff (mockBackend (MockConfig seen)) defaultPromptConfig $ do
       context "unqualified"
       viaClass <- prompt @Counter
-      flat <- promptSingle @Counter
-      flatWith <- promptSingleWith @Counter "local only"
-      pure (viaClass, flat, flatWith)
+      single <- promptSingle @Counter
+      singleWith <- promptSingleWith @Counter "local only"
+      pure (viaClass, single, singleWith)
     case result of
       Left err -> assertFailure (T.unpack err)
       Right (Counter a, Counter b, Counter c) -> (a, b, c) @?= (0, 0, 0)

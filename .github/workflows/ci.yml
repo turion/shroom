@@ -90,12 +90,6 @@ jobs:
   haddock:
     name: Haddock documentation
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # to push the documentation to the gh-pages branch
-    # Two runs pushing to gh-pages at once would race; queue them instead.
-    concurrency:
-      group: gh-pages
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
       - uses: haskell-actions/setup@v2
@@ -126,38 +120,7 @@ jobs:
           path: ${{ steps.setup.outputs.cabal-store }}
           key: ${{ steps.cache.outputs.cache-primary-key }}
       - name: Build the documentation
-        run: cabal haddock all -f-anthropic -f-ollama --haddock-hyperlink-source --haddock-quickjump
-      - name: Collect the documentation
-        # Haddock links one local package to another by an absolute file:// path into
-        # dist-newstyle, which breaks once the artifact is downloaded; rewrite those links to
-        # the sibling directory. Pages in src/ sit one level deeper.
-        run: |
-          mkdir haddocks
-          for d in dist-newstyle/build/*/*/*/doc/html/*/; do cp -r "$d" haddocks/; done
-          find haddocks -mindepth 2 -maxdepth 2 -name '*.html' -exec sed -i -E 's#file://[^"]*/dist-newstyle/build/[^"]*/doc/html/([^/"]+)/#../\1/#g' {} +
-          find haddocks -mindepth 3 -name '*.html' -exec sed -i -E 's#file://[^"]*/dist-newstyle/build/[^"]*/doc/html/([^/"]+)/#../../\1/#g' {} +
-          {
-            echo '<!DOCTYPE html><meta charset="utf-8"><title>shroom documentation</title><ul>'
-            for p in haddocks/*/; do p=$(basename "$p"); echo "<li><a href=\"$p/index.html\">$p</a></li>"; done
-            echo '</ul>'
-          } > haddocks/index.html
-      - name: Publish the documentation on GitHub Pages
-        # Each branch gets its own directory on gh-pages, so a pull request's docs and main's
-        # live side by side. A fork's pull request has no token to push with, so it builds the
-        # documentation without publishing it.
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: haddocks
-          # Without keep_files, only this branch's directory is replaced; the others stay.
-          destination_dir: ${{ github.head_ref || github.ref_name }}
-      - name: Link the documentation
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ github.head_ref || github.ref_name }}/
-        run: |
-          echo "Documentation: $URL" >> "$GITHUB_STEP_SUMMARY"
+        run: cabal haddock all -f-anthropic -f-ollama --haddock-hyperlink-source --haddock-quickjump --haddock-html-location='https://hackage.haskell.org/package/$pkg-$version/docs'
 
   generate-flake-ghc-matrix:
     name: Generate GHC versions for nix flake build matrix
@@ -254,11 +217,11 @@ jobs:
         # keep this line; it is cheap on a warm cache and the failure it prevents is obscure.
         run: nix develop .#ghc912 --accept-flake-config -c cabal update -f-anthropic
       - name: Open the SSH tunnel to the maintainer's Ollama
-        # See research/remote-ollama-ci.md in the plan directory for the mechanism and the
-        # threat model. The server-side ACL (permitopen + command="") is enforced by sshd via
-        # nix/ollama-shroom.nix; this step only has to reach it. ssh-keyscan pins the host key
-        # instead of StrictHostKeyChecking=no, so a redirected DNS name fails loudly rather
-        # than tunnelling to somewhere else.
+        # The AGENTS.md at the repo root describes the mechanism and the threat model. The
+        # server-side ACL (permitopen + command="") is enforced by sshd via nix/ollama-shroom.nix;
+        # this step only has to reach it. ssh-keyscan pins the host key instead of
+        # StrictHostKeyChecking=no, so a redirected DNS name fails loudly rather than tunnelling
+        # to somewhere else.
         run: |
           install -d -m 700 ~/.ssh
           # A herestring writes whatever it's handed — CRLF, a missing trailing newline, even
@@ -285,7 +248,7 @@ jobs:
           echo
       - name: Cabal test against the tunnelled Ollama
         # Bare host:port, no scheme and no /v1 — Ollama's own convention. -f-anthropic is
-        # todo 2's "everything but Anthropic" invocation; the ollama flag stays at its
+        # the invocation that builds everything but Anthropic; the ollama flag stays at its
         # default (on). OLLAMA_MODEL must match services.ollama.shroom.model on the server
         # (nix/ollama-shroom.nix, default "llama3.2:1b" — the server is 2 cores / 12 GB,
         # no GPU, and an 8B model there runs at roughly 1-2 tokens/second). The suite's own
