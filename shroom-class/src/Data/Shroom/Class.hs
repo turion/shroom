@@ -203,83 +203,102 @@ reachableTypes p = go (S.singleton (describedIdentity p)) (referencedTypes p)
     hasSection (Described q) = hasOwnSection q
     children (Described q) = referencedTypes q
 
-{- | Attach properties and example values to a type.
+{- | A class for the properties that a value of your type must satisfy beyond
+its shape, together with example values.
 
 A property is a statement about a value that the model is told and that is
-checked on the parsed answer. This is the main user-filled class, and a bare
-@instance Surveyable X@ needs no method: the properties of @X@ are those of its
-fields. The sections below say what each choice of 'Property' type means.
-
-== The default: the properties of the fields
-
-'Property' defaults to @t'Structural' X@, and 'propertyHolds' and
-'describeProperties' default to 'structuralHolds' and 'describeStructural'. So
-in
+checked on the parsed answer. This is the main user-filled class. If your type
+has no properties to satisfy beyond those of its fields, write a bare
+@instance Surveyable@ and fill in nothing. The sections below say what each
+other choice of 'Property' type means. They continue one type, a hotel booking
+with a guest:
 
 @
+-- | A guest staying a number of nights.
 data Booking = Booking { bookingGuest :: Guest, bookingNights :: Int }
   deriving stock (Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
+\$(deriveDescribable ''Booking)
+@
+
+== The default: the properties of the fields
+
+'Property' defaults to @t'Structural' Booking@, and 'propertyHolds' and
+'describeProperties' default to 'structuralHolds' and 'describeStructural'.
+These enforce the properties of the fields of the type. So with
+
+@
 instance Surveyable Booking
 @
 
-every property of @Guest@ is a property of @Booking@: it is described in the
-prompt (as @Field bookingGuest: …@) and checked on the parsed value. The
-default needs the @generics-sop@ classes @SOP.Generic@ and @SOP.HasDatatypeInfo@
-for the type, both derivable (@deriving anyclass@) from @Generic@ of "GHC.Generics",
-and a @Surveyable@ instance for every field type; 'Text', the number
-types, t'Bool', 'Char', 'UTCTime' and 'Day' have them here.
+every property of @Guest@ is a property of @Booking@. The model is told about it, and
+it is checked on the parsed answer. The default needs the @generics-sop@
+classes @SOP.Generic@ and @SOP.HasDatatypeInfo@ for your type, both derivable
+(@deriving anyclass@) from @Generic@ of "GHC.Generics". Each type of a field
+needs a 'Surveyable' instance of its own.
 
-== Opting out: @type Property X = Void@
+== Opting out: @type Property Booking = Void@
 
-A type that wants no properties — a base type, a type whose fields are not
-'Surveyable', or one that does not want the @generics-sop@ instances —
-writes
+If you don't require the type to fulfil any properties, not even those of its
+fields, write
 
 @
-instance Surveyable X where
-  type Property X = Void
+instance Surveyable Booking where
+  type Property Booking = Void
 @
 
 and nothing else: 'propertyHolds' and 'describeProperties' are then filled in
-(vacuously) as well.
+(vacuously) as well. This needs neither the @generics-sop@ instances for your
+type nor 'Surveyable' instances for its fields.
 
 == A custom 'Property' replaces the default
 
-Naming a 'Property' type of your own, say @type Property X = XProperty@, replaces
-the default entirely: the properties of the fields are neither described nor
-checked. (A @Slot@ with a @Talk@ field and a property of its own
-loses the @Talk@'s properties this way.) A custom 'Property' also needs
-__both__ 'propertyHolds' and 'describeProperties' written out; leaving one out
-is a compile error naming 'PropertyDefault' (@No instance for ‘PropertyDefault
-XProperty X’@), not a silent default of 'True' or 'Nothing'.
+If you require a property of your own, name a 'Property' type for it. Say a
+booking is for at least one night:
+
+@
+data BookingProperty = AtLeastOneNight
+  deriving (Bounded, Enum, Universe)
+
+instance Surveyable Booking where
+  type Property Booking = BookingProperty
+  propertyHolds booking AtLeastOneNight = bookingNights booking >= 1
+  describeProperties _ AtLeastOneNight = Just \"A booking is for at least one night.\"
+@
+
+This replaces the default entirely: the properties of the fields are neither
+told to the model nor checked. (A @Booking@ with a property of its own loses the
+properties of its @Guest@ this way.) A custom 'Property' also needs __both__
+'propertyHolds' and 'describeProperties' written out. Leaving one out is a
+compile error naming 'PropertyDefault' (@No instance for ‘PropertyDefault
+BookingProperty Booking’@), not a silent default of 'True' or 'Nothing'.
 
 To keep the properties of the fields next to your own, combine the two with
 'Either' and hand the structural half to 'structuralHolds' and
 'describeStructural':
 
 @
-instance Surveyable X where
-  type Property X = Either XProperty (Structural X)
-  propertyHolds x (Left p) = … -- the type's own properties
-  propertyHolds x (Right p) = structuralHolds x p
-  describeProperties px (Left p) = …
-  describeProperties px (Right p) = describeStructural px p
+instance Surveyable Booking where
+  type Property Booking = Either BookingProperty (Structural Booking)
+  propertyHolds booking (Left AtLeastOneNight) = bookingNights booking >= 1
+  propertyHolds booking (Right p) = structuralHolds booking p
+  describeProperties _ (Left AtLeastOneNight) = Just \"A booking is for at least one night.\"
+  describeProperties proxy (Right p) = describeStructural proxy p
 @
 
 All four equations are needed, or the instance is an incomplete pattern match.
 
 == Container fields contribute no properties
 
-A field of type @[a]@, @'NonEmpty' a@, @'Set' a@ or @'Maybe' a@ has no properties of its
-own (its 'Property' is 'Void'), whatever @a@ has. So under a bare instance the
-properties of the elements of a @[Speaker]@ or of a @Maybe Name@ field are
-neither checked nor told to the model. Lift them by hand with 'everyHolds' and
-'describeEvery' in a custom 'Property', as the @Speakers@ example under
-'everyHolds' does: it combines the type's own property with the element's
-property. Add a @t'Structural' X@ half, as above, only where the properties of
-the type's own fields are wanted too.
+If a field of your type is a list, a 'NonEmpty', a 'Set' or a 'Maybe', then
+under a bare instance the properties of its elements are neither checked nor
+told to the model: a @[Speaker]@ or a @Maybe Name@ field contributes none,
+whatever properties @Speaker@ and @Name@ have. Lift them by hand with
+'everyHolds' and 'describeEvery' in a custom 'Property', as the @Speakers@
+example under 'everyHolds' does: it combines the type's own property with the
+element's property. Add a @t'Structural'@ half for the type, as above, only
+where the properties of the type's own fields are wanted too.
 
 == Recursive types
 
@@ -293,13 +312,30 @@ package) enumerate it, so with a bare @instance Surveyable Expr@ they do not
 terminate. Opt out on the recursive type with @type Property Expr = Void@, or
 give it a custom 'Property' that does not contain @t'Structural' Expr@.
 
-== A field of a type you do not own
+== A field of a type without shroom classes
 
-A bare instance fails with an @All2 Surveyable@ error if one of the fields has
-no 'Describable' and 'Surveyable' instance, as happens for a field of a
-third-party type. Either opt out on the enclosing type, or give the field
-type — or a @newtype@ around it, to avoid an orphan instance — its own
-instances.
+If a field of your type has a type without 'Describable' and 'Surveyable'
+instances, such as a type from a third-party package, a bare instance does not
+compile. For a record
+
+@
+data Hotel = Hotel { hotelName :: Text, hotelVersion :: Version }
+@
+
+with the field type @Version@ from "Data.Version", GHC reports at
+@instance Surveyable Hotel@
+
+@
+No instance for ‘Surveyable Version’
+  arising from the superclasses of an instance declaration
+In the instance declaration for ‘Surveyable Hotel’
+@
+
+and @\$(deriveDescribable ''Hotel)@ reports @No instance for ‘Describable
+Version’@ at its splice. Either give the field type its own instances, or a
+@newtype@ around it to avoid an orphan instance. Or opt out on the enclosing
+type, see above. That removes the 'Surveyable' error only, as
+@deriveDescribable@ still needs a 'Describable' instance for the field type.
 -}
 class (Describable a, Universe (Property a)) => Surveyable a where
   {- | The type of properties for @a@, which must have a 'Universe' instance.
