@@ -101,7 +101,8 @@ import Data.Universe.Class (Universe, universe)
 -- generics-sop
 import Generics.SOP (All, All2, Code, ConstructorInfo (..), FieldInfo (..), Generic, HasDatatypeInfo (..), I (..), K (..), NP (..), NS (..), SList (..), constructorInfo, constructorName, from, hcollapse, hmap, lengthSList, sList, unSOP)
 
-{- | Attach a one-sentence description to a type.
+{- | A class for giving a type a one-sentence description, so that the model
+knows what the type means.
 
 Use @$(deriveDescribable ''MyType)@ from "Data.Shroom.Class.TH" to derive
 this from the Haddock comments on the type declaration.
@@ -307,11 +308,11 @@ A type that is directly or mutually recursive must not use the structural
 default. \"Directly recursive\" means a field of its own type that is not under a
 list, 'NonEmpty' or 'Maybe', like the @Neg Expr@ in @data Expr = Lit Int | Neg
 Expr@; \"mutually recursive\" means the same through another type's bare
-instance. Enumerating the structural 'Property' (its 'Universe') of such a type
-never ends, and 'description' and the @shroom@ package's check of a value's
-properties enumerate it, so with a bare @instance Surveyable Expr@ they do not
-terminate. Opt out on the recursive type with @type Property Expr = Void@, or
-give it a custom 'Property' that does not contain @t'Structural' Expr@.
+instance. With a bare @instance Surveyable Expr@, 'description' and the
+@shroom@ package's check of a value's properties never finish, because the
+properties of @Expr@ contain the properties of @Expr@. Opt out on the recursive
+type with @type Property Expr = Void@, or give it a custom 'Property' that does
+not contain @t'Structural' Expr@.
 
 == A field of a type without shroom classes
 
@@ -335,7 +336,7 @@ In the instance declaration for ‘Surveyable Hotel’
 and @\$(deriveDescribable ''Hotel)@ reports @No instance for ‘Describable
 Version’@ at its splice. Either give the field type its own instances, or a
 @newtype@ around it to avoid an orphan instance. Or opt out on the enclosing
-type, see above. That removes the 'Surveyable' error only, as
+type with @type Property Hotel = Void@, as in the section \"Opting out\" above. That removes the 'Surveyable' error only, as
 'Data.Shroom.Class.TH.deriveDescribable' still needs a 'Describable' instance for the field type.
 -}
 class (Describable a, Universe (Property a)) => Surveyable a where
