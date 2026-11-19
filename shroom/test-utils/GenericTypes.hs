@@ -15,7 +15,7 @@ real provider has a minimal reproduction.
 The composite types, t'Musician' and t'Fruit', derive 'Promptable' via
 the t'Generically' wrapper, so a prompt of one builds its parts one request at a time and
 makes them cohere. Their leaves, t'Name', t'City', t'Apple' and t'Banana', each make a single request,
-as the guide in "Control.Monad.Prompt.Generic" advises.
+as the guide in "Control.Monad.Prompt.Promptable" advises.
 -}
 module GenericTypes (
   Musician (..),
@@ -48,7 +48,6 @@ import Generics.SOP qualified as SOP
 import Data.Universe.Class (Universe, universe)
 
 -- shroom
-import Control.Monad.Prompt.Generic ()
 import Control.Monad.Prompt.Promptable (Promptable)
 import Data.Shroom.Class
 import Data.Shroom.Class.TH (deriveDescribable)
@@ -146,7 +145,7 @@ instance Promptable Apple
 
 instance Promptable Banana
 
--- Composites are prompted part by part, see "Control.Monad.Prompt.Generic".
+-- Composites are prompted part by part, see "Control.Monad.Prompt.Promptable".
 deriving via Generically Musician instance Promptable Musician
 
 deriving via Generically Fruit instance Promptable Fruit

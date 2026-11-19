@@ -75,7 +75,6 @@ import Effectful.State.Static.Local (State, get)
 import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendReply (..), ContextItem (..), ToolCall (..), ToolDef (..), renderContextItems, schemaWithDefs)
 import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Effect qualified as Eff
-import Control.Monad.Prompt.Generic ()
 import Control.Monad.Prompt.Promptable (Promptable)
 import Control.Monad.Prompt.Promptable qualified as Promptable
 import Control.Monad.Prompt.Tool (Tool, ToolHandler (..), Toolable, runTool, toolBinding, toolDefsRaw, toolName)
