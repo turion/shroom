@@ -560,14 +560,19 @@ everyHolds xs p = all (`propertyHolds` p) xs
 
 {- | Describe an element's property as a property of every element of a
 container, to be used from 'describeProperties' alongside 'everyHolds'.
-The label is joined to the element's own description with a colon, e.g.
-@describeEvery \"Every speaker\"@ turns \"The speaker's last name must not be
-empty.\" into \"Every speaker: The speaker's last name must not be empty.\".
-
 Returns 'Nothing' when the element has no description for the property.
 See 'everyHolds' for the pattern.
 -}
-describeEvery :: (Surveyable a) => Text -> Proxy a -> Property a -> Maybe Text
+describeEvery ::
+  (Surveyable a) =>
+  {- | The label for the elements. It is joined to the element's own description with
+  a colon, so @\"Every speaker\"@ turns \"The speaker's last name must not be
+  empty.\" into \"Every speaker: The speaker's last name must not be empty.\".
+  -}
+  Text ->
+  Proxy a ->
+  Property a ->
+  Maybe Text
 describeEvery label p prop = (\d -> label <> ": " <> d) <$> describeProperties p prop
 
 {- | The properties of one field type @x@, wrapped in a newtype so that a
@@ -669,7 +674,11 @@ describeOne :: forall x. (Surveyable x) => PropertyOf x -> Maybe Text
 describeOne (PropertyOf p) = describeProperties (Proxy @x) p
 
 -- | The name of the record field at a position, 'Nothing' for a positional constructor.
-fieldNameAt :: Int -> ConstructorInfo xs -> Maybe Text
+fieldNameAt ::
+  -- | The position of the field, counting from 0.
+  Int ->
+  ConstructorInfo xs ->
+  Maybe Text
 fieldNameAt i (Record _ fields) = case drop i (hcollapse (hmap (\(FieldInfo name) -> K (T.pack name)) fields)) of
   name : _ -> Just name
   [] -> Nothing
@@ -745,11 +754,16 @@ description p =
 {- | Annotate each field line of a type description with its JSON type.
 
 For each line @- fieldName: doc@ in the description, look up @fieldName@ in the
-OpenAPI schema's @properties@ map and insert the JSON type in parentheses:
+@properties@ map of the schema and insert the JSON type in parentheses:
 @- fieldName (string): doc@. Lines that do not match the pattern or lack a
 known type are left unchanged.
 -}
-annotateFieldTypes :: Value -> Text -> Text
+annotateFieldTypes ::
+  -- | The OpenAPI schema of the type.
+  Value ->
+  -- | The description of the type, as 'describeType' gives it.
+  Text ->
+  Text
 annotateFieldTypes schema = T.unlines . fmap annotateLine . T.lines
   where
     -- Extract {"fieldName": {"type": "..."}} from the schema

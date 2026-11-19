@@ -132,19 +132,22 @@ The strategy-aware counterpart is 'withContext' around 'Control.Monad.Prompt.Pro
 promptSingleWith ::
   forall a es.
   (Prompt :> es, State [ContextItem] :> es, Surveyable a, ToSchema a, FromJSON a) =>
+  -- | The context, a piece of user-turn text that this request sees and no other.
   Text ->
   Eff es a
 promptSingleWith txt = withContext txt (promptSingle @a)
 
-{- | Like 'promptSingle', but the model may call any of the given tools.
-Build each t'ToolBinding' with 'Control.Monad.Prompt.Tool.toolBinding', which needs the tool's
-'Control.Monad.Prompt.Tool.Tool' effect in @es@: a program cannot offer a tool it
-was not given. 'maxToolSteps' limits the number of tool rounds. See
-"Control.Monad.Prompt.Tool" for how to define and run tools.
+{- | Like 'promptSingle', but the model may call tools. 'maxToolSteps' limits the
+number of tool rounds. See "Control.Monad.Prompt.Tool" for how to define and run tools.
 -}
 promptTools ::
   forall a es.
   (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) =>
+  {- | The tools the model may call. Build each t'ToolBinding' with
+  'Control.Monad.Prompt.Tool.toolBinding', which needs the tool's
+  'Control.Monad.Prompt.Tool.Tool' effect in @es@: a program cannot offer a tool it
+  was not given.
+  -}
   [ToolBinding (Eff es)] ->
   Eff es a
 promptTools bindings = send (RequestPromptTools bindings)
@@ -154,8 +157,7 @@ promptTools bindings = send (RequestPromptTools bindings)
 content with it, @'Just' v'@ means the model returned a corrected whole value
 @v'@.
 
-The model is shown the value for this request only. As for 'promptSingle', its
-reply is appended to the context as an 'AssistantMessage'.
+As for 'promptSingle', the reply is appended to the context as an 'AssistantMessage'.
 
 The reply goes through the same retry path as any request. An @improved@ value
 that fails to parse or violates a property is re-prompted; so is a @fine@
@@ -171,6 +173,7 @@ without recursing into itself.
 improve ::
   forall a es.
   (Prompt :> es, Surveyable a, ToSchema a, FromJSON a) =>
+  -- | The value to improve. The model is shown it for this request only.
   a ->
   Eff es (Maybe a)
 improve = send . RequestImprove
@@ -301,11 +304,17 @@ withContext = withContextItem . UserMessage
 failWith :: (Error Text :> es) => Text -> Eff es a
 failWith = throwError
 
-{- | Try the left computation; on failure, restore the context to how it stood
-before the attempt, discarding anything the failing branch added, and run
-the right computation from there.
+{- | Try one computation and, on failure, run another. The context is restored to
+how it stood before the attempt, discarding anything the failing computation added,
+and the other computation runs from there.
 -}
-orElse :: (Error Text :> es, State [ContextItem] :> es) => Eff es a -> Eff es a -> Eff es a
+orElse ::
+  (Error Text :> es, State [ContextItem] :> es) =>
+  -- | The computation to try first.
+  Eff es a ->
+  -- | The computation to run if the first fails.
+  Eff es a ->
+  Eff es a
 orElse l r = do
   (saved :: [ContextItem]) <- get
   l `catchError` \_ (_ :: Text) -> put saved >> r
