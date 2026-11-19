@@ -111,7 +111,10 @@ GHC discards the comments and the splice fails with the error below.
 
 __Error__: A compile-time error is raised if no Haddock documentation is found.
 -}
-deriveDescribable :: Name -> Q [Dec]
+deriveDescribable ::
+  -- | The type to describe, as a quoted name such as @''User@.
+  Name ->
+  Q [Dec]
 deriveDescribable name = do
   body <- deriveDescribableExp name
   (typeVars, fieldTypes) <- getTypeShape name
@@ -248,7 +251,10 @@ that fourmolu rewrites the trailing comments into, and it renders unchanged.
 
 Prefer 'deriveDescribable' for the common case where a full instance is needed.
 -}
-deriveDescribableExp :: Name -> Q Exp
+deriveDescribableExp ::
+  -- | The type to describe, as a quoted name such as @''MyType@.
+  Name ->
+  Q Exp
 deriveDescribableExp name = do
   mdoc <- getDoc (DeclDoc name)
   doc <- case mdoc of
