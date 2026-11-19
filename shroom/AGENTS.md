@@ -24,6 +24,14 @@ the Haddocks say what the functions do.
   email` got back `"thompsons sophia@outlook.com "`, with a stray space inside. Which host it ran against
   was not recorded; the failure's shape matches llama.cpp's converter, and a direct call to
   `api.anthropic.com` had returned a `401`, so no successful Anthropic call backs this up.
+- **Some base types' schemas are rejected by Anthropic.** `openapi3` renders `Char` with `minLength` and
+  `maxLength`, `Natural` with `exclusiveMinimum`, and `Double` and `Float` with a numeric `format`.
+  Anthropic's structured outputs answer the first two keywords with a `400`, and
+  `normalizeSchemaForStructuredOutput` does not strip them. The numeric `format` is a suspicion that no call
+  to the API has confirmed. A record field of one of these types, or a bare `prompt` of it, may therefore
+  fail against Claude. The `Promptable` instances for `[a]`, `NonEmpty a`, `Set a` and `Maybe a` pass the
+  element's schema through, so they inherit it. The `Promptable` Haddocks stay provider-neutral and do not
+  say this.
 - **Open question:** whether a llama.cpp-backed grammar enforces the integer bounds numerically; they are
   folded into the field's `description` and removed from the wire. The `Surveyable` properties exist to
   check in code what a host does not enforce.

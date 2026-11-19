@@ -2,18 +2,40 @@
 Module      : Control.Monad.Prompt.Promptable
 Description : Request a value of a type from a language model, with a default strategy.
 
-The class 'Promptable', the newtype t'DescriptionPrompt' to derive it via, and
-'Promptable' instances for the base types. This module belongs to @shroom@; the
-classes it builds on, 'Surveyable' and 'Describable', are in "Data.Shroom.Class"
-from @shroom-class@.
+Ask a language model for a value of one of your own types. You write the type
+with Haddock comments on it and on its fields, derive the classes that describe
+it in a few lines of boilerplate, and the type is ready to be prompted for. The
+model is shown your Haddocks as the description of what to produce, and its
+answer is parsed into your type and checked against the type's properties.
+
+@
+-- | A recipe for a dish.
+data Recipe = Recipe
+  { title :: Text
+  -- ^ The name of the dish.
+  , servings :: Int
+  -- ^ How many people the recipe feeds.
+  , steps :: [Text]
+  -- ^ The preparation steps, in order.
+  }
+  deriving stock (Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+\$(deriveDescribable ''Recipe)
+
+instance Surveyable Recipe
+
+instance Promptable Recipe
+@
+
+Here @SOP@ is "Generics.SOP". Running 'prompt' at the type @Recipe@ then requests
+a recipe from the model. The classes this module builds on, 'Surveyable' and
+'Describable', are in "Data.Shroom.Class" from @shroom-class@.
 -}
 module Control.Monad.Prompt.Promptable (
   -- * Promptable
   Promptable (..),
   DescriptionPrompt (..),
-
-  -- * Base types
-  -- $baseTypes
 ) where
 
 -- base
@@ -48,20 +70,24 @@ import Control.Monad.Prompt.Effect (Prompt)
 import Control.Monad.Prompt.Effect qualified as Effect
 import Data.Shroom.Class
 
-{- | Attach a default prompting strategy to a type.
+{- | A class for types that you want to request from a language model.
 
-'prompt' is an 'Eff' program that requests a value of type @a@ from the model.
-The default, 'Control.Monad.Prompt.Effect.promptSingle', sends the request to the
-'Prompt' effect, which builds the prompt text from 'description' (the type's
-description, properties and examples) and checks the model's answer against the
-type's properties. Most types need no override, and an empty instance is enough:
+An instance says that a value of the type can be asked for with 'prompt'. The
+superclasses carry what the model needs. 'Surveyable' supplies the description,
+properties and examples that the prompt is built from. 'ToSchema' supplies the
+schema that the model's answer must follow, and 'FromJSON' parses the answer.
+
+Most types need nothing more, and an empty instance is enough. The request
+sends the type's 'description' to the 'Prompt' effect with
+'Control.Monad.Prompt.Effect.promptSingle', and checks the answer against the
+type's properties:
 
 @
-instance Promptable User
+instance Promptable Recipe
 @
 
-Override 'prompt' to change what a request to this type does. The override below
-adds one line of context to the default request, and keeps it out of every other
+Override 'prompt' to change what a request for your type does. The override
+below adds one line of context to the request, and keeps it out of every other
 request:
 
 @
@@ -69,8 +95,7 @@ instance Promptable Recipe where
   prompt = withContext "Always prefer metric units." promptSingle
 @
 
-The instances for the base types, and what Anthropic rejects in some of their
-schemas, are described in "Control.Monad.Prompt.Promptable#baseTypes".
+To prompt a record part by part instead, see "Control.Monad.Prompt.Generic".
 -}
 class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
   {- | Request a value of type @a@ from the model.
@@ -114,53 +139,53 @@ instance (Surveyable a) => Surveyable (DescriptionPrompt a) where
   describeProperties _ = describeProperties (Proxy @a)
   propertyHolds (DescriptionPrompt x) = propertyHolds x
 
+-- | Default prompt.
 instance (Surveyable a, ToSchema a, FromJSON a) => Promptable (DescriptionPrompt a)
 
-{- $baseTypes
-#baseTypes#'Promptable' instances for the base types that "Data.Shroom.Class" gives
-'Surveyable' instances: 'Text', 'Int', 'Integer', 'Int64', 'Word', 'Natural',
-'Double', 'Float', 'Bool', 'Char', 'UTCTime', 'Day', and the containers @[a]@,
-@'NonEmpty' a@, @'Set' a@ and @'Maybe' a@. Each uses the default 'prompt', so a
-bare value is requested like any other type, from its 'description'.
-
-__Schema keywords Anthropic rejects.__ @openapi3@ renders some of these types
-with JSON Schema keywords that Anthropic's structured outputs answer with a
-400, and that @normalizeSchemaForStructuredOutput@ does not strip: 'Char'
-carries @minLength@ and @maxLength@, 'Natural' carries @exclusiveMinimum@, and
-'Double' and 'Float' carry a numeric @format@ (not confirmed against the API).
-A field of one of these types, or a bare 'prompt' of it, may therefore fail
-against Claude. The container instances pass the element's schema through
-unchanged, so they inherit the same limitation.
--}
-
+-- | Default prompt.
 instance Promptable Text
 
+-- | Default prompt.
 instance Promptable Int
 
+-- | Default prompt.
 instance Promptable Integer
 
+-- | Default prompt.
 instance Promptable Int64
 
+-- | Default prompt.
 instance Promptable Word
 
+-- | Default prompt.
 instance Promptable Natural
 
+-- | Default prompt.
 instance Promptable Double
 
+-- | Default prompt.
 instance Promptable Float
 
+-- | Default prompt.
 instance Promptable Bool
 
+-- | Default prompt.
 instance Promptable Char
 
+-- | Default prompt.
 instance Promptable UTCTime
 
+-- | Default prompt.
 instance Promptable Day
 
+-- | Default prompt, for a list of values described by @a@.
 instance (Describable a, ToSchema a, FromJSON a) => Promptable [a]
 
+-- | Default prompt, for a non-empty list of values described by @a@.
 instance (Describable a, ToSchema a, FromJSON a) => Promptable (NonEmpty a)
 
+-- | Default prompt, for a set of values described by @a@.
 instance (Describable a, ToSchema a, FromJSON a, Ord a) => Promptable (Set a)
 
+-- | Default prompt, for an optional value described by @a@.
 instance (Describable a, ToSchema a, FromJSON a) => Promptable (Maybe a)
