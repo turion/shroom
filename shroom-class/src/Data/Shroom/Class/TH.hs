@@ -46,7 +46,7 @@ instance Describable User where
   referencedTypes _ = reach \@Text <> (reach \@Text <> mempty)
 @
 
-'referencedTypes' is the concatenation, in declaration order, of @reach \@t@ for
+'referencedTypes' is the concatenation, in declaration order, of @'reach' \@t@ for
 the type @t@ of every field of every constructor, record and positional alike. So
 the types of the fields reach the model through 'Data.Shroom.Class.description':
 each is described once, in a section after the examples, however often and however
@@ -59,7 +59,7 @@ are derived in a single splice, @\$(concat \<$\> traverse deriveDescribable [''A
 self-recursive type needs nothing special.
 
 A parameterised type derives too, with one @'Describable' a@ constraint for each type
-variable of kind @Type@:
+variable of kind t'Data.Kind.Type':
 
 @
 -- | One of two alternatives.
@@ -69,12 +69,12 @@ data Choice a = Pick a | Skip
 @
 
 generates @instance ('Describable' a) => 'Describable' (Choice a)@, where a field of type
-@a@ contributes @reach \@a@, so that @Choice Fuel@ makes @Fuel@ reachable.
+@a@ contributes @'reach' \@a@, so that @Choice Fuel@ makes @Fuel@ reachable.
 
-A type variable of any other kind (a @Symbol@ or @Nat@ unit, a dimension, or an
+A type variable of any other kind (a t'GHC.TypeLits.Symbol' or t'GHC.TypeLits.Nat' unit, a dimension, or an
 unannotated phantom parameter, which GHC2024 makes poly-kinded) can never be the
 type of a field, so it needs no 'Describable'. It is annotated with its kind in the
-instance head and needs only @Typeable@, as does each kind variable its kind
+instance head and needs only 'Typeable', as does each kind variable its kind
 mentions:
 
 @
@@ -211,7 +211,7 @@ instance Describable MyType where
 
 __This returns the 'describeType' body only.__ It does not collect the referenced types:
 a hand-written instance must write 'referencedTypes' itself, or its field types are not
-described to the model. For a record, write the @reach \@t@ of each of its field types,
+described to the model. For a record, write the @'reach' \@t@ of each of its field types,
 as 'deriveDescribable' generates. A transparent newtype wrapper forwards to the wrapped type's
 'referencedTypes' instead, see 'Describable'.
 

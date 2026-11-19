@@ -15,7 +15,8 @@ that call is in 'Control.Monad.Prompt.Effect.runPrompt'.
 
 A t'Backend' is a plain record, not a type class, so building one needs no
 instance and no dependency on shroom's other modules. An adapter can turn a
-@ToSchema@ instance into the schema the call needs with 'schemaWithDefs'.
+<https://hackage.haskell.org/package/openapi3/docs/Data-OpenApi-Internal-Schema.html#t:ToSchema ToSchema>
+instance into the schema the call needs with 'schemaWithDefs'.
 'Control.Monad.Prompt.FileMock.fileMockBackend' replays canned responses from
 files; the @shroom-baikai@ package builds a t'Backend' for real models.
 

@@ -11,7 +11,7 @@ by deriving 'Promptable' via t'Generically'.
 A 'Promptable' that makes a single request asks for the whole value at once. The strategy here
 instead asks for a record's fields one at a time, each seeing the earlier ones,
 so that parts that must fit together are built in one train of thought. It then
-asks the model to 'Control.Monad.Prompt.Effect.improve' the assembled value, in
+asks the model to 'improve' the assembled value, in
 case the parts do not fit after all.
 
 == An example
@@ -56,7 +56,7 @@ the module that declares the types: the descriptions are read from their
 Haddock comments (see "Data.Shroom.Class.TH"). A leaf type that a field uses is
 derived before the type that has the field.
 
-A program asks for a musician with @prompt \@Musician@, as for any 'Promptable'
+A program asks for a musician with @'Control.Monad.Prompt.Promptable.prompt' \@Musician@, as for any 'Promptable'
 type. The request then goes through these steps:
 
 1. The model is shown the request for a @Musician@ and answers with a cue for
@@ -75,14 +75,14 @@ type. The request then goes through these steps:
    @Musician \"Wolfgang Amadeus Mozart\" (City \"Salzburg\")@.
 
 Without the last two steps, the mismatch of step 3 would stay. That is why the
-strategy ends with 'Control.Monad.Prompt.Effect.improve'.
+strategy ends with 'improve'.
 
 A sum is derived the same way; its strategy first asks which constructor to
 build.
 
 Only the class method 'Control.Monad.Prompt.Promptable.prompt' runs the strategy, directly or through
 the instance of a field. 'Control.Monad.Prompt.Effect.promptSingle' and
-'Control.Monad.Prompt.Effect.improve' send one request for the whole value and
+'improve' send one request for the whole value and
 never run it.
 
 == The strategy
@@ -101,12 +101,12 @@ inside one snapshot of the context:
    type's own 'Control.Monad.Prompt.Promptable.prompt' is called. Its answer stays in the context, so
    each field sees the earlier ones.
 4. The fields are assembled into a draft and go through
-   'Control.Monad.Prompt.Effect.improve', which checks it against the type's own
+   'improve', which checks it against the type's own
    'Property' (see 'Surveyable') and either keeps it or returns a corrected one.
 5. The context is restored to the snapshot, and one 'AssistantMessage' holding the
    final value's JSON is appended, as after a 'Control.Monad.Prompt.Promptable.prompt' of a type without the strategy.
 
-Note that a field type whose own @prompt@ scopes its context leaves no answer
+Note that a field type whose own 'Control.Monad.Prompt.Promptable.prompt' scopes its context leaves no answer
 behind; the strategy then appends the answer, whenever the context did not grow
 or does not end in an 'AssistantMessage'. It cannot tell whether a trailing
 'AssistantMessage' really is the field's answer, so an override that drops its
@@ -118,7 +118,7 @@ A record with @n > 0@ fields costs @n + 2@ requests (cue, fields, improve), wher
 a single request costs 1: the @Musician@ above costs 4. A constructor of a type with
 several constructors costs one more for the choice, and one more for every retry.
 Derive the leaves with single requests, with a bare @instance Promptable@, as asking for a scalar
-part by part would pay a cue and an @improve@ for nothing; use @Generically@ for
+part by part would pay a cue and an 'improve' for nothing; use t'Generically' for
 the records and sums whose parts must cohere.
 
 == The limits of the strategy

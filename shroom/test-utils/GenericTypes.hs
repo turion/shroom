@@ -2,15 +2,19 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_HADDOCK hide #-}
 
-{- | The two examples of @deriving via Generically@
-(a record and a sum), written the way a user would write them:
-shared by the integration cases of @shroom-baikai@, so a failure of the
-strategy against a real provider has a minimal reproduction.
+{- |
+Module      : GenericTypes
+Description : The two examples of @deriving via Generically@, a record and a sum.
 
-The composite types, 'Musician' and 'Fruit', derive 'Promptable' via
-'Generically', so a prompt of one builds its parts one request at a time and
-makes them cohere. Their leaves ('Name', 'City', 'Apple', 'Banana') are flat:
+Both are written the way a user would write them, and shared by the
+integration cases of @shroom-baikai@, so a failure of the strategy against a
+real provider has a minimal reproduction.
+
+The composite types, t'Musician' and t'Fruit', derive 'Promptable' via
+the t'Generically' wrapper, so a prompt of one builds its parts one request at a time and
+makes them cohere. Their leaves, t'Name', t'City', t'Apple' and t'Banana', are flat:
 a single request each, as the guide in "Control.Monad.Prompt.Generic" advises.
 -}
 module GenericTypes (

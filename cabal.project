@@ -1,1 +1,6 @@
 packages: */*.cabal
+
+-- Haddock has no page for the representation types that GHC derives for the
+-- Generic instances of the tool types, so it warns about their links.
+package shroom
+  haddock-options: --ignore-link-symbol=Control.Monad.Prompt.Tool.Web.Rep_WebFetch --ignore-link-symbol=Control.Monad.Prompt.Tool.Web.Rep_DuckDuckGoSearch --ignore-link-symbol=Control.Monad.Prompt.Tool.Web.Rep_WikipediaSearch

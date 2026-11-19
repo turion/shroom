@@ -1,5 +1,10 @@
 {-# LANGUAGE LambdaCase #-}
+{-# OPTIONS_HADDOCK hide #-}
 
+{- |
+Module      : TestUtils
+Description : Mock backends and assertion helpers for the offline tests.
+-}
 module TestUtils (
   MockConfig (..),
   SeqMockConfig (..),
@@ -31,10 +36,10 @@ import Control.Monad.Prompt.Backend (Backend (..), BackendError (..), BackendRep
 
 -- * Mock backends
 
-{- | A mock 'Backend' that records the context passed to each call (as flat
-text via 'renderContextItems') and always returns @0@ (encoded as JSON) for
-'Counter'. No tool concept: the offered tools are ignored and every reply
-is a 'BackendAnswer'.
+{- | A mock t'Backend' that records the context passed to each call (as flat
+text via 'renderContextItems') and always returns @0@ (encoded as JSON)
+for a t'Types.Counter'. No tool concept: the offered tools are ignored and every
+reply is a 'BackendAnswer'.
 -}
 newtype MockConfig = MockConfig (IORef [Text])
 
@@ -45,7 +50,7 @@ mockBackend (MockConfig ref) =
     -- Return a valid Counter JSON (the newtype wraps an Int)
     pure $ Right (BackendAnswer (toStrict (decodeUtf8 (encode (0 :: Int)))))
 
-{- | A mock 'Backend' that returns responses from a list in order, repeating
+{- | A mock t'Backend' that returns responses from a list in order, repeating
 the last one when the list is exhausted. Records contexts as flat text via
 'renderContextItems'. No tool concept: the offered tools are ignored and
 every reply is a 'BackendAnswer'.
@@ -77,9 +82,9 @@ assertNotContains needle haystack
 textIsInfixOf :: Text -> Text -> Bool
 textIsInfixOf = T.isInfixOf
 
--- | A marker config for a mock 'Backend' that always returns a backend-level error.
+-- | A marker config for a mock t'Backend' that always returns a backend-level error.
 data InjectFailConfig = InjectFailConfig
 
--- | 'Backend' for 'InjectFailConfig': always fails, unconditionally.
+-- | t'Backend' for t'InjectFailConfig': always fails, unconditionally.
 injectFailBackend :: (Applicative m) => InjectFailConfig -> Backend m
 injectFailBackend _ = Backend $ \_ _ _ _ -> pure (Left (BackendTransportError "injected failure"))

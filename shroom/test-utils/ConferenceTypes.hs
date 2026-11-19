@@ -2,15 +2,17 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_HADDOCK hide #-}
 
-{- | Types for a multi-step conference scheduling scenario.
+{- |
+Module      : ConferenceTypes
+Description : Types for a multi-step conference scheduling scenario.
 
-The prompt chain has four steps, each depending on the previous:
+The prompt chain has three steps, each depending on the previous:
 
-1. 'Speaker' — who is presenting?
-2. 'Talk' — what are they presenting? (references the speaker)
-3. 'Session' — what session contains the talk? (contains 'Talk' values)
-4. 'ConferenceSchedule' — the full day's schedule (contains 'Session' values)
+1. t'Speakers' — who is presenting? A list of t'Speaker' values.
+2. t'Talk' — what are they presenting? One per speaker, referencing the speaker.
+3. t'ConferenceSchedule' — the full day's schedule, containing the talks.
 -}
 module ConferenceTypes (
   SpeakerName (..),
@@ -264,9 +266,9 @@ demonstrating prompt chaining with cross-step dependencies.
 
 Steps:
 
-1. 'Speakers' — generate 3-10 speakers
-2. One 'Talk' per speaker (each speaker gives exactly one talk)
-3. 'ConferenceSchedule' — the full day's schedule
+1. t'Speakers' — generate 3-10 speakers
+2. One t'Talk' per speaker (each speaker gives exactly one talk)
+3. t'ConferenceSchedule' — the full day's schedule
 -}
 conferenceChain ::
   (Prompt :> es, State [ContextItem] :> es, Error Text :> es) =>
@@ -365,7 +367,7 @@ fakeSpeakerLookupHandler = ToolHandler $ \(SpeakerLookup name) ->
 
 {- | Conference chain that instructs the LLM to search the web for speaker
 info. Unlike 'conferenceChain', this takes the tool @bindings@ to offer —
-only the per-speaker 'Talk' step gets them, matching the instruction text
+only the per-speaker t'Talk' step gets them, matching the instruction text
 below; build each binding with 'Control.Monad.Prompt.Tool.toolBinding' and
 interpret with 'Control.Monad.Prompt.Tool.runTool'.
 -}
