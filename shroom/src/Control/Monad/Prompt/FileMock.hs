@@ -1,11 +1,13 @@
 {- |
 Module      : Control.Monad.Prompt.FileMock
-Description : A backend that replies from files, for inspecting prompts without a model.
+Description : A backend that replies from files, to test a prompt program without a model.
 
-'fileMockBackend' is a t'Backend' that prints the prompt of each request and answers
-it with the next numbered JSON file (@response-001.json@, @response-002.json@, …)
-instead of calling a model. It shows exactly what is sent for each step, lets you
-edit the replies to try other scenarios, and costs nothing.
+To test a shroom program, or to write a golden test for it, you want no network,
+no API key and the same replies on every run. 'fileMockBackend' is a t'Backend'
+that gives you that. It answers each request with the next numbered JSON file
+(@response-001.json@, @response-002.json@, …) instead of calling a model. It also
+prints the prompt of each request, so you see exactly what is sent for each step,
+and you can edit the replies to try other scenarios.
 
 @
 cfg <- defaultFileMockConfig

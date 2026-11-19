@@ -1,8 +1,14 @@
 {- |
 Module      : Control.Monad.Prompt.Backend
-Description : What a language model transport provides to run a prompt program.
+Description : The connection that runs a prompt program's chat calls on a language model host.
 
-A t'Backend' makes one raw chat call: it takes the conversation so far, the
+A shroom program says what to ask for.
+'Control.Monad.Prompt.Effect.runPrompt' interprets it, turns each request into chat
+calls with retries and tool rounds, and sends every chat call through a t'Backend'
+to a language model host. A t'Backend' is the connection to that host. Use it to
+run a program on a real model, or to plug in a transport of your own.
+
+A t'Backend' makes one raw chat call. It takes the conversation so far, the
 description and JSON schema of the expected result type and the tools on offer,
 and returns a 'BackendReply' or a 'BackendError'. The retry and tool loop around
 that call is in 'Control.Monad.Prompt.Effect.runPrompt'.
@@ -13,9 +19,11 @@ instance and no dependency on shroom's other modules. An adapter can turn a
 'Control.Monad.Prompt.FileMock.fileMockBackend' replays canned responses from
 files; the @shroom-baikai@ package builds a t'Backend' for real models.
 
+As a trivial example, this backend answers every request with the same text:
+
 @
 constantBackend :: (Applicative m) => Text -> Backend m
-constantBackend answer = Backend $ \\_ _ _ _ -> pure (Right (BackendAnswer answer))
+constantBackend answer = Backend $ \\_ _ _ _ -> pure $ Right $ BackendAnswer answer
 @
 -}
 module Control.Monad.Prompt.Backend (
@@ -111,19 +119,20 @@ renderContextItems = T.intercalate "\n" . fmap render
     render (ToolCallMessage calls) = "[tool call] " <> T.intercalate ", " (fmap toolCallName calls)
     render (ToolResultMessage results) = "[tool result] " <> T.intercalate ", " (fmap toolResultName results)
 
-{- | A chat backend, reduced to the one call every backend must make. The
-arguments of 'runBackendChat' are:
-
-  * the conversation so far,
-  * the description of the expected result type, appended as the final turn,
-  * the JSON schema the response must satisfy,
-  * the tools on offer for this call; empty means none.
+{- | A chat backend, reduced to the one call every backend must make.
 
 __Contract:__ an implementation must not throw IO exceptions; every failure
 comes back as a 'BackendError'.
 -}
 newtype Backend m = Backend
   { runBackendChat :: [ContextItem] -> Text -> Value -> [ToolDef] -> m (Either BackendError BackendReply)
+  {- ^ Makes the chat call. The arguments, in order, are:
+
+  * the conversation so far,
+  * the description of the expected result type, appended as the final turn,
+  * the JSON schema the response must satisfy,
+  * the tools on offer for this call; empty means none.
+  -}
   }
 
 {- | The reply of one t'Backend' call: the model's final answer, or the tool
