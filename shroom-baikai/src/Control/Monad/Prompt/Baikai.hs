@@ -35,7 +35,7 @@ All four are built on 'baikaiBackend', which makes one request per
 sending the result back, is left to the caller as for every backend (see
 'Control.Monad.Prompt.Effect.promptTools').
 
-What the four constructors share:
+The four constructors have these in common:
 
 * Each registers its @baikai@ provider when it runs, so each returns in 'IO'.
 * The base URL of 'anthropicCompatBackend' and 'openAICompatBackend' takes no
@@ -354,7 +354,7 @@ openAICompatBackend baseUrl modelId mApiKey = do
           }
   pure (baikaiBackend model opts)
 
-{- | The 'Compat' for 'openAICompatBackend': what @baikai-openai@ auto-detects from
+{- | The 'Compat' for 'openAICompatBackend': the one @baikai-openai@ auto-detects from
 the base URL, with the token cap named @max_tokens@. @api.openai.com@ is left to
 auto-detection ('CompatNone').
 -}
