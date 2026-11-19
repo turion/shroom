@@ -15,7 +15,7 @@ comes back ('User', 'Counter'), a property-validated chain runs end to end
 ('conferenceChain'), and a tool actually gets dispatched and its result read
 back in ('conferenceChainWithTools'). Three further cases run
 @deriving via Generically@ end to end, always through the class method
-'Control.Monad.Prompt.Promptable.prompt', since the flat
+'Control.Monad.Prompt.Promptable.prompt', since the single-request
 'Control.Monad.Prompt.Effect.promptSingle' would pass without running the strategy:
 a bare 'Text', 'Int' and 'Double' (the non-object schema roots the strategy
 sends for its fields and for the constructor choice, so a provider that
@@ -118,7 +118,7 @@ backendIntegrationTests backend =
           -- Any 'Int' and 'Double' prove the scalar roots round-tripped.
           Right (fruitName, _, _) -> assertBool "text is non-empty" (not (T.null fruitName))
     , testCase "Promptable.prompt returns a Musician, field by field" $ do
-        -- The class method, not 'Effect.promptSingle': that one sends a flat request
+        -- The class method, not 'Effect.promptSingle': that one sends a single request
         -- and would pass without running the generic strategy.
         result <- Effect.runPromptResultEff backend sharedPromptConfig $ do
           Effect.context "Make up a classical composer."
