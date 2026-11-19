@@ -9,10 +9,6 @@ requests to a real model, through @baikai@. Pick the constructor for the host an
 pass the result to 'Control.Monad.Prompt.Effect.runPromptResultEff':
 
 @
-import Control.Monad.Prompt (prompt)
-import Control.Monad.Prompt.Baikai (claudeBackend)
-import Control.Monad.Prompt.Effect (context, defaultPromptConfig, runPromptResultEff)
-
 main :: IO ()
 main = do
   backend <- claudeBackend apiKey
@@ -22,7 +18,10 @@ main = do
   print result
 @
 
-The example needs @OverloadedStrings@ and @TypeApplications@, and @apiKey@ is an
+The example needs @OverloadedStrings@ and @TypeApplications@. It uses 'claudeBackend'
+from this module, and 'Control.Monad.Prompt.Effect.context', 'Control.Monad.Prompt.Effect.defaultPromptConfig'
+and 'Control.Monad.Prompt.Effect.runPromptResultEff' from "Control.Monad.Prompt.Effect",
+and 'Control.Monad.Prompt.prompt' from "Control.Monad.Prompt". @apiKey@ is an
 Anthropic API key as 'Text'. For another host, replace 'claudeBackend':
 
 * 'claudeBackend' is the Claude API.
