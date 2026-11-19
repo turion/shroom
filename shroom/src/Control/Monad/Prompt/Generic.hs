@@ -10,35 +10,17 @@ by deriving 'Promptable' via t'Generically'.
 
 A flat 'Promptable' asks for the whole value in one request. The strategy here
 instead asks for a record's fields one at a time, each seeing the earlier ones,
-so that the parts of a value that must fit together (a musician and the city
-they are from) are built in one train of thought. It then asks the model to
-'Control.Monad.Prompt.Effect.improve' the assembled value.
+so that parts that must fit together are built in one train of thought. It then
+asks the model to 'Control.Monad.Prompt.Effect.improve' the assembled value, in
+case the parts do not fit after all.
 
-The example needs the packages @shroom@, @generics-sop@, @aeson@, @openapi3@ and @text@,
-and the GHC flag @-haddock@ for the module that declares the types: the descriptions
-are read from their Haddock comments (see "Data.Shroom.Class.TH"). A leaf type that a
-field uses is derived before the type that has the field.
+== An example
+
+A musician has a name and a city they are from. A musician from a city that
+they have nothing to do with is wrong, though each part alone looks fine. Here
+is the type, derived part by part:
 
 @
-{\-# LANGUAGE DeriveAnyClass #-\}
-{\-# LANGUAGE DeriveGeneric #-\}
-{\-# LANGUAGE DerivingStrategies #-\}
-{\-# LANGUAGE DerivingVia #-\}
-{\-# LANGUAGE ImportQualifiedPost #-\}
-{\-# LANGUAGE StandaloneDeriving #-\}
-{\-# LANGUAGE TemplateHaskell #-\}
-{\-# LANGUAGE TypeApplications #-\}
-
-import Data.Aeson (FromJSON, ToJSON)
-import Data.OpenApi (ToSchema)
-import Data.Text (Text)
-import GHC.Generics (Generic, Generically (..))
-import Generics.SOP qualified as SOP
-
-import Control.Monad.Prompt
-import Data.Shroom.Class
-import Data.Shroom.Class.TH (deriveDescribable)
-
 -- | The name of a city.
 newtype City = City Text
   deriving stock (Generic)
@@ -68,9 +50,35 @@ instance Surveyable Musician
 deriving via Generically Musician instance Promptable Musician
 @
 
-A program then asks for a musician with @prompt \@Musician@, as for any
-'Promptable' type. A sum is derived the same way; its strategy first asks which
-constructor to build.
+Here @SOP@ is "Generics.SOP". The example needs the packages @shroom@,
+@generics-sop@, @aeson@, @openapi3@ and @text@, and the GHC flag @-haddock@ for
+the module that declares the types: the descriptions are read from their
+Haddock comments (see "Data.Shroom.Class.TH"). A leaf type that a field uses is
+derived before the type that has the field.
+
+A program asks for a musician with @prompt \@Musician@, as for any 'Promptable'
+type. The request then goes through these steps:
+
+1. The model is shown the request for a @Musician@ and answers with a cue for
+   all parts, for example \"Make it a classical composer\".
+2. Each part is requested on its own, and sees the request, the cue and the
+   parts before it. The name comes out as @\"Wolfgang Amadeus Mozart\"@. The city,
+   though it sees the name, may come out as @City \"Eisenach\"@: a plausible
+   city for a composer, but not Mozart's.
+3. shroom assembles the parts into
+   @Musician \"Wolfgang Amadeus Mozart\" (City \"Eisenach\")@.
+4. The model is shown this assembled value and asked to improve it, which means
+   either to keep it or to return a corrected one.
+5. The model notices that the name and the city do not fit, since Bach was born
+   in Eisenach and Mozart in Salzburg. It corrects the value to
+   @Musician \"Johann Sebastian Bach\" (City \"Eisenach\")@ or to
+   @Musician \"Wolfgang Amadeus Mozart\" (City \"Salzburg\")@.
+
+Without the last two steps, the mismatch of step 3 would stay. That is why the
+strategy ends with 'Control.Monad.Prompt.Effect.improve'.
+
+A sum is derived the same way; its strategy first asks which constructor to
+build.
 
 Only the class method 'Control.Monad.Prompt.Promptable.prompt' runs the strategy, directly or through
 the instance of a field. The flat 'Control.Monad.Prompt.Effect.promptSingle' and
