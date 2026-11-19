@@ -116,7 +116,7 @@ type instance DispatchOf Prompt = Dynamic
 
 {- | Request a value of type @a@ in a single request, one call to the backend for
 the whole value: the prompt text is the type's 'description' and the schema its
-'ToSchema'.
+'ToSchema'. The reply joins the context as an 'AssistantMessage'.
 
 Note that this skips the type's t'Control.Monad.Prompt.Promptable.Promptable'
 strategy, such as a @deriving via Generically@. It is the default of
