@@ -34,12 +34,8 @@ signUp = do
   prompt \@User
 @
 
-The program is not tied to a model. An interpreter runs it against a backend (see
-"Control.Monad.Prompt.Backend"), as 'Control.Monad.Prompt.Effect.runPromptResultEff'
-does. "Control.Monad.Prompt.FileMock" is a backend that needs no key and no network.
-For a real model, the @shroom-baikai@ package builds a backend, for example
-<https://hackage.haskell.org/package/shroom-baikai/docs/Control-Monad-Prompt-Baikai.html#v:claudeBackend claudeBackend>
-for Claude.
+To run the program against a backend, see "Control.Monad.Prompt.Backend" and the
+<https://hackage.haskell.org/package/shroom-baikai shroom-baikai> package.
 -}
 module Control.Monad.Prompt (module Control.Monad.Prompt.Promptable, module Control.Monad.Prompt.Generic) where
 
