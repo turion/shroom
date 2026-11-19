@@ -598,15 +598,17 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
 {- | Run a 'Prompt' program against a t'Backend', starting from an empty context
 and returning a failure as 'Left'. 'promptPar' and 'promptsParallel' run
 their branches concurrently.
-
-Build the t'Backend' with, for example, the @shroom-baikai@ package's
-<https://hackage.haskell.org/package/shroom-baikai/docs/Control-Monad-Prompt-Baikai.html#v:claudeBackend claudeBackend>
-or 'Control.Monad.Prompt.FileMock.fileMockBackend'. Both build a @t'Backend' m@ for
-any @t'Control.Monad.IO.Class.MonadIO' m@, so the result fits here without an annotation.
 -}
 runPromptResultEff ::
+  {- | Where the requests go. Build it with, for example, the @shroom-baikai@ package's
+  <https://hackage.haskell.org/package/shroom-baikai/docs/Control-Monad-Prompt-Baikai.html#v:claudeBackend claudeBackend>
+  or 'Control.Monad.Prompt.FileMock.fileMockBackend'. Both build a @t'Backend' m@ for
+  any @t'Control.Monad.IO.Class.MonadIO' m@, so the result fits here without an annotation.
+  -}
   Backend (Eff '[State [ContextItem], Error Text, Concurrent, IOE]) ->
+  -- | The retry and tool limits, and the debug log.
   PromptConfig ->
+  -- | The program to run.
   Eff '[Prompt, State [ContextItem], Error Text, Concurrent, IOE] a ->
   IO (Either Text a)
 runPromptResultEff backend promptCfg program =
