@@ -1,7 +1,12 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_HADDOCK hide #-}
 
+{- |
+Module      : Types
+Description : Small example types for the offline tests.
+-}
 module Types where
 
 -- base

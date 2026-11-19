@@ -65,6 +65,11 @@ the Haddocks say what the functions do.
   `examples` and `toolDescription`. Editing one changes what the model sees. Known mismatch: the Haddock of
   `DuckDuckGoSearch` says multi-word queries return no result, while its `examples` are multi-word queries.
   It is left as it is so the model's prompt does not change.
+- **`cabal.project` lists the `Rep_*` symbols of `Control.Monad.Prompt.Tool.Web` by hand.** Haddock warns about
+  the link to the representation type GHC derives for each tool type's `Generic` instance, since it has no page.
+  The `package shroom` stanza silences it with one `--ignore-link-symbol` per tool type
+  (`Rep_WebFetch`, `Rep_DuckDuckGoSearch`, `Rep_WikipediaSearch`). A new `Generic` tool type in that module needs
+  a fourth one, or the CI doc build warns.
 - **`trySynchronous` catches synchronous exceptions only.** A failed request (connection refused, bad status)
   becomes a `Left` tool result; an asynchronous exception (`System.Timeout.timeout`'s `Timeout`,
   `ThreadKilled`, an `async` cancellation) is the caller's control flow and propagates, so a `timeout` around

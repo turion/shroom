@@ -23,7 +23,7 @@ main = do
 @
 
 The example needs @OverloadedStrings@ and @TypeApplications@, and @apiKey@ is an
-Anthropic API key as @Text@. For another host, replace @claudeBackend@:
+Anthropic API key as 'Text'. For another host, replace 'claudeBackend':
 
 * 'claudeBackend' is the Claude API.
 * 'anthropicCompatBackend' is any other host that speaks the Anthropic Messages API.
@@ -120,9 +120,9 @@ import Control.Monad.Prompt.Backend (
 {- | Turn shroom's context items into the request 'Context' of baikai, for a hand-written t'Backend' built on baikai.
 
 Its 'SystemMessage' items are joined with newlines into the one
-@systemPrompt@. 'ToolCallMessage' becomes one assistant message with a tool-call
+'systemPrompt'. 'ToolCallMessage' becomes one assistant message with a tool-call
 block per call, and 'ToolResultMessage' one tool-result message per result. The
-@tools@ field stays empty, for 'baikaiBackend' to set.
+'tools' field stays empty, for 'baikaiBackend' to set.
 -}
 contextItemsToBaikai ::
   -- | The conversation so far.
@@ -177,7 +177,7 @@ toBaikaiToolResultMessage tr =
     toBaikaiToolResult (Right txt) = toolResultText txt
 
 {- | Convert a t'ToolDef' to a baikai 'Tool'. The schema is passed on unchanged as the
-opaque 'Data.Aeson.Value' that the @parameters@ field of 'Tool' holds. It must
+opaque t'Data.Aeson.Value' that the @parameters@ field of 'Tool' holds. It must
 already be flat, without @$ref@; every schema a t'ToolDef' carries is.
 -}
 toBaikaiTool :: ToolDef -> Tool
@@ -230,14 +230,14 @@ fromBaikaiToolCall bc =
 directly for another provider, or for 'Options' they do not set.
 
 The schema of the requested type goes out as the structured-output format on every
-call, with or without tools, and with @strict = True@: OpenAI enforces it, and the
+call, with or without tools, and with the @strict@ field of t'JsonSchemaFormat' set to @True@: OpenAI enforces it, and the
 schema shroom produces already fits OpenAI's strict subset. Anthropic's structured
 outputs enforce the schema either way.
 
 No /synchronous/ exception a 'complete' call throws escapes this function; it comes
 back as 'BackendTransportError'. /Asynchronous/ exceptions
-('SomeAsyncException': a @System.Timeout.timeout@, @ThreadKilled@, an @async@
-cancellation) propagate, so that a @timeout@ around a hung call returns 'Nothing'
+('SomeAsyncException': a 'System.Timeout.timeout', 'Control.Exception.ThreadKilled', an @async@
+cancellation) propagate, so that a 'System.Timeout.timeout' around a hung call returns 'Nothing'
 instead of being retried as a backend error.
 -}
 baikaiBackend ::
@@ -364,8 +364,8 @@ openAICompatBackend ::
   Text ->
   -- | The id of the model, as the host names it.
   Text ->
-  {- | The API key. @Nothing@ for a host that checks no credential, such as a bare
-  Ollama or llama.cpp server, and @Just@ the key for a host that does.
+  {- | The API key. 'Nothing' for a host that checks no credential, such as a bare
+  Ollama or llama.cpp server, and 'Just' the key for a host that does.
   -}
   Maybe Text ->
   IO (Backend m)

@@ -101,7 +101,7 @@ class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
   {- | Request a value of type @a@ from the model.
 
   An override can also add fallbacks or run sub-prompts in parallel. Its
-  @State [ContextItem]@ constraint is the state that
+  @'State' ['ContextItem']@ constraint is the state that
   'Control.Monad.Prompt.Effect.context' adds to, so an override can scope context
   with 'Control.Monad.Prompt.Effect.withContext'.
   -}

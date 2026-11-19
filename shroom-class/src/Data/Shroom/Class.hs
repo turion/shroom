@@ -11,8 +11,10 @@ refers to. 'Surveyable' builds on it with properties that a value of the type
 must satisfy, and with example values. 'description' renders a type from both
 for a model; the @shroom@ package checks the model's answer against the
 properties. This package is pure: it depends on no HTTP client and no effect
-system. @Promptable@, which turns a 'Surveyable' type into a prompt, is in the
-@shroom@ package, as @Control.Monad.Prompt.Promptable@.
+system.
+<https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Promptable.html#t:Promptable Promptable>,
+which turns a 'Surveyable' type into a prompt, is in the @shroom@ package, as
+<https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Promptable.html Control.Monad.Prompt.Promptable>.
 
 A bare 'Surveyable' instance surveys the type's fields: the properties of every
 field's own type become properties of the whole value. For a user type this
@@ -111,8 +113,8 @@ lists each reachable type once.
 
 'description' sends the requested type's own 'describeType', and then, in a
 section of their own, the 'describeType' of every type it can reach through
-'referencedTypes', each once. @deriveDescribable@ writes 'referencedTypes' for
-you. __A hand-written instance that does not write it contributes no reachable types:__
+'referencedTypes', each once. 'Data.Shroom.Class.TH.deriveDescribable' writes
+'referencedTypes' for you. __A hand-written instance that does not write it contributes no reachable types:__
 the types it refers to are not described to the model.
 -}
 class (ToJSON a, Typeable a) => Describable a where
@@ -142,7 +144,8 @@ class (ToJSON a, Typeable a) => Describable a where
   {- | The identity of the type that 'description' reports on, by which
     'reachableTypes' keeps that type out of its own list of reachable types.
     Defaults to the type's own 'TypeRep'. A transparent newtype wrapper (@t'Generically' X@,
-    @DescriptionPrompt X@) forwards to the wrapped type's, because @description@ runs at
+    <https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Promptable.html#t:DescriptionPrompt DescriptionPrompt>
+    @X@) forwards to the wrapped type's, because 'description' runs at
     the wrapper while the types that refer back to @X@ name @X@ itself.
 
     == Writing a transparent newtype wrapper
@@ -158,8 +161,8 @@ class (ToJSON a, Typeable a) => Describable a where
       lists the requested type under itself.
 
     @t'Generically' a@ in this module is such a wrapper, and so is
-    @DescriptionPrompt a@ in the module @Control.Monad.Prompt.Promptable@ of the
-    @shroom@ package.
+    <https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Promptable.html#t:DescriptionPrompt DescriptionPrompt>
+    in the @shroom@ package.
   -}
   describedIdentity :: Proxy a -> TypeRep
   describedIdentity = typeRep
@@ -174,7 +177,7 @@ data Described
 {- | The entries a field of type @t@ contributes to 'referencedTypes': @t@ itself
 if it has a section of its own ('hasOwnSection'), otherwise whatever @t@ itself
 references. So a field of type @[Speaker]@ or @Maybe Speaker@ contributes
-@Speaker@, and a field of type @Text@ contributes nothing:
+@Speaker@, and a field of type @t'Text'@ contributes nothing:
 
 @
 referencedTypes _ = reach \@Person <> reach \@[Address] <> reach \@Text
@@ -232,8 +235,8 @@ instance Surveyable Booking
 
 every property of @Guest@ is a property of @Booking@. The model is told about it, and
 it is checked on the parsed answer. The default needs the @generics-sop@
-classes @SOP.Generic@ and @SOP.HasDatatypeInfo@ for your type, both derivable
-(@deriving anyclass@) from @Generic@ of "GHC.Generics". Each type of a field
+classes t'Generics.SOP.Generic' and t'Generics.SOP.HasDatatypeInfo' for your type, both derivable
+(@deriving anyclass@) from t'GHC.Generics.Generic'. Each type of a field
 needs a 'Surveyable' instance of its own.
 
 == Opting out: @type Property Booking = Void@
@@ -305,8 +308,8 @@ default. \"Directly recursive\" means a field of its own type that is not under 
 list, 'NonEmpty' or 'Maybe', like the @Neg Expr@ in @data Expr = Lit Int | Neg
 Expr@; \"mutually recursive\" means the same through another type's bare
 instance. Enumerating the structural 'Property' (its 'Universe') of such a type
-never ends, and 'description' and @violatedProperties@ (from the @shroom@
-package) enumerate it, so with a bare @instance Surveyable Expr@ they do not
+never ends, and 'description' and the @shroom@ package's check of a value's
+properties enumerate it, so with a bare @instance Surveyable Expr@ they do not
 terminate. Opt out on the recursive type with @type Property Expr = Void@, or
 give it a custom 'Property' that does not contain @t'Structural' Expr@.
 
@@ -333,7 +336,7 @@ and @\$(deriveDescribable ''Hotel)@ reports @No instance for ‘Describable
 Version’@ at its splice. Either give the field type its own instances, or a
 @newtype@ around it to avoid an orphan instance. Or opt out on the enclosing
 type, see above. That removes the 'Surveyable' error only, as
-@deriveDescribable@ still needs a 'Describable' instance for the field type.
+'Data.Shroom.Class.TH.deriveDescribable' still needs a 'Describable' instance for the field type.
 -}
 class (Describable a, Universe (Property a)) => Surveyable a where
   {- | The type of properties for @a@, which must have a 'Universe' instance.
@@ -507,14 +510,15 @@ instance (Describable a) => Surveyable (Maybe a) where
 {- | Forwards to the wrapped type.
 
 These two instances (this one and the one for 'Surveyable') let
-@deriving via t'Generically' X instance Promptable X@ (@Promptable@ is in the
-@shroom@ package) find the superclass instances it needs: a @deriving via@
+@deriving via t'Generically' X instance Promptable X@
+(<https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Promptable.html#t:Promptable Promptable>
+is in the @shroom@ package) find the superclass instances it needs: a @deriving via@
 coerces only the class's own method. They live here, with the classes, so they
 are not orphans.
 
 'ToJSON' for @t'Generically' a@ is @aeson@'s own, which is always the
 "GHC.Generics"-based encoding with default options, hence the extra context
-(satisfied wherever @a@ derives @Generic@ of "GHC.Generics").
+(satisfied wherever @a@ derives t'GHC.Generics.Generic').
 -}
 instance (Describable a, ToJSON (Generically a)) => Describable (Generically a) where
   describeType _ = describeType (Proxy @a)
@@ -711,8 +715,9 @@ instance (Generic a, HasDatatypeInfo a, All2 Surveyable (Code a)) => PropertyDef
 {- | Render a type for the model: its description, its properties and its
 example values, if any.
 
-The text goes to the model next to the JSON schema; @runPrompt@ (from the
-@shroom@ package) sends it as the prompt text. Field descriptions are annotated
+The text goes to the model next to the JSON schema;
+<https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Effect.html#v:runPrompt runPrompt>
+(from the @shroom@ package) sends it as the prompt text. Field descriptions are annotated
 with their JSON types, see 'annotateFieldTypes'.
 
 After the examples comes a section with the 'describeType' of every type the

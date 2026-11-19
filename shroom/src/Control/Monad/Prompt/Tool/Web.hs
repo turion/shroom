@@ -195,7 +195,7 @@ __Limitations__: This uses the DuckDuckGo Instant Answer API, which only returns
 results for well-known named entities (people, places, concepts) that have a
 dedicated Wikipedia article. Vague or multi-word queries (e.g. @\"celebrity names\"@,
 @\"Haskell conference speakers\"@) will return @\"No result found\"@.
-For general search use 'WikipediaSearch' instead.
+For general search use the Wikipedia search tool instead.
 -}
 newtype DuckDuckGoSearch = DuckDuckGoSearch
   { searchQuery :: Text
