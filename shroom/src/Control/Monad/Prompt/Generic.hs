@@ -104,7 +104,7 @@ inside one snapshot of the context:
    'improve', which checks it against the type's own
    'Property' (see 'Surveyable') and either keeps it or returns a corrected one.
 5. The context is restored to the snapshot, and one 'AssistantMessage' holding the
-   final value's JSON is appended, as after a 'Control.Monad.Prompt.Promptable.prompt' of a type without the strategy.
+   final value's JSON is appended, so of the steps above only that answer stays in the context.
 
 Note that a field type whose own 'Control.Monad.Prompt.Promptable.prompt' scopes its context leaves no answer
 behind; the strategy then appends the answer, whenever the context did not grow
@@ -253,7 +253,6 @@ instance (SOP.HasDatatypeInfo a, Describable a) => Describable (ConstructorChoic
 instance (SOP.HasDatatypeInfo a, Describable a) => Surveyable (ConstructorChoice a) where
   type Property (ConstructorChoice a) = Void
 
--- A single request: one request for the whole value.
 instance (Typeable a, SOP.HasDatatypeInfo a, Describable a) => Promptable (ConstructorChoice a)
 
 -- * The strategy

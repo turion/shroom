@@ -95,7 +95,8 @@ import Data.Shroom.Class (Surveyable, describeType)
 
 -- * Tool typeclass
 
-{- | A type whose values the model supplies as the input of a tool call.
+{- | A class for the types whose values the model supplies as the input of a tool
+call.
 
 The model is told the tool's name ('toolName'), a description made of
 'describeType' followed by 'toolDescription', and the JSON schema of @t@.
