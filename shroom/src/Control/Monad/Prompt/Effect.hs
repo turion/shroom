@@ -2,9 +2,10 @@
 Module      : Control.Monad.Prompt.Effect
 Description : Programs that prompt a language model, built from @effectful@ effects.
 
-A program is an @'Eff' es@ computation with 'Prompt' in @es@. Context is plain
-state ('addContextItem', 'withContext'), failure is an error ('failWith',
-'orElse') and parallel requests use "Effectful.Concurrent.Async"
+A shroom program is an @'Eff' es@ computation with 'Prompt' in @es@, where
+'Eff' is the monad of the <https://hackage.haskell.org/package/effectful effectful>
+package. Context is plain state ('addContextItem', 'withContext'), failure is an
+error ('failWith', 'orElse') and parallel requests use "Effectful.Concurrent.Async"
 ('promptPar'). 'runPromptResultEff' runs a program against a t'Backend'.
 
 In ordinary code, request a value with 'Control.Monad.Prompt.Promptable.prompt',
@@ -44,6 +45,7 @@ module Control.Monad.Prompt.Effect (
 -- base
 import Control.Monad.IO.Class (liftIO)
 import Data.Functor ((<&>))
+import Data.Kind (Type)
 import Data.Proxy (Proxy (..))
 
 -- text
@@ -60,7 +62,7 @@ import Data.OpenApi (ToSchema)
 import Data.Universe.Class (universe)
 
 -- effectful
-import Effectful (Dispatch (Dynamic), DispatchOf, Eff, Effect, IOE, runEff, (:>))
+import Effectful (Dispatch (Dynamic), DispatchOf, Eff, IOE, runEff, (:>))
 import Effectful.Concurrent.Async (Concurrent, concurrently, mapConcurrently, runConcurrent)
 import Effectful.Dispatch.Dynamic (interpret, localSeqUnlift, send)
 import Effectful.Error.Static (Error, catchError, runErrorNoCallStack, throwError)
@@ -81,10 +83,28 @@ import Data.Shroom.Class (Surveyable, describeProperties, description, propertyH
 
 -- * The Prompt effect
 
-{- | Request a typed value from the model, given the conversation held in the
-@'State' ['ContextItem']@ effect.
+{- | The effect signature of a shroom program: the operations it can perform
+against a language model. Put @Prompt ':>' es@ in a program's constraints to let
+it prompt. An interpreter such as 'runPrompt' handles the operations, with the
+conversation held in the @'State' ['ContextItem']@ effect.
+
+The signature offers three operations:
+
+* Request a value of a type, sent by 'promptSingle' (and so by
+  'Control.Monad.Prompt.Promptable.prompt', through its default).
+* Request a value while the model may call tools, sent by 'promptTools'.
+* Improve a value, sent by 'improve'.
+
+For example, a program that requests a @User@ and lets the model correct it:
+
+@
+refinedUser :: ('Prompt' ':>' es) => 'Eff' es User
+refinedUser = do
+  user <- 'promptSingle'
+  fromMaybe user \<$> 'improve' user
+@
 -}
-data Prompt :: Effect where
+data Prompt (m :: Type -> Type) (result :: Type) where
   RequestPrompt :: (Surveyable a, ToSchema a, FromJSON a) => Prompt m a
   RequestPromptTools ::
     (Surveyable a, ToSchema a, FromJSON a) =>
@@ -106,7 +126,7 @@ promptSingle :: forall a es. (Prompt :> es, Surveyable a, ToSchema a, FromJSON a
 promptSingle = send RequestPrompt
 
 {- | Like 'promptSingle', with an extra piece of context scoped to this request.
-The strategy-aware counterpart is @'withContext' t ('Control.Monad.Prompt.Promptable.prompt' \@a)@.
+The strategy-aware counterpart is 'withContext' around 'Control.Monad.Prompt.Promptable.prompt'.
 -}
 promptSingleWith ::
   forall a es.
@@ -118,7 +138,8 @@ promptSingleWith txt = withContext txt (promptSingle @a)
 {- | Like 'promptSingle', but the model may call any of the given tools.
 Build each t'ToolBinding' with 'Control.Monad.Prompt.Tool.toolBinding', which needs the tool's
 'Control.Monad.Prompt.Tool.Tool' effect in @es@: a program cannot offer a tool it
-was not given. 'maxToolSteps' limits the number of tool rounds.
+was not given. 'maxToolSteps' limits the number of tool rounds. See
+"Control.Monad.Prompt.Tool" for how to define and run tools.
 -}
 promptTools ::
   forall a es.
@@ -132,10 +153,8 @@ promptTools bindings = send (RequestPromptTools bindings)
 content with it, @'Just' v'@ means the model returned a corrected whole value
 @v'@.
 
-The request shows the value as JSON in a scoped 'UserMessage' (not kept in the
-context) and asks for one verdict object,
-@{"verdict": "fine" | "improved", "value": \<a\>}@. As for 'promptSingle', the
-raw reply is appended to the context as an 'AssistantMessage'.
+The model is shown the value for this request only. As for 'promptSingle', its
+reply is appended to the context as an 'AssistantMessage'.
 
 The reply goes through the same retry path as any request. An @improved@ value
 that fails to parse or violates a property is re-prompted; so is a @fine@
@@ -239,8 +258,9 @@ data PromptConfig = PromptConfig
   -}
   , debugLog :: Maybe (Text -> IO ())
   {- ^ Optional logger called before each LLM call and after each response.
-  Receives a human-readable 'Text' summary.  Pass @Just TIO.putStrLn@ for
-  stdout, or @tasty-hunit@\'s @step@ callback in tests.  Default: 'Nothing'.
+  Receives a human-readable 'Text' summary. Pass @Just putStrLn@, from
+  "Data.Text.IO", for stdout, or @tasty-hunit@\'s @step@ callback in tests.
+  Default: 'Nothing'.
   -}
   }
 
@@ -258,8 +278,9 @@ addContextItem item = modify (\ctx -> ctx <> [item] :: [ContextItem])
 context :: (State [ContextItem] :> es) => Text -> Eff es ()
 context = addContextItem . UserMessage
 
-{- | Scope a 'ContextItem' to a sub-computation: visible only within @act@, and
-not carried past it — including anything @act@ itself added.
+{- | Scope a 'ContextItem' to a computation: visible only within the given
+computation, and not carried past it, including anything that computation itself
+added.
 -}
 withContextItem :: (State [ContextItem] :> es) => ContextItem -> Eff es a -> Eff es a
 withContextItem item act = do
@@ -568,9 +589,9 @@ runPrompt backend promptCfg = interpret $ \env (request :: Prompt (Eff localEs) 
 and returning a failure as 'Left'. 'promptPar' and 'promptsParallel' run
 their branches concurrently.
 
-Build the t'Backend' with, for example, @shroom-baikai@\'s
-@Control.Monad.Prompt.Baikai.claudeBackend@ or
-'Control.Monad.Prompt.FileMock.fileMockBackend'. Both build a @t'Backend' m@ for
+Build the t'Backend' with, for example, the @shroom-baikai@ package's
+<https://hackage.haskell.org/package/shroom-baikai/docs/Control-Monad-Prompt-Baikai.html#v:claudeBackend claudeBackend>
+or 'Control.Monad.Prompt.FileMock.fileMockBackend'. Both build a @t'Backend' m@ for
 any @MonadIO m@, so the result fits here without an annotation.
 -}
 runPromptResultEff ::

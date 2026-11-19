@@ -61,3 +61,14 @@ the Haddocks say what the functions do.
   becomes a `Left` tool result; an asynchronous exception (`System.Timeout.timeout`'s `Timeout`,
   `ThreadKilled`, an `async` cancellation) is the caller's control flow and propagates, so a `timeout` around
   a hung request returns `Nothing` instead of handing the model a timeout result and carrying on.
+
+## `Control.Monad.Prompt.Effect`
+
+- **`improve`'s wire form is not in its Haddock.** The request shows the value as JSON in a scoped
+  `UserMessage`, which the backend sees and the context left behind does not; only the raw reply is kept, as
+  an `AssistantMessage`. The model is asked for one object, `{"verdict": "fine" | "improved", "value": <a>}`.
+  Both keys are `required`, because strict structured-output modes reject an object whose properties are not
+  all required; a `fine` verdict ignores `value`, and its parser accepts a reply without one for backends that
+  do not enforce `required`. The root is built by hand, not derived, so that no `oneOf` sits at the root.
+- **`Prompt` is exported abstract on purpose.** Its three constructors (`RequestPrompt`, `RequestPromptTools`,
+  `RequestImprove`) are not public API, so they carry no Haddocks of their own; `runPrompt` is the interpreter.
