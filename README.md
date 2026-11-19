@@ -165,7 +165,7 @@ steered by a short cue and finished by an `improve` pass, each field through its
 `Promptable`. It needs `SOP.Generic` and `SOP.HasDatatypeInfo` for the type (and `generics-sop` in
 your `build-depends`), and takes effect only through the class method `Promptable.prompt`, not
 `Control.Monad.Prompt.Effect.promptSingle`. Derive the leaves with single requests and `Generically` only the composites.
-The module Haddock of `Control.Monad.Prompt.Generic` is the guide: what each call does, what it
+The module Haddock of `Control.Monad.Prompt.Promptable` is the guide: what each call does, what it
 costs, how containers and recursive types behave.
 
 ## Prompt chaining

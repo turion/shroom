@@ -36,13 +36,13 @@ the Haddocks say what the functions do.
   folded into the field's `description` and removed from the wire. The `Surveyable` properties exist to
   check in code what a host does not enforce.
 
-## `Control.Monad.Prompt.Generic`
+## `Generically` in `Control.Monad.Prompt.Promptable`
 
-- **Both instances for `Generically` are orphans, on purpose** (`{-# OPTIONS_GHC -Wno-orphans #-}`).
-  `ToSchema (Generically a)` is missing from `openapi3`, which is where it belongs; it forwards to `a`'s schema
-  and exists to satisfy `Promptable`'s superclass. `Promptable (Generically a)` cannot sit beside the class in
-  `Control.Monad.Prompt.Promptable`, because the strategy calls that class's own `prompt` on every field and
-  `improve` from `Control.Monad.Prompt.Effect`; a module of its own is worth the one orphan. `Describable` and
+- **`ToSchema (Generically a)` is an orphan, on purpose** (`{-# OPTIONS_GHC -Wno-orphans #-}`, which covers the
+  whole module). It is missing from `openapi3`, which is where it belongs; it forwards to `a`'s schema and
+  exists to satisfy `Promptable`'s superclass. It is the module's only orphan. `Promptable (Generically a)` sits
+  beside the class, because `Control.Monad.Prompt.Effect` does not import `Control.Monad.Prompt.Promptable`, so
+  the strategy can call the class's own `prompt` on every field and `improve` from `Effect`. `Describable` and
   `Surveyable` for `Generically` are not orphans: they are in `Data.Shroom.Class`. The context of the
   `Promptable` instance is mostly about `a`; `ToJSON (Generically a)` and `FromJSON (Generically a)` are
   `aeson`'s generic ones, needed by the superclasses.

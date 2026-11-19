@@ -37,10 +37,7 @@ signUp = do
 To run the program against a backend, see "Control.Monad.Prompt.Backend" and the
 <https://hackage.haskell.org/package/shroom-baikai shroom-baikai> package.
 -}
-module Control.Monad.Prompt (module Control.Monad.Prompt.Promptable, module Control.Monad.Prompt.Generic) where
+module Control.Monad.Prompt (module Control.Monad.Prompt.Promptable) where
 
 -- shroom
-
--- Imported for its instances, which make @deriving via Generically X instance Promptable X@ work.
-import Control.Monad.Prompt.Generic
 import Control.Monad.Prompt.Promptable
