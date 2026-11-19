@@ -46,7 +46,7 @@ the Haddocks say what the functions do.
   `Surveyable` for `Generically` are not orphans: they are in `Data.Shroom.Class`. The context of the
   `Promptable` instance is mostly about `a`; `ToJSON (Generically a)` and `FromJSON (Generically a)` are
   `aeson`'s generic ones, needed by the superclasses.
-- **`promptSingle` and `improve` are flat on purpose,** so the strategy may call `improve` without recursing
+- **`promptSingle` and `improve` make single requests on purpose,** so the strategy may call `improve` without recursing
   into itself; only the class method `prompt` runs a `deriving via Generically` strategy.
 
 ## `Control.Monad.Prompt.Tool`

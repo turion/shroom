@@ -145,7 +145,7 @@ Describable          — describeType: one sentence (auto-derived from Haddock)
 - **`Promptable`** — a single method,
   `prompt :: (Prompt :> es, State [ContextItem] :> es) => Eff es a`,
   the `effectful` program that requests a value of the type from the LLM.
-  The default is `Control.Monad.Prompt.Effect.promptSingle`, one flat request: it sends
+  The default is `Control.Monad.Prompt.Effect.promptSingle`, a single request: it sends
   `RequestPrompt`, which renders the prompt from the type's description, properties and examples,
   annotated with JSON field types, and never consults the type's `Promptable` instance.
   `instance Promptable MyType` with no body is the normal case; override `prompt` to add
@@ -163,8 +163,8 @@ deriving via Generically Musician instance Promptable Musician
 `prompt` then builds a `Musician` field by field (for a sum, it first asks which constructor),
 steered by a short cue and finished by an `improve` pass, each field through its own type's
 `Promptable`. It needs `SOP.Generic` and `SOP.HasDatatypeInfo` for the type (and `generics-sop` in
-your `build-depends`), and takes effect only through the class method `Promptable.prompt`, not the
-flat `Control.Monad.Prompt.Effect.promptSingle`. Derive the leaves flat and `Generically` only the composites.
+your `build-depends`), and takes effect only through the class method `Promptable.prompt`, not
+`Control.Monad.Prompt.Effect.promptSingle`. Derive the leaves with single requests and `Generically` only the composites.
 The module Haddock of `Control.Monad.Prompt.Generic` is the guide: what each call does, what it
 costs, how containers and recursive types behave.
 
@@ -218,7 +218,7 @@ leak to sibling branches or to subsequent steps in the chain.
   all subsequent prompts in the chain.
 - `withContext "..." (prompt @T)` sends a *prompt-local* extra message alongside one
   specific request — it doesn't accumulate into the global context. (`promptSingleWith @T "..."`
-  is the same for the flat request that skips `T`'s `Promptable` strategy.)
+  is the same for the single request that skips `T`'s `Promptable` strategy.)
 - For fine-grained control, `addContextItem` and `withContextItem` accept
   `ContextItem` values (`SystemMessage`, `UserMessage`, or `AssistantMessage`)
   directly, letting you build structured multi-turn conversation history.

@@ -8,7 +8,7 @@ Description : Prompt a record or sum type part by part, with @deriving via Gener
 Prompt a type part by part, after choosing its constructor if it has several,
 by deriving 'Promptable' via t'Generically'.
 
-A flat 'Promptable' asks for the whole value in one request. The strategy here
+A 'Promptable' that makes a single request asks for the whole value at once. The strategy here
 instead asks for a record's fields one at a time, each seeing the earlier ones,
 so that parts that must fit together are built in one train of thought. It then
 asks the model to 'Control.Monad.Prompt.Effect.improve' the assembled value, in
@@ -30,7 +30,7 @@ newtype City = City Text
 
 instance Surveyable City
 
--- A leaf is flat: one request.
+-- A leaf takes a single request.
 instance Promptable City
 
 -- | A musician.
@@ -81,7 +81,7 @@ A sum is derived the same way; its strategy first asks which constructor to
 build.
 
 Only the class method 'Control.Monad.Prompt.Promptable.prompt' runs the strategy, directly or through
-the instance of a field. The flat 'Control.Monad.Prompt.Effect.promptSingle' and
+the instance of a field. 'Control.Monad.Prompt.Effect.promptSingle' and
 'Control.Monad.Prompt.Effect.improve' send one request for the whole value and
 never run it.
 
@@ -104,7 +104,7 @@ inside one snapshot of the context:
    'Control.Monad.Prompt.Effect.improve', which checks it against the type's own
    'Property' (see 'Surveyable') and either keeps it or returns a corrected one.
 5. The context is restored to the snapshot, and one 'AssistantMessage' holding the
-   final value's JSON is appended, as after a flat 'Control.Monad.Prompt.Promptable.prompt'.
+   final value's JSON is appended, as after a 'Control.Monad.Prompt.Promptable.prompt' of a type without the strategy.
 
 Note that a field type whose own @prompt@ scopes its context leaves no answer
 behind; the strategy then appends the answer, whenever the context did not grow
@@ -115,9 +115,9 @@ answer yet appends some other 'AssistantMessage' last goes unnoticed.
 == Cost
 
 A record with @n > 0@ fields costs @n + 2@ requests (cue, fields, improve), where
-a flat request costs 1: the @Musician@ above costs 4. A constructor of a type with
+a single request costs 1: the @Musician@ above costs 4. A constructor of a type with
 several constructors costs one more for the choice, and one more for every retry.
-Derive the leaves flat, with a bare @instance Promptable@, as asking for a scalar
+Derive the leaves with single requests, with a bare @instance Promptable@, as asking for a scalar
 part by part would pay a cue and an @improve@ for nothing; use @Generically@ for
 the records and sums whose parts must cohere.
 
@@ -190,7 +190,7 @@ instance Describable Cue where
 instance Surveyable Cue where
   type Property Cue = Void
 
--- Flat: one request for the whole value.
+-- A single request: one request for the whole value.
 instance Promptable Cue
 
 -- * The constructor choice
@@ -253,7 +253,7 @@ instance (SOP.HasDatatypeInfo a, Describable a) => Describable (ConstructorChoic
 instance (SOP.HasDatatypeInfo a, Describable a) => Surveyable (ConstructorChoice a) where
   type Property (ConstructorChoice a) = Void
 
--- Flat: one request for the whole value.
+-- A single request: one request for the whole value.
 instance (Typeable a, SOP.HasDatatypeInfo a, Describable a) => Promptable (ConstructorChoice a)
 
 -- * The strategy
