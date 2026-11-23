@@ -161,12 +161,12 @@ deriving via Generically Musician instance Promptable Musician
 ```
 
 `prompt` then builds a `Musician` field by field (for a sum, it first asks which constructor),
-steered by a short cue and finished by an `improve` pass, each field through its own type's
-`Promptable`. It needs `SOP.Generic` and `SOP.HasDatatypeInfo` for the type (and `generics-sop` in
-your `build-depends`), and takes effect only through the class method `Promptable.prompt`, not
-`Control.Monad.Prompt.Effect.promptSingle`. Derive the leaves with single requests and `Generically` only the composites.
-The module Haddock of `Control.Monad.Prompt.Promptable` is the guide: what each call does, what it
-costs, how containers and recursive types behave.
+each field through its own type's `Promptable`, and finishes with an `improve` pass. It needs
+`SOP.Generic` and `SOP.HasDatatypeInfo` for the type (and `generics-sop` in your `build-depends`),
+and takes effect only through the class method `Promptable.prompt`, not
+`Control.Monad.Prompt.Effect.promptSingle`. Derive the leaves with single requests and `Generically`
+only the composites. The module Haddock of `Control.Monad.Prompt.Promptable` is the guide: what each
+call does, what it costs, how containers and recursive types behave.
 
 ## Prompt chaining
 

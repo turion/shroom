@@ -130,12 +130,12 @@ type.
 * **New: `deriving via Generically X instance Promptable X`** prompts a single-constructor record
   field by field (#21). `Control.Monad.Prompt.Promptable` (re-exported by `Control.Monad.Prompt`) gives
   `GHC.Generics.Generically a` a `Promptable` instance that, inside one snapshot of the context,
-  asks the model for a short `Cue` (a steer every field follows), then prompts each field in order
-  through **its own type's** `Promptable.prompt`, told the parent's description, the cue and the
-  field's name, each later field seeing the earlier ones; assembles the draft with `generics-sop`;
-  runs `improve` on it, keeping the draft on a `fine` verdict; and finally restores the context and
-  appends the value's JSON as one `AssistantMessage`, as after a flat `promptSingle`. A record with `n`
-  fields costs `n + 2` requests, plus retries and the requests of any generic field.
+  prompts each field in order through **its own type's** `Promptable.prompt`, told the parent's
+  description and the field's name, each later field seeing the earlier ones; assembles the draft
+  with `generics-sop`; runs `improve` on it, keeping the draft on a `fine` verdict; and finally
+  restores the context and appends the value's JSON as one `AssistantMessage`, as after a flat
+  `promptSingle`. A record with `n > 0` fields costs `n + 1` requests, plus retries and the requests
+  of any generic field.
   Each of those requests now carries the parent's full reachable-type section in its
   context (`promptGeneric` puts `description (Proxy @a)` there once, ahead of the
   first), so the prompt grows with the type tree. `X` needs
@@ -149,12 +149,12 @@ type.
 * **`deriving via Generically X` also builds sum types** (#22): a type with several constructors is
   prompted by first asking the model which constructor to build, through the new
   `ConstructorChoice X` (a string enum of the constructor names, described with the constructors'
-  Haddock; its reply stays in the context like the cue's), then running the product strategy on that
-  constructor's fields, with the chosen constructor named in the cue and field messages, then
-  `improve`. A constructor with no fields is assembled at once, without cue or field requests
-  (`improve` still runs), and a single-constructor type skips the choice, so a product costs what
-  it did. A sum with `k` fields in its chosen constructor costs `k + 3` requests (choice, cue,
-  fields, improve), a nullary one 2.
+  Haddock; its reply stays in the context), then running the product strategy on that
+  constructor's fields, with the chosen constructor named in the field messages, then
+  `improve`. A constructor with no fields is assembled at once, without field requests
+  (`improve` still runs), and a single-constructor type skips the choice, so a product has no
+  choice request. A sum with `k > 0` fields in its chosen constructor costs
+  `k + 2` requests (choice, fields, improve), a nullary one 2.
 * **Wire-schema change: `normalizeSchemaForStructuredOutput` rewrites `oneOf` to `anyOf`.**
   `openapi3` renders every sum type with a non-nullary constructor as `oneOf`, which Anthropic's
   structured outputs do not list as supported (they list `anyOf` and `allOf`), so such a type could
