@@ -72,9 +72,9 @@
   of types that did not document arguments or a single constructor are unchanged.
 * New: `describedIdentity :: Proxy a -> TypeRep`, a `Describable` method (default: the type's own
   `typeRep`) naming the type that `description` reports on, so the type is not listed under itself.
-  `Generically a` and `DescriptionPrompt a` forward to `a`'s, which fixes a recursive `X`
-  promoted via `deriving via Generically X`/`DescriptionPrompt X` being listed under itself. A
-  hand-written transparent wrapper forwards it the same way.
+  `Generically a` forwards to `a`'s, which fixes a recursive `X` promoted via
+  `deriving via Generically X` being listed under itself. A hand-written transparent wrapper
+  forwards it the same way.
 * **Breaking: `Typeable` is now a superclass of `Describable`.** Every concrete type has it, and a
   polymorphic instance gets it from the `Describable a` context of its parameter, so most instances
   compile unchanged. An instance whose type is indexed by a parameter that is not itself
