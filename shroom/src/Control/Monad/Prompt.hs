@@ -7,9 +7,11 @@ told the type's description, properties and examples (see "Data.Shroom.Class"), 
 its answer is parsed and checked against them, with a retry when it fails.
 
 Programs that chain requests, add context or offer tools are written in
-"Control.Monad.Prompt.Effect". The program below asks for one @User@. Its
-description is read from the Haddock comments, so the module that declares @User@
-needs the GHC flag @-haddock@ (see "Data.Shroom.Class.TH").
+"Control.Monad.Prompt.Effect". For example, the program below gives additional
+context, asks for a user and then asks for a second user who differs from the
+first. The description of @User@ is read from the
+Haddock comments, so the module that declares @User@ needs the GHC flag
+@-haddock@ (see "Data.Shroom.Class.TH").
 
 @
 -- | A user with a name and an email address.
@@ -28,10 +30,13 @@ instance Surveyable User
 
 instance Promptable User
 
-signUp :: (Prompt :> es, State [ContextItem] :> es) => Eff es User
-signUp = do
+signUpTwice :: (Prompt :> es, State [ContextItem] :> es) => Eff es (User, User)
+signUpTwice = do
   context \"Alice Smith signed up with alice\@example.org.\"
-  prompt \@User
+  first <- prompt \@User
+  context \$ \"A second user signed up, who is not \" <> userName first <> \".\"
+  second <- prompt \@User
+  pure (first, second)
 @
 
 To run the program against a backend, see "Control.Monad.Prompt.Backend" and the
