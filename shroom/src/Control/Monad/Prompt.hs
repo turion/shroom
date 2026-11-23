@@ -39,6 +39,31 @@ signUpTwice = do
   pure (first, second)
 @
 
+The example needs the language GHC2021 or GHC2024 and the extensions @DeriveAnyClass@,
+@DerivingStrategies@, @OverloadedStrings@ and @TemplateHaskell@. It needs the packages
+@shroom@, <https://hackage.haskell.org/package/shroom-class shroom-class>,
+<https://hackage.haskell.org/package/aeson aeson>,
+<https://hackage.haskell.org/package/effectful effectful>,
+<https://hackage.haskell.org/package/generics-sop generics-sop>,
+<https://hackage.haskell.org/package/openapi3 openapi3> and
+<https://hackage.haskell.org/package/text text> in @build-depends@. Its names come from
+these modules:
+
+* t'Data.Text.Text' from "Data.Text" and t'GHC.Generics.Generic' from "GHC.Generics".
+* t'Data.Aeson.ToJSON' and t'Data.Aeson.FromJSON' from "Data.Aeson", and
+  t'Data.OpenApi.ToSchema' from "Data.OpenApi".
+* <https://hackage.haskell.org/package/generics-sop/docs/Generics-SOP.html#t:Generic SOP.Generic> and
+  <https://hackage.haskell.org/package/generics-sop/docs/Generics-SOP.html#t:HasDatatypeInfo SOP.HasDatatypeInfo>
+  from "Generics.SOP", which the example imports qualified as @SOP@.
+* 'Data.Shroom.Class.TH.deriveDescribable' from "Data.Shroom.Class.TH" and
+  t'Data.Shroom.Class.Surveyable' from "Data.Shroom.Class".
+* t'Promptable' and 'prompt' from this module.
+* t'Control.Monad.Prompt.Effect.Prompt' and 'Control.Monad.Prompt.Effect.context' from
+  "Control.Monad.Prompt.Effect", and t'Control.Monad.Prompt.Backend.ContextItem' from
+  "Control.Monad.Prompt.Backend".
+* t'Effectful.Eff' and t'(Effectful.:>)' from "Effectful", and t'Effectful.State.Static.Local.State'
+  from "Effectful.State.Static.Local".
+
 To run the program against a backend, see "Control.Monad.Prompt.Backend" and the
 <https://hackage.haskell.org/package/shroom-baikai shroom-baikai> package.
 -}

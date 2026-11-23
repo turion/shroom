@@ -37,12 +37,31 @@ main = do
   print result
 @
 
-The example needs the extensions @DeriveAnyClass@, @DerivingStrategies@,
-@OverloadedStrings@, @TemplateHaskell@ and @TypeApplications@. It uses 'claudeBackend'
-from this module, 'Control.Monad.Prompt.Effect.context', 'Control.Monad.Prompt.Effect.defaultPromptConfig'
-and 'Control.Monad.Prompt.Effect.runPromptResultEff' from "Control.Monad.Prompt.Effect",
-and 'Control.Monad.Prompt.prompt' from "Control.Monad.Prompt". @apiKey@ is an
-Anthropic API key as 'Text'. For another host, replace 'claudeBackend':
+The example needs the language GHC2021 or GHC2024 and the extensions @DeriveAnyClass@,
+@DerivingStrategies@, @OverloadedStrings@ and @TemplateHaskell@. It needs the packages
+@shroom-baikai@,
+<https://hackage.haskell.org/package/shroom shroom>,
+<https://hackage.haskell.org/package/shroom-class shroom-class>,
+<https://hackage.haskell.org/package/aeson aeson>,
+<https://hackage.haskell.org/package/generics-sop generics-sop>,
+<https://hackage.haskell.org/package/openapi3 openapi3> and
+<https://hackage.haskell.org/package/text text> in @build-depends@.
+Its names come from these modules:
+
+* 'claudeBackend' from this module.
+* 'Control.Monad.Prompt.Effect.context', 'Control.Monad.Prompt.Effect.defaultPromptConfig'
+  and 'Control.Monad.Prompt.Effect.runPromptResultEff' from "Control.Monad.Prompt.Effect".
+* t'Control.Monad.Prompt.Promptable' and 'Control.Monad.Prompt.prompt' from "Control.Monad.Prompt".
+* 'Data.Shroom.Class.TH.deriveDescribable' from "Data.Shroom.Class.TH" and
+  t'Data.Shroom.Class.Surveyable' from "Data.Shroom.Class".
+* t'Data.Text.Text' from "Data.Text" and t'GHC.Generics.Generic' from "GHC.Generics".
+* t'Data.Aeson.ToJSON' and t'Data.Aeson.FromJSON' from "Data.Aeson", and
+  t'Data.OpenApi.ToSchema' from "Data.OpenApi".
+* <https://hackage.haskell.org/package/generics-sop/docs/Generics-SOP.html#t:Generic SOP.Generic> and
+  <https://hackage.haskell.org/package/generics-sop/docs/Generics-SOP.html#t:HasDatatypeInfo SOP.HasDatatypeInfo>
+  from "Generics.SOP", which the example imports qualified as @SOP@.
+
+@apiKey@ is an Anthropic API key as t'Data.Text.Text'. For another host, replace 'claudeBackend':
 
 * 'claudeBackend' is the Claude API.
 * 'anthropicCompatBackend' is any other host that speaks the Anthropic Messages API.
