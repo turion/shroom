@@ -144,9 +144,8 @@ class (ToJSON a, Typeable a) => Describable a where
 
   {- | The identity of the type that 'description' reports on, by which
     'reachableTypes' keeps that type out of its own list of reachable types.
-    Defaults to the type's own 'TypeRep'. A transparent newtype wrapper (@t'Generically' X@,
-    <https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Promptable.html#t:DescriptionPrompt DescriptionPrompt>
-    @X@) forwards to the wrapped type's, because 'description' runs at
+    Defaults to the type's own 'TypeRep'. A transparent newtype wrapper (@t'Generically' X@)
+    forwards to the wrapped type's, because 'description' runs at
     the wrapper while the types that refer back to @X@ name @X@ itself.
 
     == Writing a transparent newtype wrapper
@@ -161,9 +160,7 @@ class (ToJSON a, Typeable a) => Describable a where
     * 'describedIdentity' forwards to @a@'s. Forget this one and 'reachableTypes'
       lists the requested type under itself.
 
-    @t'Generically' a@ in this module is such a wrapper, and so is
-    <https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Promptable.html#t:DescriptionPrompt DescriptionPrompt>
-    in the @shroom@ package.
+    @t'Generically' a@ is such a wrapper, and its instances are a model for one of your own.
   -}
   describedIdentity :: Proxy a -> TypeRep
   describedIdentity = typeRep

@@ -170,7 +170,6 @@ self-contained.
 module Control.Monad.Prompt.Promptable (
   -- * Promptable
   Promptable (..),
-  DescriptionPrompt (..),
 
   -- * Answers to the strategy's requests
   Cue (..),
@@ -256,40 +255,6 @@ class (Surveyable a, ToSchema a, FromJSON a) => Promptable a where
   -}
   prompt :: forall es. (Prompt :> es, State [ContextItem] :> es) => Eff es a
   prompt = Effect.promptSingle
-
-{- | Newtype for deriving the default 'Promptable' instance with @DerivingVia@, as an
-alternative to the empty instance.
-
-@
-\$(deriveDescribable ''Recipe)
-
-instance Surveyable Recipe
-
-deriving via DescriptionPrompt Recipe instance Promptable Recipe
-@
--}
-newtype DescriptionPrompt a = DescriptionPrompt {getDescriptionPrompt :: a}
-  deriving stock (Eq, Show)
-  deriving newtype (ToJSON, FromJSON, ToSchema)
-
-instance (Describable a) => Describable (DescriptionPrompt a) where
-  describeType _ = describeType (Proxy @a)
-
-  -- @description@ runs at @DescriptionPrompt a@ here, so forward what @a@
-  -- references. Not @reach @a@: that would list @a@ under itself.
-  -- The three methods below are the contract of a transparent newtype wrapper, see
-  -- the 'describedIdentity' Haddock; 'Generically' is the other one.
-  referencedTypes _ = referencedTypes (Proxy @a)
-  hasOwnSection _ = False
-  describedIdentity _ = describedIdentity (Proxy @a)
-
-instance (Surveyable a) => Surveyable (DescriptionPrompt a) where
-  type Property (DescriptionPrompt a) = Property a
-  describeProperties _ = describeProperties (Proxy @a)
-  propertyHolds (DescriptionPrompt x) = propertyHolds x
-
--- | Default prompt.
-instance (Surveyable a, ToSchema a, FromJSON a) => Promptable (DescriptionPrompt a)
 
 -- | Default prompt.
 instance Promptable Text

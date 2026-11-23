@@ -354,14 +354,14 @@ $(deriveDescribable ''Treat)
 instance Surveyable Treat
 deriving via Generically Treat instance Promptable Treat
 
--- * Reachable types through 'DescriptionPrompt'
+-- * Reachable types through 'Generically'
 
 -- | An inner record, reachable from 'Outer'.
 data Inner = Inner {innerNote :: Text}
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
 
--- | An outer record that refers to 'Inner', and is prompted for via 'Promptable.DescriptionPrompt'.
+-- | An outer record that refers to 'Inner', and is prompted for with a bare instance.
 data Outer = Outer
   { outerInner :: Inner
   , outerCount :: Int
@@ -378,9 +378,9 @@ instance Describable Outer where
   referencedTypes _ = reach @Inner <> reach @Int <> reach @[Text]
 
 instance Surveyable Outer
-deriving via Promptable.DescriptionPrompt Outer instance Promptable Outer
+instance Promptable Outer
 
--- | A chain of links, each holding the next: a recursive type promoted through 'Promptable.DescriptionPrompt'.
+-- | A chain of links, each holding the next: a recursive type promoted through 'Generically'.
 data Chain = Chain
   { chainInner :: Inner
   -- ^ What this link holds.
@@ -392,9 +392,7 @@ data Chain = Chain
 
 $(deriveDescribable ''Chain)
 
--- A bare instance would hang: 'Chain' is directly recursive.
 instance Surveyable Chain where type Property Chain = Void
-deriving via Promptable.DescriptionPrompt Chain instance Promptable Chain
 
 {- | A mock 'Backend' that answers from a list in order (repeating the last
 reply once the list runs out, like 'seqMockBackend') and records, for every
@@ -1360,14 +1358,14 @@ main =
           ]
       , testGroup
           "reachable types"
-          [ testCase "a type promoted through DescriptionPrompt renders the same reachable sections as its own description" $ do
+          [ testCase "a type promoted through Generically renders the same reachable sections as its own description" $ do
               let own = description (Proxy @Outer)
               assertContains "The types above refer to the following types:\n\nInner:\nAn inner record.\n" own
-              description (Proxy @(Promptable.DescriptionPrompt Outer)) @?= own
-          , testCase "a recursive type promoted through DescriptionPrompt is not listed under itself" $ do
+              description (Proxy @(Generically Outer)) @?= own
+          , testCase "a recursive type promoted through Generically is not listed under itself" $ do
               let sectionHeaders = filter (`elem` (["Chain:", "Inner:"] :: [Text])) . T.lines
                   own = description (Proxy @Chain)
-                  promoted = description (Proxy @(Promptable.DescriptionPrompt Chain))
+                  promoted = description (Proxy @(Generically Chain))
               sectionHeaders own @?= ["Inner:"]
               sectionHeaders promoted @?= ["Inner:"]
               promoted @?= own
