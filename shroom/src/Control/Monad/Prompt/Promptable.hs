@@ -91,22 +91,20 @@ A leaf type that a field uses is derived before the type that has the field.
 A program asks for a musician with @'prompt' \@Musician@, as for any 'Promptable'
 type. The request then goes through these steps:
 
-1. The model is shown the request for a @Musician@ and answers with a cue for
-   all parts, for example \"Make it a classical composer\".
-2. Each part is requested on its own, and sees the request, the cue and the
-   parts before it. The name comes out as @\"Wolfgang Amadeus Mozart\"@. The city,
-   though it sees the name, may come out as @City \"Eisenach\"@: a plausible
-   city for a composer, but not Mozart's.
-3. shroom assembles the parts into
+1. Each part is requested on its own, and sees the description of a @Musician@
+   and the parts before it. The name comes out as @\"Wolfgang Amadeus Mozart\"@.
+   The city, though it sees the name, may come out as @City \"Eisenach\"@: a
+   plausible city for a composer, but not Mozart's.
+2. shroom assembles the parts into
    @Musician \"Wolfgang Amadeus Mozart\" (City \"Eisenach\")@.
-4. The model is shown this assembled value and asked to improve it, which means
+3. The model is shown this assembled value and asked to improve it, which means
    either to keep it or to return a corrected one.
-5. The model notices that the name and the city do not fit, since Bach was born
+4. The model notices that the name and the city do not fit, since Bach was born
    in Eisenach and Mozart in Salzburg. It corrects the value to
    @Musician \"Johann Sebastian Bach\" (City \"Eisenach\")@ or to
    @Musician \"Wolfgang Amadeus Mozart\" (City \"Salzburg\")@.
 
-Without the last two steps, the mismatch of step 3 would stay. That is why the
+Without the last two steps, the mismatch of step 2 would stay. That is why the
 strategy ends with 'improve'.
 
 A sum is derived the same way. Its strategy first asks which constructor to
@@ -122,20 +120,19 @@ never run it.
 'prompt' for @t'Generically' a@ builds an @a@ in the following steps, all
 inside one snapshot of the context:
 
-1. Only for a type with several constructors: the model is told it is about to
-   build a value of @a@, described by 'description', and is asked for a
-   t'ConstructorChoice', an enum of the constructor names.
-2. Unless the constructor has no fields: the model is asked for a t'Cue', a short,
-   specific steer that every field will follow: a tone or a setting that the first
-   field's request would otherwise leave to chance, and the later ones inherit.
-3. For each field in order, a message names the field (a record's field name,
+1. The model is told it is about to build a value of @a@, described by
+   'description'. A type with several constructors is then asked for a
+   t'ConstructorChoice', an enum of the constructor names. A type whose only
+   constructor has no fields skips this step.
+2. For each field in order, a message names the field (a record's field name,
    otherwise the constructor's name and the field's position), and the field
    type's own 'prompt' is called. Its answer stays in the context, so
-   each field sees the earlier ones.
-4. The fields are assembled into a draft and go through
+   each field sees the earlier ones. A constructor with no fields has none of
+   these requests.
+3. The fields are assembled into a draft and go through
    'improve', which checks it against the type's own
    'Property' (see 'Surveyable') and either keeps it or returns a corrected one.
-5. The context is restored to the snapshot, and one 'AssistantMessage' holding the
+4. The context is restored to the snapshot, and one 'AssistantMessage' holding the
    final value's JSON is appended, so of the steps above only that answer stays in the context.
 
 Note that a field type whose own 'prompt' scopes its context leaves no answer
@@ -146,11 +143,11 @@ answer yet appends some other 'AssistantMessage' last goes unnoticed.
 
 === Cost
 
-A record with @n > 0@ fields costs @n + 2@ requests (cue, fields, improve), where
-a single request costs 1. The @Musician@ above costs 4. A constructor of a type with
+A record with @n > 0@ fields costs @n + 1@ requests (fields, improve), where
+a single request costs 1. The @Musician@ above costs 3. A constructor of a type with
 several constructors costs one more for the choice, and one more for every retry.
 Derive the leaves with single requests, with a bare @instance Promptable@, as asking for a scalar
-part by part would pay a cue and an 'improve' for nothing. Use t'Generically' for
+part by part would pay an 'improve' for nothing. Use t'Generically' for
 the records and sums whose parts must cohere.
 
 === The limits of the strategy
@@ -172,7 +169,6 @@ module Control.Monad.Prompt.Promptable (
   Promptable (..),
 
   -- * Answers to the strategy's requests
-  Cue (..),
   ConstructorChoice,
 ) where
 
@@ -304,25 +300,6 @@ instance (Describable a, ToSchema a, FromJSON a, Ord a) => Promptable (Set a)
 -- | Default prompt, for an optional value described by @a@.
 instance (Describable a, ToSchema a, FromJSON a) => Promptable (Maybe a)
 
--- * The cue
-
-{- | A short, specific steer that every field of a value under construction
-follows: a tone, a setting, a constraint. The model is asked for it before the
-first field, once the constructor is known.
--}
-newtype Cue = Cue Text
-  deriving stock (Eq, Show)
-  deriving newtype (ToJSON, FromJSON, ToSchema)
-
-instance Describable Cue where
-  describeType _ = "A short, specific steer, in one or two sentences: the tone, setting or constraint that every field of the value being built should follow."
-
-instance Surveyable Cue where
-  type Property Cue = Void
-
--- A single request: one request for the whole value.
-instance Promptable Cue
-
 -- * The constructor choice
 
 {- | The constructor of an @a@ to build, one of the constructors of @a@. When building
@@ -450,9 +427,9 @@ promptChosen parent (constructor :* _) (Z _) = Z <$> promptConstructor parent Tr
 promptChosen parent (_ :* constructors) (S choice) = S <$> promptChosen parent constructors choice
 promptChosen _ Nil choice = case choice of {}
 
-{- | The product strategy for one constructor: a message and the t'Cue', then its
-fields. A constructor without fields is built at once. The flag says whether the
-constructor was chosen among several, which the messages then say.
+{- | The product strategy for one constructor: a message saying what is being
+built, then its fields. A constructor without fields is built at once. The flag
+says whether the constructor was chosen among several, which the messages then say.
 -}
 promptConstructor ::
   forall xs es.
@@ -467,12 +444,10 @@ promptConstructor parent chosen constructor = case sList :: SList xs of
     addContextItem $
       UserMessage $
         if chosen
-          then "You chose the constructor " <> T.pack (constructorName constructor) <> ". Before its first field, give one short, specific steer that every field will follow."
+          then "You chose the constructor " <> T.pack (constructorName constructor) <> ". Its fields are built one by one."
           else
             "You are about to build a value of the type described below, field by field.\n"
               <> parent
-              <> "\nBefore the first field, give one short, specific steer that every field will follow."
-    _cue <- prompt @Cue
     promptFields (fieldLabel chosen constructor) 0
 
 {- | Prompt each field of one constructor in order, each through its own type's

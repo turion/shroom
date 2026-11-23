@@ -846,48 +846,42 @@ main =
               ]
           , testGroup
               "Generically (products)"
-              [ testCase "a two-field record prompts cue, field 1, field 2, improve, each field seeing what came before" $ do
+              [ testCase "a two-field record prompts field 1, field 2, improve, each field seeing what came before" $ do
                   (result, calls) <-
                     runRecording
-                      ["\"Keep it jazzy.\"", "\"The Quarks\"", "4", "{\"verdict\":\"fine\"}"]
+                      ["\"The Quarks\"", "4", "{\"verdict\":\"fine\"}"]
                       2
                       (Promptable.prompt @Band)
                   -- a fine verdict keeps the draft
                   result @?= Right (Band "The Quarks" 4)
-                  length calls @?= 4
+                  length calls @?= 3
                   let parent = description (Proxy @Band)
-                  assertContains "short, specific steer" (callDesc calls 0)
-                  assertContains "A piece of text." (callDesc calls 1)
-                  assertContains "A whole number." (callDesc calls 2)
-                  assertContains parent (callDesc calls 3)
+                  assertContains "A piece of text." (callDesc calls 0)
+                  assertContains "A whole number." (callDesc calls 1)
+                  assertContains parent (callDesc calls 2)
                   assertContains parent (callCtx calls 0)
+                  assertContains "the field bandName" (callCtx calls 0)
+                  assertNotContains "the field bandSize" (callCtx calls 0)
                   assertContains parent (callCtx calls 1)
-                  assertContains "[assistant] \"Keep it jazzy.\"" (callCtx calls 1)
-                  assertContains "the field bandName" (callCtx calls 1)
-                  assertNotContains "the field bandSize" (callCtx calls 1)
-                  assertContains parent (callCtx calls 2)
-                  assertContains "[assistant] \"Keep it jazzy.\"" (callCtx calls 2)
-                  assertContains "the field bandSize" (callCtx calls 2)
-                  assertContains "[assistant] \"The Quarks\"" (callCtx calls 2)
-                  assertContains "\"bandName\":\"The Quarks\"" (callCtx calls 3)
-                  assertContains "\"bandSize\":4" (callCtx calls 3)
+                  assertContains "the field bandSize" (callCtx calls 1)
+                  assertContains "[assistant] \"The Quarks\"" (callCtx calls 1)
+                  assertContains "\"bandName\":\"The Quarks\"" (callCtx calls 2)
+                  assertContains "\"bandSize\":4" (callCtx calls 2)
               , testCase "an improved verdict replaces the draft" $ do
                   (result, calls) <-
                     runRecording
-                      [ "\"Keep it jazzy.\""
-                      , "\"The Quarks\""
+                      [ "\"The Quarks\""
                       , "4"
                       , "{\"verdict\":\"improved\",\"value\":{\"bandName\":\"The Quarks\",\"bandSize\":5}}"
                       ]
                       2
                       (Promptable.prompt @Band)
                   result @?= Right (Band "The Quarks" 5)
-                  length calls @?= 4
+                  length calls @?= 3
               , testCase "a violating draft is not returned on a fine verdict" $ do
                   (result, calls) <-
                     runRecording
-                      [ "\"Keep it formal.\""
-                      , "\"Alice\""
+                      [ "\"Alice\""
                       , "\"\""
                       , "{\"verdict\":\"fine\"}"
                       , "{\"verdict\":\"improved\",\"value\":{\"profileName\":\"Alice\",\"profileEmail\":\"alice@example.com\"}}"
@@ -895,15 +889,15 @@ main =
                       2
                       (Promptable.prompt @Profile)
                   result @?= Right (Profile "Alice" "alice@example.com")
-                  length calls @?= 5
-                  assertContains "Violated properties:" (callCtx calls 4)
+                  length calls @?= 4
+                  assertContains "Violated properties:" (callCtx calls 3)
                   case result of
                     Right p -> propertyHolds p ProfileEmailNotEmpty @?= True
                     Left err -> assertFailure ("expected a value, got " <> show err)
               , testCase "the caller's context ends as what it was plus one AssistantMessage with the final value's JSON" $ do
                   (result, _) <-
                     runRecording
-                      ["\"Keep it jazzy.\"", "\"The Quarks\"", "4", "{\"verdict\":\"fine\"}"]
+                      ["\"The Quarks\"", "4", "{\"verdict\":\"fine\"}"]
                       2
                       $ do
                         Eff.context "Hello."
@@ -926,30 +920,28 @@ main =
               , testCase "a field with its own prompt override is prompted through it, and its answer stays visible" $ do
                   (result, calls) <-
                     runRecording
-                      ["\"Keep it short.\"", "{\"metricText\":\"3 km\"}", "\"a long road\"", "{\"verdict\":\"fine\"}"]
+                      ["{\"metricText\":\"3 km\"}", "\"a long road\"", "{\"verdict\":\"fine\"}"]
                       2
                       (Promptable.prompt @Measurement)
                   result @?= Right (Measurement (Metric "3 km") "a long road")
-                  length calls @?= 4
-                  assertContains "Always prefer metric units." (callCtx calls 1)
-                  assertNotContains "Always prefer metric units." (callCtx calls 2)
+                  length calls @?= 3
+                  assertContains "Always prefer metric units." (callCtx calls 0)
+                  assertNotContains "Always prefer metric units." (callCtx calls 1)
                   -- the override scoped its own answer away; the strategy put it back
-                  assertContains "[assistant] {\"metricText\":\"3 km\"}" (callCtx calls 2)
+                  assertContains "[assistant] {\"metricText\":\"3 km\"}" (callCtx calls 1)
               , testCase "a positional constructor's fields are named by constructor and position" $ do
                   (result, calls) <-
                     runRecording
-                      ["\"Keep it short.\"", "\"x\"", "1", "{\"verdict\":\"fine\"}"]
+                      ["\"x\"", "1", "{\"verdict\":\"fine\"}"]
                       2
                       (Promptable.prompt @Pair)
                   result @?= Right (Pair "x" 1)
-                  assertContains "field 1 of constructor Pair" (callCtx calls 1)
-                  assertContains "field 2 of constructor Pair" (callCtx calls 2)
+                  assertContains "field 1 of constructor Pair" (callCtx calls 0)
+                  assertContains "field 2 of constructor Pair" (callCtx calls 1)
               , testCase "a field that is itself generic is built the same way and leaves one message behind" $ do
                   (result, calls) <-
                     runRecording
-                      [ "\"loud\""
-                      , "\"quiet\""
-                      , "\"The Quarks\""
+                      [ "\"The Quarks\""
                       , "4"
                       , "{\"verdict\":\"fine\"}"
                       , "\"The Pub\""
@@ -958,51 +950,47 @@ main =
                       2
                       (Promptable.prompt @Gig)
                   result @?= Right (Gig (Band "The Quarks" 4) "The Pub")
-                  length calls @?= 7
+                  length calls @?= 5
                   -- the venue request sees the finished band as one message, not its parts
-                  assertContains "[assistant] {\"bandName\":\"The Quarks\",\"bandSize\":4}" (callCtx calls 5)
-                  assertNotContains "quiet" (callCtx calls 5)
+                  assertContains "[assistant] {\"bandName\":\"The Quarks\",\"bandSize\":4}" (callCtx calls 3)
+                  assertNotContains "the field bandName" (callCtx calls 3)
               ]
           , testGroup
               "Generically (sums)"
-              [ testCase "a record constructor prompts choice, cue, its fields, improve" $ do
+              [ testCase "a record constructor prompts choice, its fields, improve" $ do
                   (result, calls) <-
                     runRecording
-                      ["\"Cake\"", "\"Keep it sweet.\"", "\"lemon\"", "{\"verdict\":\"fine\"}"]
+                      ["\"Cake\"", "\"lemon\"", "{\"verdict\":\"fine\"}"]
                       2
                       (Promptable.prompt @Treat)
                   result @?= Right (Cake "lemon")
-                  length calls @?= 4
+                  length calls @?= 3
                   let parent = description (Proxy @Treat)
                   -- the choice: asked about the type, with the parent in its context
                   assertContains "which kind of the type described below" (callDesc calls 0)
                   assertContains parent (callCtx calls 0)
                   assertContains "First choose which of its constructors" (callCtx calls 0)
-                  -- the cue: names the chosen constructor, sees the choice's reply
-                  assertContains "short, specific steer" (callDesc calls 1)
+                  -- the field: names the constructor, sees the choice's reply
+                  assertContains "A piece of text." (callDesc calls 1)
                   assertContains "You chose the constructor Cake" (callCtx calls 1)
+                  assertContains "the field cakeFlavour of constructor Cake" (callCtx calls 1)
                   assertContains "[assistant] \"Cake\"" (callCtx calls 1)
-                  -- the field: names the constructor, sees the cue and the choice
-                  assertContains "A piece of text." (callDesc calls 2)
-                  assertContains "the field cakeFlavour of constructor Cake" (callCtx calls 2)
-                  assertContains "[assistant] \"Cake\"" (callCtx calls 2)
-                  assertContains "[assistant] \"Keep it sweet.\"" (callCtx calls 2)
                   -- the improve request is about the whole value
-                  assertContains parent (callDesc calls 3)
-                  assertContains "\"cakeFlavour\":\"lemon\"" (callCtx calls 3)
+                  assertContains parent (callDesc calls 2)
+                  assertContains "\"cakeFlavour\":\"lemon\"" (callCtx calls 2)
               , testCase "a positional constructor's fields are named by constructor and position" $ do
                   (result, calls) <-
                     runRecording
-                      ["\"Biscuit\"", "\"Be traditional.\"", "\"digestive\"", "12", "{\"verdict\":\"fine\"}"]
+                      ["\"Biscuit\"", "\"digestive\"", "12", "{\"verdict\":\"fine\"}"]
                       2
                       (Promptable.prompt @Treat)
                   result @?= Right (Biscuit "digestive" 12)
-                  length calls @?= 5
+                  length calls @?= 4
                   assertContains "You chose the constructor Biscuit" (callCtx calls 1)
-                  assertContains "field 1 of constructor Biscuit" (callCtx calls 2)
-                  assertContains "field 2 of constructor Biscuit" (callCtx calls 3)
-                  assertContains "[assistant] \"digestive\"" (callCtx calls 3)
-              , testCase "a constructor without fields is assembled without cue or field prompts, then improved" $ do
+                  assertContains "field 1 of constructor Biscuit" (callCtx calls 1)
+                  assertContains "field 2 of constructor Biscuit" (callCtx calls 2)
+                  assertContains "[assistant] \"digestive\"" (callCtx calls 2)
+              , testCase "a constructor without fields is assembled without field prompts, then improved" $ do
                   (result, calls) <-
                     runRecording
                       ["\"NoTreat\"", "{\"verdict\":\"fine\"}"]
@@ -1012,22 +1000,20 @@ main =
                   length calls @?= 2
                   assertContains "[assistant] \"NoTreat\"" (callCtx calls 1)
                   assertNotContains "Next, produce" (callCtx calls 1)
-                  assertNotContains "short, specific steer" (callCtx calls 1)
                   assertContains "\"verdict\"" (callDesc calls 1)
               , testCase "an improved verdict replaces the draft" $ do
                   (result, calls) <-
                     runRecording
                       [ "\"Cake\""
-                      , "\"Keep it sweet.\""
                       , "\"lemon\""
                       , "{\"verdict\":\"improved\",\"value\":{\"tag\":\"Cake\",\"cakeFlavour\":\"chocolate\"}}"
                       ]
                       2
                       (Promptable.prompt @Treat)
                   result @?= Right (Cake "chocolate")
-                  length calls @?= 4
+                  length calls @?= 3
                   -- the improve request's own schema carries the sum, as anyOf
-                  let improveSchema = TL.toStrict (encodeToLazyText (callSchema calls 3))
+                  let improveSchema = TL.toStrict (encodeToLazyText (callSchema calls 2))
                   assertContains "anyOf" improveSchema
                   assertNotContains "oneOf" improveSchema
               , testCase "the constructor choice's schema is an enum of exactly the constructor names, and its description has their Haddock" $ do
@@ -1057,7 +1043,7 @@ main =
               , testCase "the caller's context ends as what it was plus one AssistantMessage with the final value's JSON" $ do
                   (result, _) <-
                     runRecording
-                      ["\"Cake\"", "\"Keep it sweet.\"", "\"lemon\"", "{\"verdict\":\"fine\"}"]
+                      ["\"Cake\"", "\"lemon\"", "{\"verdict\":\"fine\"}"]
                       2
                       $ do
                         Eff.context "Hello."
