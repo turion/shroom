@@ -18,8 +18,10 @@ refers to. 'Surveyable' builds on it with properties that a value of the type
 must satisfy, and with example values. 'description' renders a type from both
 for a model; the @shroom@ package checks the model's answer against the
 properties.
-<https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Promptable.html#t:Promptable Promptable>,
-which turns a 'Surveyable' type into a prompt, is in the @shroom@ package, as
+
+To turn a 'Surveyable' type into a prompt, give it an instance of
+<https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Promptable.html#t:Promptable Promptable>
+from
 <https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Promptable.html Control.Monad.Prompt.Promptable>.
 
 A bare 'Surveyable' instance surveys the type's fields: the properties of every
