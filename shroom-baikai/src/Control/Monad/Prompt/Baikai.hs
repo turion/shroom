@@ -6,20 +6,40 @@ Description : Backends for Claude, a local Ollama and other hosted models.
 
 Builds the t'Control.Monad.Prompt.Backend.Backend' that sends a shroom program's
 requests to a real model, through @baikai@. Pick the constructor for the host and
-pass the result to 'Control.Monad.Prompt.Effect.runPromptResultEff':
+pass the result to 'Control.Monad.Prompt.Effect.runPromptResultEff'. The program
+below asks Claude for a @Recipe@, a type of your own with a description, and prints
+the answer. The description of @Recipe@ is read from the Haddock comments, so the
+module that declares @Recipe@ needs the GHC flag @-haddock@ (see "Data.Shroom.Class.TH").
 
 @
+-- | A recipe for a dish.
+data Recipe = Recipe
+  { title :: Text
+  -- ^ The name of the dish.
+  , steps :: [Text]
+  -- ^ The preparation steps, in order.
+  }
+  deriving stock (Show, Generic)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+
+\$(deriveDescribable ''Recipe)
+
+instance Surveyable Recipe
+
+instance Promptable Recipe
+
 main :: IO ()
 main = do
   backend <- claudeBackend apiKey
   result <- runPromptResultEff backend defaultPromptConfig $ do
-    context \"A spider has eight legs.\"
-    prompt \@Int
+    context \"I have eggs, flour and milk.\"
+    prompt \@Recipe
   print result
 @
 
-The example needs @OverloadedStrings@ and @TypeApplications@. It uses 'claudeBackend'
-from this module, and 'Control.Monad.Prompt.Effect.context', 'Control.Monad.Prompt.Effect.defaultPromptConfig'
+The example needs the extensions @DeriveAnyClass@, @DerivingStrategies@,
+@OverloadedStrings@, @TemplateHaskell@ and @TypeApplications@. It uses 'claudeBackend'
+from this module, 'Control.Monad.Prompt.Effect.context', 'Control.Monad.Prompt.Effect.defaultPromptConfig'
 and 'Control.Monad.Prompt.Effect.runPromptResultEff' from "Control.Monad.Prompt.Effect",
 and 'Control.Monad.Prompt.prompt' from "Control.Monad.Prompt". @apiKey@ is an
 Anthropic API key as 'Text'. For another host, replace 'claudeBackend':
@@ -36,7 +56,8 @@ sending the result back, is left to the caller as for every backend (see
 
 The four constructors have these in common:
 
-* Each registers its @baikai@ provider when it runs, so each returns in 'IO'.
+* Each returns in 'IO' because it registers its @baikai@ provider ('localOllamaBackend'
+  also reads @OLLAMA_HOST@). No request is made until the first prompt.
 * A reply is limited to 4096 tokens. The context window and output limit set on the
   'Model' are the published ones for the model of 'claudeBackend', and the placeholders
   8192 and 4096 for the other constructors, whose model is not known; they do not
@@ -225,7 +246,7 @@ fromBaikaiToolCall bc =
 -- * The adapter
 
 {- | Build a t'Backend' that makes one @baikai-effectful@ 'complete' call per
-'runBackendChat'. The four constructors of this module are built on it; use it
+'Control.Monad.Prompt.Backend.runBackendChat'. The four constructors of this module are built on it; use it
 directly for another provider, or for 'Options' they do not set.
 
 The schema of the requested type goes out as the structured-output format on every
@@ -294,11 +315,9 @@ claudeBackend apiKey = do
 -- | Any host that speaks the Anthropic Messages API, via @baikai-claude@.
 anthropicCompatBackend ::
   (MonadIO m) =>
-  {- | The base URL of the host, without a trailing @\/v1@. The transport appends its
-  own, so one given here would produce @\/v1\/v1\/...@.
-  -}
+  -- | The base URL of the host, such as @https:\/\/api.deepseek.com\/anthropic@, without @\/v1@.
   Text ->
-  -- | The id of the model, as the host names it.
+  -- | The id of the model, as the host names it, such as @deepseek-v4-pro@.
   Text ->
   {- | The API key, passed on as it is. Unlike the key of 'openAICompatBackend', it is
   not a 'Maybe': a hosted Anthropic-compatible host checks a real key, and a local
@@ -319,7 +338,7 @@ anthropicCompatBackend baseUrl modelId apiKey = do
 -}
 localOllamaBackend ::
   (MonadIO m) =>
-  -- | The id of the model, as Ollama names it.
+  -- | The id of the model, such as @llama3.2:1b@.
   Text ->
   IO (Backend m)
 localOllamaBackend modelId = do
@@ -357,11 +376,9 @@ newer models reject @max_tokens@.
 -}
 openAICompatBackend ::
   (MonadIO m) =>
-  {- | The base URL of the host, without a trailing @\/v1@. The transport appends its
-  own, so one given here would produce @\/v1\/v1\/...@.
-  -}
+  -- | The base URL of the host, such as @https:\/\/api.openai.com@, without @\/v1@.
   Text ->
-  -- | The id of the model, as the host names it.
+  -- | The id of the model, as the host names it, such as @gpt-4o-mini@.
   Text ->
   {- | The API key. 'Nothing' for a host that checks no credential, such as a bare
   Ollama or llama.cpp server, and 'Just' the key for a host that does.
