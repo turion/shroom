@@ -15,26 +15,38 @@ answer is parsed into your type and checked against the type's properties.
 @
 -- | A recipe for a dish.
 data Recipe = Recipe
-  { title :: Text
+  { title :: 'Text'
   -- ^ The name of the dish.
-  , servings :: Int
+  , servings :: 'Int'
   -- ^ How many people the recipe feeds.
-  , steps :: [Text]
+  , steps :: ['Text']
   -- ^ The preparation steps, in order.
   }
-  deriving stock (Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+  deriving stock (<https://hackage.haskell.org/package/base/docs/GHC-Generics.html#t:Generic Generic>)
+  deriving anyclass ('ToJSON', 'FromJSON', 'ToSchema', <https://hackage.haskell.org/package/generics-sop/docs/Generics-SOP.html#t:Generic SOP.Generic>, <https://hackage.haskell.org/package/generics-sop/docs/Generics-SOP.html#t:HasDatatypeInfo SOP.HasDatatypeInfo>)
 
-\$(deriveDescribable ''Recipe)
+\$('Data.Shroom.Class.TH.deriveDescribable' ''Recipe)
 
-instance Surveyable Recipe
+instance 'Surveyable' Recipe
 
-instance Promptable Recipe
+instance 'Promptable' Recipe
 @
 
 Here @SOP@ is "Generics.SOP". Running 'prompt' at the type @Recipe@ then requests
 a recipe from the model. The classes this module builds on, 'Surveyable' and
 'Describable', are in "Data.Shroom.Class" from @shroom-class@.
+
+The deriving clause names the classes that the superclasses of 'Promptable' need.
+It does not choose a prompting strategy, which <#partByPart Prompting part by part> describes.
+
+* t'GHC.Generics.Generic' lets @aeson@ and @openapi3@ derive 'ToJSON', 'FromJSON'
+  and 'ToSchema' for you.
+* 'ToJSON' is a superclass of 'Describable', and 'FromJSON' and 'ToSchema' are
+  superclasses of 'Promptable'.
+* <https://hackage.haskell.org/package/generics-sop/docs/Generics-SOP.html#t:Generic SOP.Generic> and
+  <https://hackage.haskell.org/package/generics-sop/docs/Generics-SOP.html#t:HasDatatypeInfo SOP.HasDatatypeInfo>
+  serve the default of 'Surveyable',
+  which checks the properties of every field of the record.
 
 == Prompting part by part #partByPart#
 
@@ -55,32 +67,32 @@ is the type, derived part by part:
 
 @
 -- | The name of a city.
-newtype City = City Text
-  deriving stock (Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+newtype City = City 'Text'
+  deriving stock (<https://hackage.haskell.org/package/base/docs/GHC-Generics.html#t:Generic Generic>)
+  deriving anyclass ('ToJSON', 'FromJSON', 'ToSchema', <https://hackage.haskell.org/package/generics-sop/docs/Generics-SOP.html#t:Generic SOP.Generic>, <https://hackage.haskell.org/package/generics-sop/docs/Generics-SOP.html#t:HasDatatypeInfo SOP.HasDatatypeInfo>)
 
-\$(deriveDescribable ''City)
+\$('Data.Shroom.Class.TH.deriveDescribable' ''City)
 
-instance Surveyable City
+instance 'Surveyable' City
 
 -- A leaf takes a single request.
-instance Promptable City
+instance 'Promptable' City
 
 -- | A musician.
 data Musician = Musician
-  { name :: Text
+  { name :: 'Text'
   -- ^ The musician's full name.
   , city :: City
   -- ^ The city the musician is from.
   }
-  deriving stock (Generic)
-  deriving anyclass (ToJSON, FromJSON, ToSchema, SOP.Generic, SOP.HasDatatypeInfo)
+  deriving stock (<https://hackage.haskell.org/package/base/docs/GHC-Generics.html#t:Generic Generic>)
+  deriving anyclass ('ToJSON', 'FromJSON', 'ToSchema', <https://hackage.haskell.org/package/generics-sop/docs/Generics-SOP.html#t:Generic SOP.Generic>, <https://hackage.haskell.org/package/generics-sop/docs/Generics-SOP.html#t:HasDatatypeInfo SOP.HasDatatypeInfo>)
 
-\$(deriveDescribable ''Musician)
+\$('Data.Shroom.Class.TH.deriveDescribable' ''Musician)
 
-instance Surveyable Musician
+instance 'Surveyable' Musician
 
-deriving via Generically Musician instance Promptable Musician
+deriving via t'Generically' Musician instance 'Promptable' Musician
 @
 
 The example needs the packages @shroom@, @generics-sop@, @aeson@, @openapi3@
@@ -152,7 +164,7 @@ the records and sums whose parts must cohere.
 
 === The limits of the strategy
 
-A field of type @[a]@, @NonEmpty a@, @Set a@ or @Maybe a@ is prompted whole, in one
+A field of a container type is prompted whole, in one
 request for the container, and the properties of its elements are neither checked
 nor told to the model, as for any container field (see "Data.Shroom.Class").
 A recursive type needs the opt-out that "Data.Shroom.Class" describes. Anthropic's
@@ -227,7 +239,7 @@ sends the type's 'description' to the 'Prompt' effect with
 type's properties:
 
 @
-instance Promptable Recipe
+instance 'Promptable' Recipe
 @
 
 Override 'prompt' to change what a request for your type does. The override
@@ -235,8 +247,8 @@ below adds one line of context to the request, and keeps it out of every other
 request:
 
 @
-instance Promptable Recipe where
-  prompt = withContext "Always prefer metric units." promptSingle
+instance 'Promptable' Recipe where
+  prompt = 'Control.Monad.Prompt.Effect.withContext' "Always prefer metric units." 'Control.Monad.Prompt.Effect.promptSingle'
 @
 
 To prompt a record or a sum part by part instead, derive the instance via t'Generically'. See <#partByPart Prompting part by part>.
