@@ -45,7 +45,7 @@ import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 
 -- shroom
-import Control.Monad.Prompt.Backend (Backend (..), BackendError (..))
+import Control.Monad.Prompt.Backend (BackendError (..), runBackendChat)
 import Control.Monad.Prompt.Baikai (localOllamaBackend, openAICompatBackend)
 
 main :: IO ()
