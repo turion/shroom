@@ -15,7 +15,7 @@ import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit (assertBool, assertFailure, testCase, testCaseSteps)
 
 -- shroom
-import Control.Monad.Prompt.Backend (Backend (..), BackendReply (..), ContextItem (..))
+import Control.Monad.Prompt.Backend (BackendReply (..), ContextItem (..), runBackendChat)
 import Control.Monad.Prompt.Baikai (anthropicCompatBackend, localOllamaBackend, normaliseOllamaHost, openAICompatBackend)
 import Control.Monad.Prompt.Effect (PromptConfig (..), defaultPromptConfig)
 import Control.Monad.Prompt.Effect qualified as Effect

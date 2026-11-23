@@ -13,7 +13,7 @@ description and JSON schema of the expected result type and the tools on offer,
 and returns a 'BackendReply' or a 'BackendError'. The retry and tool loop around
 that call is in 'Control.Monad.Prompt.Effect.runPrompt'.
 
-A t'Backend' is a plain record, not a type class, so building one needs no
+A t'Backend' is a plain newtype, not a type class, so building one needs no
 instance and no dependency on shroom's other modules. An adapter can turn a
 <https://hackage.haskell.org/package/openapi3/docs/Data-OpenApi-Internal-Schema.html#t:ToSchema ToSchema>
 instance into the schema the call needs with 'schemaWithDefs'.
@@ -30,6 +30,7 @@ constantBackend answer = Backend $ \\_ _ _ _ -> pure $ Right $ BackendAnswer ans
 module Control.Monad.Prompt.Backend (
   -- * Backends
   Backend (..),
+  runBackendChat,
   BackendReply (..),
   BackendError (..),
 
@@ -125,16 +126,21 @@ renderContextItems = T.intercalate "\n" . fmap render
 __Contract:__ an implementation must not throw IO exceptions; every failure
 comes back as a 'BackendError'.
 -}
-newtype Backend m = Backend
-  { runBackendChat :: [ContextItem] -> Text -> Value -> [ToolDef] -> m (Either BackendError BackendReply)
-  {- ^ Makes the chat call. The arguments, in order, are:
+newtype Backend m = Backend ([ContextItem] -> Text -> Value -> [ToolDef] -> m (Either BackendError BackendReply))
 
-  * the conversation so far,
-  * the description of the expected result type, appended as the final turn,
-  * the JSON schema the response must satisfy,
-  * the tools on offer for this call; empty means none.
-  -}
-  }
+-- | Makes the one chat call of a t'Backend'.
+runBackendChat ::
+  Backend m ->
+  -- | The conversation so far.
+  [ContextItem] ->
+  -- | The description of the expected result type, appended as the final turn.
+  Text ->
+  -- | The JSON schema the response must satisfy.
+  Value ->
+  -- | The tools on offer for this call. Empty means none.
+  [ToolDef] ->
+  m (Either BackendError BackendReply)
+runBackendChat (Backend call) = call
 
 {- | The reply of one t'Backend' call: the model's final answer, or the tool
 calls it wants made before it answers. A backend without tools, such as a mock,

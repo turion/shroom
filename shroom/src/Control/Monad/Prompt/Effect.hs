@@ -76,6 +76,7 @@ import Control.Monad.Prompt.Backend (
   ContextItem (..),
   ToolCall (..),
   ToolResult (..),
+  runBackendChat,
  )
 import Control.Monad.Prompt.Schema (ToolDef, ToolDispatcher, encodeJson, schemaWithDefs)
 import Control.Monad.Prompt.Tool (ToolBinding (..), dispatchBindings)
