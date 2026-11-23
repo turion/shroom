@@ -6,12 +6,18 @@
 Module      : Data.Shroom.Class
 Description : Describe a Haskell type, its properties and its examples to a language model.
 
+Classes that describe a Haskell type, its properties and its examples to a
+language model. They live in a package of their own, with no dependency on
+<https://hackage.haskell.org/package/effectful effectful> or on the rest of
+<https://hackage.haskell.org/package/shroom shroom>, so that the module that
+defines a type can carry its instances without pulling in an HTTP client or an
+effect system.
+
 'Describable' gives a type a one-sentence description and lists the types it
 refers to. 'Surveyable' builds on it with properties that a value of the type
 must satisfy, and with example values. 'description' renders a type from both
 for a model; the @shroom@ package checks the model's answer against the
-properties. This package is pure: it depends on no HTTP client and no effect
-system.
+properties.
 <https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Promptable.html#t:Promptable Promptable>,
 which turns a 'Surveyable' type into a prompt, is in the @shroom@ package, as
 <https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Promptable.html Control.Monad.Prompt.Promptable>.
