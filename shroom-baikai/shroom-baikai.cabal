@@ -3,14 +3,23 @@ name: shroom-baikai
 version: 0.1.0.0
 synopsis: The baikai transport adapter for shroom
 description:
-  shroom-baikai implements the @Backend@ interface of @shroom@ by
-  interpreting the @Baikai@ effect of @baikai-effectful@, so a shroom program
-  runs unchanged against Claude (@baikai-claude@) or any OpenAI-compatible
-  host, including a local Ollama (@baikai-openai@). Front-door constructors
-  build a backend from an API key or a base URL and a model name; a program
-  that needs a different transport interprets the effect itself. Use it with
-  @shroom@, which holds the prompt monad, and @shroom-class@, which describes
-  the types.
+  shroom-baikai implements the
+  <https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Backend.html#t:Backend Backend>
+  interface of <https://hackage.haskell.org/package/shroom shroom> by
+  interpreting the
+  <https://hackage.haskell.org/package/baikai-effectful/docs/Baikai-Effectful.html#t:Baikai Baikai>
+  effect of
+  <https://hackage.haskell.org/package/baikai-effectful baikai-effectful>, so a
+  shroom program runs unchanged against Claude
+  (<https://hackage.haskell.org/package/baikai-claude baikai-claude>) or any
+  OpenAI-compatible host, including a local Ollama
+  (<https://hackage.haskell.org/package/baikai-openai baikai-openai>).
+  Front-door constructors build a backend from an API key or a base URL and a
+  model name; a program that needs a different transport interprets the effect
+  itself. Use it with <https://hackage.haskell.org/package/shroom shroom>,
+  which holds the prompt monad, and
+  <https://hackage.haskell.org/package/shroom-class shroom-class>, which
+  describes the types.
 
 license: BSD-3-Clause
 license-file: LICENSE
