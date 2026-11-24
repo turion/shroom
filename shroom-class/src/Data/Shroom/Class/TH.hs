@@ -171,17 +171,31 @@ freeKindVars = nub . go
     go (InfixT a _ b) = go a <> go b
     go _ = []
 
+-- | The type variables and constructors of a data or newtype declaration; empty for any other declaration.
+reifyCons :: Name -> Q ([TyVarBndr BndrVis], [Con])
+reifyCons name = do
+  info <- reify name
+  pure $ case info of
+    TyConI (DataD _ _ tvs _ cs _) -> (tvs, cs)
+    TyConI (NewtypeD _ _ tvs _ c _) -> (tvs, [c])
+    _ -> ([], [])
+
+-- | The fields of a constructor in order: 'Just' the name for a record field, 'Nothing' for a positional one.
+conFields :: Con -> [(Maybe Name, Type)]
+conFields (NormalC _ bts) = [(Nothing, t) | (_, t) <- bts]
+conFields (RecC _ vbts) = [(Just n, t) | (n, _, t) <- vbts]
+conFields (InfixC (_, t1) _ (_, t2)) = [(Nothing, t1), (Nothing, t2)]
+conFields (ForallC _ _ c) = conFields c
+conFields (GadtC _ bts _) = [(Nothing, t) | (_, t) <- bts]
+conFields (RecGadtC _ vbts _) = [(Just n, t) | (n, _, t) <- vbts]
+
 {- | The type variables of a type, each with its kind unless that is @Type@ ('Nothing'),
 and the types of all fields of all its constructors, in declaration order.
 -}
 getTypeShape :: Name -> Q ([(Name, Maybe Kind)], [Type])
 getTypeShape name = do
-  info <- reify name
-  (binders, cons) <- case info of
-    TyConI (DataD _ _ tvs _ cs _) -> pure (tvs, cs)
-    TyConI (NewtypeD _ _ tvs _ c _) -> pure (tvs, [c])
-    _ -> pure ([], [])
-  pure (binderKind <$> binders, concatMap fieldTypesOf cons)
+  (binders, cons) <- reifyCons name
+  pure (binderKind <$> binders, concatMap (fmap snd . conFields) cons)
   where
     binderKind (PlainTV v _) = (v, Nothing)
     binderKind (KindedTV v _ k)
@@ -191,13 +205,6 @@ getTypeShape name = do
     isTypeKind StarT = True
     isTypeKind (ConT k) = k == ''Kind.Type
     isTypeKind _ = False
-
-    fieldTypesOf (NormalC _ bts) = snd <$> bts
-    fieldTypesOf (RecC _ vbts) = [t | (_, _, t) <- vbts]
-    fieldTypesOf (InfixC (_, t1) _ (_, t2)) = [t1, t2]
-    fieldTypesOf (ForallC _ _ c) = fieldTypesOf c
-    fieldTypesOf (GadtC _ bts _) = snd <$> bts
-    fieldTypesOf (RecGadtC _ vbts _) = [t | (_, _, t) <- vbts]
 
 {- | Produce the 'describeType' method body for a type, using its Haddock
 documentation comment.  Use this inside a manually written
@@ -304,21 +311,17 @@ own trailing comment.
 -}
 getConstructorDocs :: Name -> Q [(String, Maybe String, [(String, String)])]
 getConstructorDocs name = do
-  info <- reify name
-  let cons = case info of
-        TyConI (DataD _ _ _ _ cs _) -> cs
-        TyConI (NewtypeD _ _ _ _ c _) -> [c]
-        _ -> []
+  (_, cons) <- reifyCons name
   mapM collect cons
   where
     collect con = do
       let cn = conName con
       cdoc <- getDoc (DeclDoc cn)
-      recordPairs <- mapM (\fn -> (nameBase fn,) <$> getDoc (DeclDoc fn)) (recFields con)
+      recordPairs <- mapM (\fn -> (nameBase fn,) <$> getDoc (DeclDoc fn)) [n | (Just n, _) <- conFields con]
       positionalPairs <-
         mapM
           (\i -> ("field " <> show (i + 1),) <$> getDoc (ArgDoc cn i))
-          [0 .. positionalCount con - 1]
+          [0 .. length [() | (Nothing, _) <- conFields con] - 1]
       pure (nameBase cn, cdoc, [(fn, d) | (fn, Just d) <- recordPairs <> positionalPairs])
 
     conName (NormalC n _) = n
@@ -329,17 +332,3 @@ getConstructorDocs name = do
     conName (GadtC [] _ _) = mkName ""
     conName (RecGadtC (n : _) _ _) = n
     conName (RecGadtC [] _ _) = mkName ""
-
-    recFields (RecC _ fields) = [fn | (fn, _, _) <- fields]
-    recFields (ForallC _ _ c) = recFields c
-    recFields (RecGadtC _ fields _) = [fn | (fn, _, _) <- fields]
-    recFields _ = []
-
-    -- The number of positional fields; a record constructor has none, its fields are named.
-    positionalCount :: Con -> Int
-    positionalCount (NormalC _ bts) = length bts
-    positionalCount (InfixC {}) = 2
-    positionalCount (ForallC _ _ c) = positionalCount c
-    positionalCount (GadtC _ bts _) = length bts
-    positionalCount (RecC {}) = 0
-    positionalCount (RecGadtC {}) = 0
