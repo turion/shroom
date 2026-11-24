@@ -90,7 +90,7 @@ conversation as part of a 'ToolCallMessage'.
 </span><span id="line-88"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="toolCallArguments"><span class="annot"><span class="annottext">ToolCall -&gt; Value
 </span><a href="Control.Monad.Prompt.Backend.html#toolCallArguments"><span class="hs-identifier hs-var hs-var">toolCallArguments</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.Internal.html#Value"><span class="hs-identifier hs-type">Value</span></a></span><span>
 </span><span id="line-89"></span><span>  </span><span class="hs-special">}</span><span>
-</span><span id="line-90"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252072"><span id="local-6989586621679252079"><span class="annot"><span class="annottext">ToolCall -&gt; ToolCall -&gt; Bool
+</span><span id="line-90"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252084"><span id="local-6989586621679252091"><span class="annot"><span class="annottext">ToolCall -&gt; ToolCall -&gt; Bool
 (ToolCall -&gt; ToolCall -&gt; Bool)
 -&gt; (ToolCall -&gt; ToolCall -&gt; Bool) -&gt; Eq ToolCall
 forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
@@ -98,7 +98,7 @@ $c== :: ToolCall -&gt; ToolCall -&gt; Bool
 == :: ToolCall -&gt; ToolCall -&gt; Bool
 $c/= :: ToolCall -&gt; ToolCall -&gt; Bool
 /= :: ToolCall -&gt; ToolCall -&gt; Bool
-</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252084"><span id="local-6989586621679252093"><span id="local-6989586621679252097"><span class="annot"><span class="annottext">Int -&gt; ToolCall -&gt; ShowS
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252096"><span id="local-6989586621679252105"><span id="local-6989586621679252109"><span class="annot"><span class="annottext">Int -&gt; ToolCall -&gt; ShowS
 [ToolCall] -&gt; ShowS
 ToolCall -&gt; String
 (Int -&gt; ToolCall -&gt; ShowS)
@@ -128,7 +128,7 @@ showList :: [ToolCall] -&gt; ShowS
   the tool's own result text.
   -}</span></span><span>
 </span><span id="line-103"></span><span>  </span><span class="hs-special">}</span><span>
-</span><span id="line-104"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252105"><span id="local-6989586621679252111"><span class="annot"><span class="annottext">ToolResult -&gt; ToolResult -&gt; Bool
+</span><span id="line-104"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252117"><span id="local-6989586621679252123"><span class="annot"><span class="annottext">ToolResult -&gt; ToolResult -&gt; Bool
 (ToolResult -&gt; ToolResult -&gt; Bool)
 -&gt; (ToolResult -&gt; ToolResult -&gt; Bool) -&gt; Eq ToolResult
 forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
@@ -136,7 +136,7 @@ $c== :: ToolResult -&gt; ToolResult -&gt; Bool
 == :: ToolResult -&gt; ToolResult -&gt; Bool
 $c/= :: ToolResult -&gt; ToolResult -&gt; Bool
 /= :: ToolResult -&gt; ToolResult -&gt; Bool
-</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252115"><span id="local-6989586621679252122"><span id="local-6989586621679252126"><span class="annot"><span class="annottext">Int -&gt; ToolResult -&gt; ShowS
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252127"><span id="local-6989586621679252134"><span id="local-6989586621679252138"><span class="annot"><span class="annottext">Int -&gt; ToolResult -&gt; ShowS
 [ToolResult] -&gt; ShowS
 ToolResult -&gt; String
 (Int -&gt; ToolResult -&gt; ShowS)
@@ -180,7 +180,7 @@ or @user@\/@assistant@ roles; Ollama: @system@\/@user@\/@assistant@ roles).
       per call, each still linked back to its call by 'toolResultId'.
     -}</span></span><span>
 </span><span id="line-132"></span><span>    </span><span id="ToolResultMessage"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResultMessage"><span class="hs-identifier hs-var">ToolResultMessage</span></a></span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResult"><span class="hs-identifier hs-type">ToolResult</span></a></span><span class="hs-special">]</span><span>
-</span><span id="line-133"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252132"><span id="local-6989586621679252145"><span class="annot"><span class="annottext">ContextItem -&gt; ContextItem -&gt; Bool
+</span><span id="line-133"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252144"><span id="local-6989586621679252157"><span class="annot"><span class="annottext">ContextItem -&gt; ContextItem -&gt; Bool
 (ContextItem -&gt; ContextItem -&gt; Bool)
 -&gt; (ContextItem -&gt; ContextItem -&gt; Bool) -&gt; Eq ContextItem
 forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
@@ -188,7 +188,7 @@ $c== :: ContextItem -&gt; ContextItem -&gt; Bool
 == :: ContextItem -&gt; ContextItem -&gt; Bool
 $c/= :: ContextItem -&gt; ContextItem -&gt; Bool
 /= :: ContextItem -&gt; ContextItem -&gt; Bool
-</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252149"><span id="local-6989586621679252164"><span id="local-6989586621679252168"><span class="annot"><span class="annottext">Int -&gt; ContextItem -&gt; ShowS
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252161"><span id="local-6989586621679252176"><span id="local-6989586621679252180"><span class="annot"><span class="annottext">Int -&gt; ContextItem -&gt; ShowS
 [ContextItem] -&gt; ShowS
 ContextItem -&gt; String
 (Int -&gt; ContextItem -&gt; ShowS)
@@ -220,26 +220,26 @@ forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
 forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
 forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
 </span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#fmap"><span class="hs-identifier hs-var">fmap</span></a></span><span> </span><span class="annot"><span class="annottext">ContextItem -&gt; Text
-</span><a href="#local-6989586621679252172"><span class="hs-identifier hs-var">render</span></a></span><span>
+</span><a href="#local-6989586621679252184"><span class="hs-identifier hs-var">render</span></a></span><span>
 </span><span id="line-141"></span><span>  </span><span class="hs-keyword">where</span><span>
-</span><span id="line-142"></span><span>    </span><span id="local-6989586621679252172"><span class="annot"><span class="annottext">render :: ContextItem -&gt; Text
-</span><a href="#local-6989586621679252172"><span class="hs-identifier hs-var hs-var">render</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#SystemMessage"><span class="hs-identifier hs-type">SystemMessage</span></a></span><span> </span><span id="local-6989586621679252186"><span class="annot"><span class="annottext">Text
-</span><a href="#local-6989586621679252186"><span class="hs-identifier hs-var">t</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span id="line-142"></span><span>    </span><span id="local-6989586621679252184"><span class="annot"><span class="annottext">render :: ContextItem -&gt; Text
+</span><a href="#local-6989586621679252184"><span class="hs-identifier hs-var hs-var">render</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#SystemMessage"><span class="hs-identifier hs-type">SystemMessage</span></a></span><span> </span><span id="local-6989586621679252198"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252198"><span class="hs-identifier hs-var">t</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
 </span><span class="hs-string">&quot;[system] &quot;</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text -&gt; Text
 forall a. Semigroup a =&gt; a -&gt; a -&gt; a
 </span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#%3C%3E"><span class="hs-operator hs-var">&lt;&gt;</span></a></span><span> </span><span class="annot"><span class="annottext">Text
-</span><a href="#local-6989586621679252186"><span class="hs-identifier hs-var">t</span></a></span><span>
-</span><span id="line-143"></span><span>    </span><span class="annot"><a href="#local-6989586621679252172"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#UserMessage"><span class="hs-identifier hs-type">UserMessage</span></a></span><span> </span><span id="local-6989586621679252187"><span class="annot"><span class="annottext">Text
-</span><a href="#local-6989586621679252187"><span class="hs-identifier hs-var">t</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
-</span><a href="#local-6989586621679252187"><span class="hs-identifier hs-var">t</span></a></span><span>
-</span><span id="line-144"></span><span>    </span><span class="annot"><a href="#local-6989586621679252172"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#AssistantMessage"><span class="hs-identifier hs-type">AssistantMessage</span></a></span><span> </span><span id="local-6989586621679252188"><span class="annot"><span class="annottext">Text
-</span><a href="#local-6989586621679252188"><span class="hs-identifier hs-var">t</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252198"><span class="hs-identifier hs-var">t</span></a></span><span>
+</span><span id="line-143"></span><span>    </span><span class="annot"><a href="#local-6989586621679252184"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#UserMessage"><span class="hs-identifier hs-type">UserMessage</span></a></span><span> </span><span id="local-6989586621679252199"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252199"><span class="hs-identifier hs-var">t</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252199"><span class="hs-identifier hs-var">t</span></a></span><span>
+</span><span id="line-144"></span><span>    </span><span class="annot"><a href="#local-6989586621679252184"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#AssistantMessage"><span class="hs-identifier hs-type">AssistantMessage</span></a></span><span> </span><span id="local-6989586621679252200"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252200"><span class="hs-identifier hs-var">t</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
 </span><span class="hs-string">&quot;[assistant] &quot;</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text -&gt; Text
 forall a. Semigroup a =&gt; a -&gt; a -&gt; a
 </span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#%3C%3E"><span class="hs-operator hs-var">&lt;&gt;</span></a></span><span> </span><span class="annot"><span class="annottext">Text
-</span><a href="#local-6989586621679252188"><span class="hs-identifier hs-var">t</span></a></span><span>
-</span><span id="line-145"></span><span>    </span><span class="annot"><a href="#local-6989586621679252172"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCallMessage"><span class="hs-identifier hs-type">ToolCallMessage</span></a></span><span> </span><span id="local-6989586621679252189"><span class="annot"><span class="annottext">[ToolCall]
-</span><a href="#local-6989586621679252189"><span class="hs-identifier hs-var">calls</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252200"><span class="hs-identifier hs-var">t</span></a></span><span>
+</span><span id="line-145"></span><span>    </span><span class="annot"><a href="#local-6989586621679252184"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCallMessage"><span class="hs-identifier hs-type">ToolCallMessage</span></a></span><span> </span><span id="local-6989586621679252201"><span class="annot"><span class="annottext">[ToolCall]
+</span><a href="#local-6989586621679252201"><span class="hs-identifier hs-var">calls</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
 </span><span class="hs-string">&quot;[tool call] &quot;</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text -&gt; Text
 forall a. Semigroup a =&gt; a -&gt; a -&gt; a
 </span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#%3C%3E"><span class="hs-operator hs-var">&lt;&gt;</span></a></span><span> </span><span class="annot"><span class="annottext">Text -&gt; [Text] -&gt; Text
@@ -249,9 +249,9 @@ forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
 forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
 </span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#fmap"><span class="hs-identifier hs-var">fmap</span></a></span><span> </span><span class="annot"><span class="annottext">ToolCall -&gt; Text
 </span><a href="Control.Monad.Prompt.Backend.html#toolCallName"><span class="hs-identifier hs-var">toolCallName</span></a></span><span> </span><span class="annot"><span class="annottext">[ToolCall]
-</span><a href="#local-6989586621679252189"><span class="hs-identifier hs-var">calls</span></a></span><span class="hs-special">)</span><span>
-</span><span id="line-146"></span><span>    </span><span class="annot"><a href="#local-6989586621679252172"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResultMessage"><span class="hs-identifier hs-type">ToolResultMessage</span></a></span><span> </span><span id="local-6989586621679252190"><span class="annot"><span class="annottext">[ToolResult]
-</span><a href="#local-6989586621679252190"><span class="hs-identifier hs-var">results</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679252201"><span class="hs-identifier hs-var">calls</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-146"></span><span>    </span><span class="annot"><a href="#local-6989586621679252184"><span class="hs-identifier hs-var">render</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolResultMessage"><span class="hs-identifier hs-type">ToolResultMessage</span></a></span><span> </span><span id="local-6989586621679252202"><span class="annot"><span class="annottext">[ToolResult]
+</span><a href="#local-6989586621679252202"><span class="hs-identifier hs-var">results</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
 </span><span class="hs-string">&quot;[tool result] &quot;</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text -&gt; Text
 forall a. Semigroup a =&gt; a -&gt; a -&gt; a
 </span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#%3C%3E"><span class="hs-operator hs-var">&lt;&gt;</span></a></span><span> </span><span class="annot"><span class="annottext">Text -&gt; [Text] -&gt; Text
@@ -261,7 +261,7 @@ forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
 forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
 </span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Base.html#fmap"><span class="hs-identifier hs-var">fmap</span></a></span><span> </span><span class="annot"><span class="annottext">ToolResult -&gt; Text
 </span><a href="Control.Monad.Prompt.Backend.html#toolResultName"><span class="hs-identifier hs-var">toolResultName</span></a></span><span> </span><span class="annot"><span class="annottext">[ToolResult]
-</span><a href="#local-6989586621679252190"><span class="hs-identifier hs-var">results</span></a></span><span class="hs-special">)</span><span>
+</span><a href="#local-6989586621679252202"><span class="hs-identifier hs-var">results</span></a></span><span class="hs-special">)</span><span>
 </span><span id="line-147"></span><span>
 </span><span id="line-148"></span><span class="annot"><span class="hs-comment">{- | A chat backend, reduced to the one call every backend must make: given
 the conversation so far, the expected result type's description, its JSON
@@ -280,7 +280,7 @@ wants made &#8212; or a 'BackendError'.
 __Contract__: implementations must not throw IO exceptions &#8212; every failure
 comes back as 'Left'.
 -}</span></span><span>
-</span><span id="line-165"></span><span class="hs-keyword">newtype</span><span> </span><span id="Backend"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#Backend"><span class="hs-identifier hs-var">Backend</span></a></span></span><span> </span><span id="local-6989586621679252047"><span class="annot"><a href="#local-6989586621679252047"><span class="hs-identifier hs-type">m</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="Backend"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#Backend"><span class="hs-identifier hs-var">Backend</span></a></span></span><span>
+</span><span id="line-165"></span><span class="hs-keyword">newtype</span><span> </span><span id="Backend"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#Backend"><span class="hs-identifier hs-var">Backend</span></a></span></span><span> </span><span id="local-6989586621679252059"><span class="annot"><a href="#local-6989586621679252059"><span class="hs-identifier hs-type">m</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="Backend"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#Backend"><span class="hs-identifier hs-var">Backend</span></a></span></span><span>
 </span><span id="line-166"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="runBackendChat"><span class="annot"><span class="annottext">forall (m :: * -&gt; *).
 Backend m
 -&gt; [ContextItem]
@@ -288,7 +288,7 @@ Backend m
 -&gt; Value
 -&gt; [ToolDef]
 -&gt; m (Either BackendError BackendReply)
-</span><a href="Control.Monad.Prompt.Backend.html#runBackendChat"><span class="hs-identifier hs-var hs-var">runBackendChat</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ContextItem"><span class="hs-identifier hs-type">ContextItem</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.Internal.html#Value"><span class="hs-identifier hs-type">Value</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Schema.html#ToolDef"><span class="hs-identifier hs-type">ToolDef</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679252047"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Data.Either.html#Either"><span class="hs-identifier hs-type">Either</span></a></span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendError"><span class="hs-identifier hs-type">BackendError</span></a></span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendReply"><span class="hs-identifier hs-type">BackendReply</span></a></span><span class="hs-special">)</span><span>
+</span><a href="Control.Monad.Prompt.Backend.html#runBackendChat"><span class="hs-identifier hs-var hs-var">runBackendChat</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ContextItem"><span class="hs-identifier hs-type">ContextItem</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="file:///home/runner/.cabal/store/ghc-9.12.4-5301/aeson-2.2.5.1-be06efa2bd69a6b7e9980bd623d3cb4f068d9b29fb473e64074214cb5c8a8f8d/share/doc/html/src/Data.Aeson.Types.Internal.html#Value"><span class="hs-identifier hs-type">Value</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Schema.html#ToolDef"><span class="hs-identifier hs-type">ToolDef</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679252059"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-internal-9.1204.0-9bb8/src/GHC.Internal.Data.Either.html#Either"><span class="hs-identifier hs-type">Either</span></a></span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendError"><span class="hs-identifier hs-type">BackendError</span></a></span><span> </span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendReply"><span class="hs-identifier hs-type">BackendReply</span></a></span><span class="hs-special">)</span><span>
 </span><span id="line-167"></span><span>  </span><span class="hs-special">}</span><span>
 </span><span id="line-168"></span><span>
 </span><span id="line-169"></span><span class="annot"><span class="hs-comment">{- | A single 'Backend' call's reply: either the model's final answer, or
@@ -305,7 +305,7 @@ tool concept (a mock, a file-replay backend) always returns 'BackendAnswer'.
       send all the results back together on the next 'runBackendChat' call.
     -}</span></span><span>
 </span><span id="line-182"></span><span>    </span><span id="BackendToolCalls"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendToolCalls"><span class="hs-identifier hs-var">BackendToolCalls</span></a></span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Control.Monad.Prompt.Backend.html#ToolCall"><span class="hs-identifier hs-type">ToolCall</span></a></span><span class="hs-special">]</span><span>
-</span><span id="line-183"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252194"><span id="local-6989586621679252201"><span class="annot"><span class="annottext">BackendReply -&gt; BackendReply -&gt; Bool
+</span><span id="line-183"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252206"><span id="local-6989586621679252213"><span class="annot"><span class="annottext">BackendReply -&gt; BackendReply -&gt; Bool
 (BackendReply -&gt; BackendReply -&gt; Bool)
 -&gt; (BackendReply -&gt; BackendReply -&gt; Bool) -&gt; Eq BackendReply
 forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
@@ -313,7 +313,7 @@ $c== :: BackendReply -&gt; BackendReply -&gt; Bool
 == :: BackendReply -&gt; BackendReply -&gt; Bool
 $c/= :: BackendReply -&gt; BackendReply -&gt; Bool
 /= :: BackendReply -&gt; BackendReply -&gt; Bool
-</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252205"><span id="local-6989586621679252212"><span id="local-6989586621679252216"><span class="annot"><span class="annottext">Int -&gt; BackendReply -&gt; ShowS
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252217"><span id="local-6989586621679252224"><span id="local-6989586621679252228"><span class="annot"><span class="annottext">Int -&gt; BackendReply -&gt; ShowS
 [BackendReply] -&gt; ShowS
 BackendReply -&gt; String
 (Int -&gt; BackendReply -&gt; ShowS)
@@ -376,7 +376,7 @@ carry.
 </span><span id="line-226"></span><span>    </span><span id="BackendTruncated"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendTruncated"><span class="hs-identifier hs-var">BackendTruncated</span></a></span></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
 </span><span id="line-227"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="hs-comment">-- | Anything else: an HTTP failure, a decode failure, a timeout, ...</span></span><span>
 </span><span id="line-228"></span><span>    </span><span id="BackendTransportError"><span class="annot"><a href="Control.Monad.Prompt.Backend.html#BackendTransportError"><span class="hs-identifier hs-var">BackendTransportError</span></a></span></span><span> </span><span class="annot"><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/text-2.1.4-8456/src/Data.Text.Internal.html#Text"><span class="hs-identifier hs-type">Text</span></a></span><span>
-</span><span id="line-229"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252224"><span id="local-6989586621679252234"><span class="annot"><span class="annottext">BackendError -&gt; BackendError -&gt; Bool
+</span><span id="line-229"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679252236"><span id="local-6989586621679252246"><span class="annot"><span class="annottext">BackendError -&gt; BackendError -&gt; Bool
 (BackendError -&gt; BackendError -&gt; Bool)
 -&gt; (BackendError -&gt; BackendError -&gt; Bool) -&gt; Eq BackendError
 forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
@@ -384,7 +384,7 @@ $c== :: BackendError -&gt; BackendError -&gt; Bool
 == :: BackendError -&gt; BackendError -&gt; Bool
 $c/= :: BackendError -&gt; BackendError -&gt; Bool
 /= :: BackendError -&gt; BackendError -&gt; Bool
-</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252238"><span id="local-6989586621679252249"><span id="local-6989586621679252253"><span class="annot"><span class="annottext">Int -&gt; BackendError -&gt; ShowS
+</span><a href="file:///usr/local/.ghcup/ghc/9.12.4/lib/ghc-9.12.4/lib/../../../share/doc/ghc-9.12.4/html/libraries/ghc-prim-0.13.0-ec11/src/GHC.Classes.html#Eq"><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679252250"><span id="local-6989586621679252261"><span id="local-6989586621679252265"><span class="annot"><span class="annottext">Int -&gt; BackendError -&gt; ShowS
 [BackendError] -&gt; ShowS
 BackendError -&gt; String
 (Int -&gt; BackendError -&gt; ShowS)
