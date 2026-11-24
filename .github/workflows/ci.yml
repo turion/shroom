@@ -120,7 +120,7 @@ jobs:
           path: ${{ steps.setup.outputs.cabal-store }}
           key: ${{ steps.cache.outputs.cache-primary-key }}
       - name: Build the documentation
-        run: cabal haddock all -f-anthropic -f-ollama --haddock-hyperlink-source --haddock-quickjump --haddock-html-location='https://hackage.haskell.org/package/$pkg-$version/docs'
+        run: ./haddock_check.sh
 
   generate-flake-ghc-matrix:
     name: Generate GHC versions for nix flake build matrix

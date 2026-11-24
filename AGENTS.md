@@ -24,7 +24,7 @@ Please always speak like a 1970s British working class person!
 
 # Documentation standard
 
-- Every PR re-reads the generated haddocks of each file it changes. Build them as CI does: `cabal haddock all -f-anthropic -f-ollama --haddock-hyperlink-source --haddock-quickjump --haddock-html-location='https://hackage.haskell.org/package/$pkg-$version/docs'`. The HTML of each package lands in `dist-newstyle/build/*/*/<package>-<version>/doc/html/<package>/`; open its `index.html` and read the pages of the modules the PR touched. A haddock run passes with unresolved links, so only reading the page shows that a link resolves and that the markup renders as meant.
+- Every PR re-reads the generated haddocks of each file it changes. Build them with `./haddock_check.sh`, as CI does. The HTML of each package lands in `dist-newstyle/build/*/*/<package>-<version>/doc/html/<package>/`; open its `index.html` and read the pages of the modules the PR touched. A haddock run passes with unresolved links, so only reading the page shows that a link resolves and that the markup renders as meant.
 - The docs go to the maintainer for review as a private claude.ai artifact. Build from a clean doc directory, since stale module pages linger, and publish the generated HTML. Point links into `/nix/store` at Hackage, and check that every relative link resolves.
 - A Haddock or code comment describes what the code does, never how it came about. No plan, arc or todo references, no issue numbers, no "as before", "used to", "old behaviour" or "no longer". A real limitation stays, stated plainly. History goes in the CHANGELOG.
 - A fact that a future agent needs but a user does not goes in the package's own `AGENTS.md`, imported by a `CLAUDE.md` beside it that holds `@AGENTS.md`.
@@ -35,7 +35,7 @@ Please always speak like a 1970s British working class person!
 - Write plain sentences. Don't open a clause or sentence with "what" as a noun phrase, don't chain colons, and split a long sentence joined by ", and" in two.
 - Examples use realistic named types, not `X` or `Foo`. They carry no pragma or import preamble. Prefer `$` over parentheses.
 - Document function arguments with per-argument Haddocks, not in prose. Write them in the leading form (`-- |` or `{- | -}` above the argument), because fourmolu rewrites a trailing `-- ^` on an argument into it. Record fields keep `-- ^`; a record field of function type keeps one field-level doc, since per-argument docs do not render there.
-- Every identifier Haddock can link is a link, and the CI doc build has no Haddock warnings.
+- Every identifier Haddock can link is a link, and the CI doc build has no Haddock warnings. `./haddock_check.sh` fails on any Haddock or compiler warning the docs build prints, such as an identifier out of scope. Run it before every push.
 - The maintainer's documentation standard is the Hackage documentation of rhine, changeset and essence-of-live-coding.
 
 # Key dependency patterns
