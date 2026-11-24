@@ -59,6 +59,7 @@ common opts
   ghc-options:
     -Wall
     -haddock
+    -Winvalid-haddock
 
   build-depends:
     aeson ^>=2.2,
