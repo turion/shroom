@@ -1154,15 +1154,14 @@ main =
                   intsResult @?= Right [1, 2, 3 :: Int]
                   readIORef intsSeen >>= (@?= 1) . length
               , testCase "the class method prompts a bare Int64, Word and Set Int" $ do
-                  (int64Result, int64Calls) <- runRecording ["42"] 0 (Promptable.prompt @Int64)
-                  int64Result @?= Right 42
-                  length int64Calls @?= 1
-                  (wordResult, wordCalls) <- runRecording ["7"] 0 (Promptable.prompt @Word)
-                  wordResult @?= Right 7
-                  length wordCalls @?= 1
-                  (setResult, setCalls) <- runRecording ["[3,1,2,3]"] 0 (Promptable.prompt @(Set Int))
-                  setResult @?= Right (Set.fromList [1, 2, 3])
-                  length setCalls @?= 1
+                  let checkPrompt response program expected = do
+                        (result, calls) <- runRecording [response] 0 program
+                        result @?= Right expected
+                        length calls @?= 1
+                        pure calls
+                  _ <- checkPrompt "42" (Promptable.prompt @Int64) 42
+                  _ <- checkPrompt "7" (Promptable.prompt @Word) 7
+                  setCalls <- checkPrompt "[3,1,2,3]" (Promptable.prompt @(Set Int)) (Set.fromList [1, 2, 3])
                   assertContains "A set of distinct values of the following type: A whole number." (callDesc setCalls 0)
               , testCase "a prompt override scopes its context to its own request" $ do
                   responses <- newIORef ["{\"metricText\":\"3 km\"}", "{\"metricText\":\"4 km\"}"]
