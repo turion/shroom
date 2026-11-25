@@ -19,6 +19,7 @@ description:
   of <https://hackage.haskell.org/package/shroom-baikai shroom-baikai>, which
   connects them to a real model.
 
+category: AI
 license: BSD-3-Clause
 license-file: LICENSE
 author: Manuel Bärenz

@@ -29,6 +29,7 @@ description:
   <https://hackage.haskell.org/package/shroom-baikai shroom-baikai> supplies
   one for Claude and for OpenAI-compatible hosts such as a local Ollama.
 
+category: AI
 license: BSD-3-Clause
 license-file: LICENSE
 author: Manuel Bärenz
