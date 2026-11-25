@@ -104,17 +104,17 @@ data NameProperty = NameNotEmpty
   deriving stock (Eq, Ord, Show, Bounded, Enum)
   deriving anyclass (Universe)
 
-$(deriveDescribable ''Musician)
-
 $(deriveDescribable ''Name)
 
 $(deriveDescribable ''City)
 
-$(deriveDescribable ''Fruit)
+$(deriveDescribable ''Musician)
 
 $(deriveDescribable ''Apple)
 
 $(deriveDescribable ''Banana)
+
+$(deriveDescribable ''Fruit)
 
 -- A property for the structural default of 'Musician' to find.
 instance Surveyable Name where

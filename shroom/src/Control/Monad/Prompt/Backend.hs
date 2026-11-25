@@ -115,7 +115,7 @@ data ContextItem
   | -- | A user turn in the conversation.
     UserMessage Text
   | {- | A previous model response. Appended automatically after each successful
-      'Control.Monad.Prompt.Effect.prompt' call so subsequent prompts can
+      'Control.Monad.Prompt.Effect.promptSingle' call so subsequent prompts can
       reference prior outputs naturally.
     -}
     AssistantMessage Text

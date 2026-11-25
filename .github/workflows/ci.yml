@@ -87,6 +87,78 @@ jobs:
       - name: Cabal test
         run: cabal test all --enable-tests --test-show-details=Always -f-anthropic -f-ollama
 
+  haddock:
+    name: Haddock documentation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # to push the documentation to the gh-pages branch
+    # Two runs pushing to gh-pages at once would race; queue them instead.
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: haskell-actions/setup@v2
+        id: setup
+        with:
+          ghc-version: "9.12"
+      - name: Configure the build
+        run: |
+          cabal configure --disable-documentation -f-anthropic -f-ollama
+          cabal build all --dry-run
+        # The last step generates dist-newstyle/cache/plan.json for the cache key.
+      - name: Restore cached dependencies
+        uses: actions/cache/restore@v6
+        id: cache
+        env:
+          key: ${{ runner.os }}-ghc-${{ steps.setup.outputs.ghc-version }}-cabal-${{ steps.setup.outputs.cabal-version }}-haddock
+        with:
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ env.key }}-plan-${{ hashFiles('**/plan.json') }}
+          restore-keys: ${{ env.key }}-
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cabal build all --only-dependencies -f-anthropic -f-ollama
+      - name: Save cached dependencies
+        uses: actions/cache/save@v6
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+      - name: Build the documentation
+        run: cabal haddock all -f-anthropic -f-ollama --haddock-hyperlink-source --haddock-quickjump
+      - name: Collect the documentation
+        # Haddock links one local package to another by an absolute file:// path into
+        # dist-newstyle, which breaks once the artifact is downloaded; rewrite those links to
+        # the sibling directory. Pages in src/ sit one level deeper.
+        run: |
+          mkdir haddocks
+          for d in dist-newstyle/build/*/*/*/doc/html/*/; do cp -r "$d" haddocks/; done
+          find haddocks -mindepth 2 -maxdepth 2 -name '*.html' -exec sed -i -E 's#file://[^"]*/dist-newstyle/build/[^"]*/doc/html/([^/"]+)/#../\1/#g' {} +
+          find haddocks -mindepth 3 -name '*.html' -exec sed -i -E 's#file://[^"]*/dist-newstyle/build/[^"]*/doc/html/([^/"]+)/#../../\1/#g' {} +
+          {
+            echo '<!DOCTYPE html><meta charset="utf-8"><title>shroom documentation</title><ul>'
+            for p in haddocks/*/; do p=$(basename "$p"); echo "<li><a href=\"$p/index.html\">$p</a></li>"; done
+            echo '</ul>'
+          } > haddocks/index.html
+      - name: Publish the documentation on GitHub Pages
+        # Each branch gets its own directory on gh-pages, so a pull request's docs and main's
+        # live side by side. A fork's pull request has no token to push with, so it builds the
+        # documentation without publishing it.
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: haddocks
+          # Without keep_files, only this branch's directory is replaced; the others stay.
+          destination_dir: ${{ github.head_ref || github.ref_name }}
+      - name: Link the documentation
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ github.head_ref || github.ref_name }}/
+        run: |
+          echo "Documentation: $URL" >> "$GITHUB_STEP_SUMMARY"
+
   generate-flake-ghc-matrix:
     name: Generate GHC versions for nix flake build matrix
     runs-on: ubuntu-latest

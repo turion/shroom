@@ -88,7 +88,7 @@ data AllToolsTested = AllToolsTested
   deriving stock (Bounded, Enum, Eq, Ord, Show)
   deriving anyclass (Universe)
 
-instance (SListI tools, All Toolable tools) => Describable (WebToolReport tools) where
+instance (SListI tools, All Toolable tools, Typeable tools) => Describable (WebToolReport tools) where
   describeType _ =
     "A report of tool tests. "
       <> "Call each available tool with a reasonable test input. "
@@ -101,7 +101,7 @@ instance (SListI tools, All Toolable tools) => Describable (WebToolReport tools)
       <> "]}. "
       <> "Example with one failure: {\"results\": [{\"resultToolName\": \"some_tool\", \"resultStatus\": \"HTTP 404: not found\"}]}"
 
-instance (SListI tools, All Toolable tools) => Surveyable (WebToolReport tools) where
+instance (SListI tools, All Toolable tools, Typeable tools) => Surveyable (WebToolReport tools) where
   type Property (WebToolReport tools) = AllToolsTested
 
   describeProperties _ AllToolsTested =
