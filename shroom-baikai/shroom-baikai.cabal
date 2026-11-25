@@ -21,6 +21,7 @@ description:
   <https://hackage.haskell.org/package/shroom-class shroom-class>, which
   describes the types.
 
+category: AI
 license: BSD-3-Clause
 license-file: LICENSE
 author: Manuel Bärenz
@@ -70,7 +71,7 @@ common opts
     baikai-openai >=0.7.0 && <0.8,
     base >=4.20 && <4.22,
     effectful ^>=2.7,
-    shroom,
+    shroom ^>=0.1,
     text >=2.1.2 && <2.2,
     vector ^>=0.13,
 
