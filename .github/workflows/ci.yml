@@ -1,5 +1,8 @@
 on:
   pull_request:
+    # `labeled`, so that adding the `ollama` label starts the integration suite.
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -105,22 +108,23 @@ jobs:
         uses: actions/cache/restore@v6
         id: cache
         env:
-          key: ${{ runner.os }}-ghc-${{ steps.setup.outputs.ghc-version }}-cabal-${{ steps.setup.outputs.cabal-version }}-haddock
+          key: ${{ runner.os }}-ghc-${{ steps.setup.outputs.ghc-version }}-cabal-${{ steps.setup.outputs.cabal-version }}-haddock-docs
         with:
           path: ${{ steps.setup.outputs.cabal-store }}
           key: ${{ env.key }}-plan-${{ hashFiles('**/plan.json') }}
           restore-keys: ${{ env.key }}-
-      - name: Install dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: cabal build all --only-dependencies -f-anthropic -f-ollama
+      # `cabal haddock` builds the dependencies in a configuration of its own, with their
+      # documentation, so a plain `--only-dependencies` build would build them twice. The
+      # store is saved after the documentation build instead, so it holds the dependencies
+      # as the documentation build needs them.
+      - name: Build the documentation
+        run: ./haddock_check.sh
       - name: Save cached dependencies
         uses: actions/cache/save@v6
-        if: steps.cache.outputs.cache-hit != 'true'
+        if: always() && steps.cache.outputs.cache-hit != 'true'
         with:
           path: ${{ steps.setup.outputs.cabal-store }}
           key: ${{ steps.cache.outputs.cache-primary-key }}
-      - name: Build the documentation
-        run: ./haddock_check.sh
 
   generate-flake-ghc-matrix:
     name: Generate GHC versions for nix flake build matrix
@@ -159,6 +163,27 @@ jobs:
           version: 1.5.0.3
       - run: ./cabal_check.sh
 
+  outdated:
+    name: Check for dependency releases outside the bounds
+    # Only the weekly run and a manual one: a new release of a dependency is news for the
+    # maintainer, not a reason for an unrelated PR to fail.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: haskell-actions/setup@v2
+      - run: cabal update
+      - name: cabal outdated
+        # Checks every package and fails at the end if any has an outdated bound. `base` comes
+        # with GHC, so its bound follows the GHC versions the flake and `tested-with` support.
+        run: |
+          status=0
+          for package in shroom-class shroom shroom-baikai
+          do
+            (cd "$package" && cabal outdated --exit-code --ignore=base) || status=1
+          done
+          exit "$status"
+
   build-flake:
     name: Nix Flake
     needs:
@@ -182,12 +207,17 @@ jobs:
   ollama-ci:
     name: "Ollama integration, via SSH tunnel to the maintainer's server"
     runs-on: ubuntu-latest
-    # Fork PRs get no secrets under plain `pull_request` (this workflow never uses
-    # `pull_request_target`), so a fork PR would already fail to reach the tunnel; this gate
-    # just makes that skip clean instead of failing red for a reason that has nothing to do
-    # with shroom. push/schedule/workflow_dispatch have no `pull_request` context, so they
-    # fall through to `true` and are unaffected.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # The suite takes a quarter of an hour against a small model on two cores, so a PR runs it
+    # only when it carries the `ollama` label; every push to main and the weekly run always
+    # do. Fork PRs get no secrets under plain `pull_request` (this workflow never uses
+    # `pull_request_target`), so a fork PR would fail to reach the tunnel; the repository
+    # check skips it cleanly instead of failing red for a reason that has nothing to do with
+    # shroom. push/schedule/workflow_dispatch have no `pull_request` context, so they fall
+    # through to `true`.
+    if: >-
+      github.event_name != 'pull_request'
+      || (github.event.pull_request.head.repo.full_name == github.repository
+          && contains(github.event.pull_request.labels.*.name, 'ollama'))
     # haskell-actions/setup gave a bare GHC/cabal that resolved straight from Hackage,
     # bypassing the flake's closure entirely; `nix develop` instead has to build that whole
     # closure from source, which is far slower, and the integration suite itself is slow
