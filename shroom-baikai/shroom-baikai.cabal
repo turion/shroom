@@ -65,9 +65,9 @@ common opts
 
   build-depends:
     aeson ^>=2.2,
-    baikai >=0.7.0 && <0.9,
+    baikai >=0.7.0 && <0.12,
     baikai-claude >=0.7.0 && <0.8,
-    baikai-effectful >=0.4.0 && <0.5,
+    baikai-effectful >=0.4.0 && <0.6,
     baikai-openai >=0.7.0 && <0.8,
     base >=4.20 && <4.22,
     effectful ^>=2.7,
