@@ -7,6 +7,11 @@
   `Control.Monad.Prompt.TH` remains. Change the import.
 * **Breaking: `Control.Monad.Prompt.Tool.Web` no longer exports `DDGResponse`, `userAgentHeader` and
   `trySynchronous`**, which were internals of the web tools. The tools themselves are unchanged.
+* **`UTCTime` and `Natural` fields work against Claude.** The wire schema sends only the string
+  formats structured outputs support. A `UTCTime` goes out as `date-time`, and any other format,
+  such as `TimeOfDay`'s, moves into the field's description. openapi3's true/false
+  `exclusiveMinimum`, which `Natural` carries, is folded into the description with the bound.
+  Claude had answered both with a `400`.
 
 **shroom becomes a layer.** shroom stops owning any LLM transport. A new package,
 `shroom-baikai`, provides the adapters instead; `shroom` itself now depends on no LLM client at

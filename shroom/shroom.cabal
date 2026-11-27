@@ -157,7 +157,8 @@ test-suite shroom-test
   main-is: Main.hs
   other-modules: UnqualifiedImports
   build-depends:
-    network ^>=3.2
+    network ^>=3.2,
+    time ^>=1.14,
 
 test-suite shroom-test-conference
   import: opts, test-opts

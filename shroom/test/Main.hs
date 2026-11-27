@@ -14,6 +14,7 @@ import Data.Int (Int64)
 import Data.Proxy (Proxy (..))
 import Data.Void (Void)
 import GHC.Clock (getMonotonicTime)
+import Numeric.Natural (Natural)
 import System.Timeout (timeout)
 
 -- containers
@@ -29,6 +30,9 @@ import Data.Aeson.Text (encodeToLazyText)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
+
+-- time
+import Data.Time (TimeOfDay, UTCTime)
 
 -- GHC.Generics
 import GHC.Generics (Generic, Generically (..))
@@ -1062,6 +1066,24 @@ main =
                   assertContains "oneOf" (rendered (toSchema (Proxy @Treat)))
                   assertNotContains "oneOf" (rendered (schemaWithDefs (Proxy @Treat)))
                   assertContains "anyOf" (rendered (schemaWithDefs (Proxy @Treat)))
+              , testCase "a UTCTime's wire schema has the format date-time" $ do
+                  let field key = case schemaWithDefs $ Proxy @UTCTime of
+                        Object km -> KM.lookup key km
+                        _ -> Nothing
+                  field "format" @?= Just (String "date-time")
+              , testCase "a TimeOfDay's unsupported format moves into its description" $ do
+                  let field key = case schemaWithDefs $ Proxy @TimeOfDay of
+                        Object km -> KM.lookup key km
+                        _ -> Nothing
+                  field "format" @?= Nothing
+                  field "description" @?= Just (String "Format: hh:MM:ss.")
+              , testCase "a Natural's wire schema keeps its bound in the description and sends no exclusiveMinimum" $ do
+                  let field key = case schemaWithDefs $ Proxy @Natural of
+                        Object km -> KM.lookup key km
+                        _ -> Nothing
+                  field "exclusiveMinimum" @?= Nothing
+                  field "minimum" @?= Nothing
+                  field "description" @?= Just (String "Must be at least 0.")
               ]
           , testGroup
               "retry loop"
