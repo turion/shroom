@@ -17,21 +17,25 @@ the Haddocks say what the functions do.
 - **`oneOf` becomes `anyOf`.** `openapi3` renders a sum type with a non-nullary constructor as `oneOf`;
   Anthropic's structured outputs list `anyOf` and `allOf` as supported, not `oneOf`. The alternatives
   `openapi3` generates are told apart by their tag, so "at least one" accepts what "exactly one" did.
-- **String `format` is sent as it is.** Anthropic's documentation lists `format` among the schema features it
-  enforces (`date-time`, `date`, `time`, `duration`, `email`, `hostname`, `uri`, `ipv4`, `ipv6`, `uuid`). A
+- **Only supported string formats are sent.** Anthropic's documentation lists `format` among the schema
+  features it enforces (`date-time`, `date`, `time`, `duration`, `email`, `hostname`, `uri`, `ipv4`, `ipv6`,
+  `uuid`), and the live API answers any other format with a `400` (measured 2026-11-27: `For 'string' type,
+  format 'yyyy-mm-ddThh:MM:ssZ' is not supported`). That string is `openapi3`'s format for `UTCTime`, so
+  `normalizeSchemaForStructuredOutput` renames it to `date-time` and folds every other unsupported format,
+  such as `TimeOfDay`'s `hh:MM:ss` or `LocalTime`'s, into the description. CI runs no suite against the
+  real Claude API, so only a local `cabal test shroom-test-integration-claude` catches such a `400`. A
   local model behind llama.cpp is uneven: its grammar converter compiles `uuid`, `date`, `time` and
   `date-time` into grammar rules and leaves `email` and `uri` unconstrained. One live test with `format:
   email` got back `"thompsons sophia@outlook.com "`, with a stray space inside. Which host it ran against
   was not recorded; the failure's shape matches llama.cpp's converter, and a direct call to
   `api.anthropic.com` had returned a `401`, so no successful Anthropic call backs this up.
-- **Some base types' schemas are rejected by Anthropic.** `openapi3` renders `Char` with `minLength` and
-  `maxLength`, `Natural` with `exclusiveMinimum`, and `Double` and `Float` with a numeric `format`.
-  Anthropic's structured outputs answer the first two keywords with a `400`, and
-  `normalizeSchemaForStructuredOutput` does not strip them. The numeric `format` is a suspicion that no call
-  to the API has confirmed. A record field of one of these types, or a bare `prompt` of it, may therefore
-  fail against Claude. The `Promptable` instances for `[a]`, `NonEmpty a`, `Set a` and `Maybe a` pass the
-  element's schema through, so they inherit it. The `Promptable` Haddocks stay provider-neutral and do not
-  say this.
+- **Base types' schemas, measured against Claude on 2026-11-27** (`claude-haiku-4-5`, each schema as one field
+  of an object). `Char`'s `minLength`/`maxLength` and `Double`'s `format: double` are accepted. `Natural`
+  carries `openapi3`'s OpenAPI 3.0 boolean `exclusiveMinimum: false`, which Claude refused with `False is not
+  of type 'number'`; `normalizeSchemaForStructuredOutput` therefore folds a boolean exclusive bound into the
+  description with `minimum`/`maximum`, and leaves a numeric one alone. The `Promptable` instances for `[a]`,
+  `NonEmpty a`, `Set a` and `Maybe a` pass the element's schema through, so they share their element's fate.
+  The `Promptable` Haddocks stay provider-neutral and do not say this.
 - **Open question:** whether a llama.cpp-backed grammar enforces the integer bounds numerically; they are
   folded into the field's `description` and removed from the wire. The `Surveyable` properties exist to
   check in code what a host does not enforce.

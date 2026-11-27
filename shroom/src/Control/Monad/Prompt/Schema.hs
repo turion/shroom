@@ -5,6 +5,7 @@ module Control.Monad.Prompt.Schema (encodeJson, schemaWithDefs, normalizeSchemaF
 
 -- base
 import Data.Foldable (toList)
+import Data.Maybe (catMaybes)
 import Data.Proxy (Proxy)
 
 -- text
@@ -74,16 +75,22 @@ strict tool) schema:
   default) to @#\/$defs\/X@.
 * Folds @"minimum"@\/@"maximum"@ on every @"type": "integer"@ node into that
   field's @"description"@ and removes the keywords, so the model still hears
-  the constraint.
+  the constraint. @openapi3@'s true\/false @"exclusiveMinimum"@\/@"exclusiveMaximum"@
+  is folded with them.
 * Rewrites @"oneOf"@ to @"anyOf"@, the form structured-output schemas support.
   The alternatives that @openapi3@ generates for a
   sum are told apart by their tag, so \"at least one\" accepts what \"exactly
   one\" did. A node that already has an @anyOf@ keeps it, and its @oneOf@ moves
   into an extra @allOf@ entry so that both constraints still apply.
 
-String @"format"@ is left alone. Whether a host enforces it varies; the
-properties of @Surveyable@ in "Data.Shroom.Class" check in code what the schema
-does not enforce.
+* Keeps a string node's @"format"@ only where structured outputs support it.
+  @openapi3@'s format for @UTCTime@ becomes @date-time@, which @aeson@'s
+  encoding of a @UTCTime@ satisfies. Any other unsupported format moves into
+  the node's @"description"@, so the model still hears it.
+
+Whether a host enforces a supported format varies; the properties of
+@Surveyable@ in "Data.Shroom.Class" check in code what the schema does not
+enforce.
 -}
 normalizeSchemaForStructuredOutput :: Value -> Value
 normalizeSchemaForStructuredOutput (Object km) =
@@ -104,32 +111,60 @@ normalizeSchemaForStructuredOutput (Object km) =
    in Object $ case KM.lookup "type" km' of
         Just (String "object") -> KM.insert "additionalProperties" (Bool False) km'
         Just (String "integer") -> foldBoundsIntoDescription km'
+        Just (String "string") -> normalizeStringFormat km'
         _ -> km'
 normalizeSchemaForStructuredOutput (Array vs) = Array (fmap normalizeSchemaForStructuredOutput vs)
 normalizeSchemaForStructuredOutput v = v
 
-{- | Fold @"minimum"@\/@"maximum"@ into @"description"@ on a schema node,
-then drop the two keywords. Appends to an existing description rather than
+{- | Fold @"minimum"@\/@"maximum"@, with a true\/false
+@"exclusiveMinimum"@\/@"exclusiveMaximum"@, into @"description"@ on a schema
+node, then drop those keywords. Appends to an existing description rather than
 replacing it.
 -}
 foldBoundsIntoDescription :: KM.KeyMap Value -> KM.KeyMap Value
 foldBoundsIntoDescription km =
-  case (KM.lookup "minimum" km, KM.lookup "maximum" km) of
-    (Nothing, Nothing) -> km
-    (mMin, mMax) ->
-      let sentence = boundsSentence mMin mMax
-          existingDescription = case KM.lookup "description" km of
-            Just (String d) | not (T.null d) -> Just d
-            _ -> Nothing
-          newDescription = maybe sentence (\d -> d <> " " <> sentence) existingDescription
-       in KM.insert "description" (String newDescription) (KM.delete "minimum" (KM.delete "maximum" km))
+  let bound key exclusiveKey = (,KM.lookup exclusiveKey km == Just (Bool True)) <$> KM.lookup key km
+      -- Only openapi3's true/false form of the exclusive keywords is removed; a numeric one is a bound of its own.
+      dropFlag key m = case KM.lookup key m of
+        Just (Bool _) -> KM.delete key m
+        _ -> m
+      stripped = dropFlag "exclusiveMinimum" $ dropFlag "exclusiveMaximum" $ KM.delete "minimum" $ KM.delete "maximum" km
+   in case (bound "minimum" "exclusiveMinimum", bound "maximum" "exclusiveMaximum") of
+        (Nothing, Nothing) -> stripped
+        (lower, upper) -> appendToDescription (boundsSentence lower upper) stripped
 
--- | Render a minimum\/maximum pair as a sentence describing the bound(s).
-boundsSentence :: Maybe Value -> Maybe Value -> Text
-boundsSentence (Just mn) (Just mx) = "Must be between " <> renderNum mn <> " and " <> renderNum mx <> " (inclusive)."
-boundsSentence (Just mn) Nothing = "Must be at least " <> renderNum mn <> "."
-boundsSentence Nothing (Just mx) = "Must be at most " <> renderNum mx <> "."
+{- | Keep a string node's @"format"@ if structured outputs support it, rename
+@openapi3@'s @UTCTime@ format to @date-time@, and fold any other format into
+@"description"@.
+-}
+normalizeStringFormat :: KM.KeyMap Value -> KM.KeyMap Value
+normalizeStringFormat km = case KM.lookup "format" km of
+  Just (String "yyyy-mm-ddThh:MM:ssZ") -> KM.insert "format" (String "date-time") km
+  Just (String format)
+    | format `notElem` supportedStringFormats ->
+        appendToDescription ("Format: " <> format <> ".") (KM.delete "format" km)
+  _ -> km
+
+-- | The string formats that structured-output schemas accept.
+supportedStringFormats :: [Text]
+supportedStringFormats = ["date-time", "date", "time", "duration", "email", "hostname", "uri", "ipv4", "ipv6", "uuid"]
+
+-- | Append a sentence to a schema node's @"description"@, or make it the description if there is none.
+appendToDescription :: Text -> KM.KeyMap Value -> KM.KeyMap Value
+appendToDescription sentence km =
+  let newDescription = case KM.lookup "description" km of
+        Just (String d) | not (T.null d) -> d <> " " <> sentence
+        _ -> sentence
+   in KM.insert "description" (String newDescription) km
+
+-- | Render a lower and an upper bound, each with whether it is exclusive, as a sentence.
+boundsSentence :: Maybe (Value, Bool) -> Maybe (Value, Bool) -> Text
 boundsSentence Nothing Nothing = ""
+boundsSentence (Just (mn, False)) (Just (mx, False)) = "Must be between " <> renderNum mn <> " and " <> renderNum mx <> " (inclusive)."
+boundsSentence lower upper = "Must be " <> T.intercalate " and " (catMaybes [lowerPhrase <$> lower, upperPhrase <$> upper]) <> "."
+  where
+    lowerPhrase (n, exclusive) = (if exclusive then "greater than " else "at least ") <> renderNum n
+    upperPhrase (n, exclusive) = (if exclusive then "less than " else "at most ") <> renderNum n
 
 -- | Render a numeric schema bound (assumed integral) without a trailing @.0@.
 renderNum :: Value -> Text
