@@ -6,12 +6,15 @@ description:
   LLMs hallucinate, but if you use shroom, it will at least be a well-typed
   hallucination!
 
-  With shroom you can build typed LLM conversations. A monadic program written
+  shroom lets an LLM understand the types you defined in Haskell and generate
+  good values for them. A monadic program written
   with <https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Effect.html#v:context context> and
   <https://hackage.haskell.org/package/shroom/docs/Control-Monad-Prompt-Promptable.html#v:prompt prompt> returns a typed
-  Haskell value, or a descriptive error. A type is described to the model
-  through its schema, the response is parsed back into it, and a response that
-  fails to parse or breaks a stated property is retried. The package includes
+  Haskell value, or a descriptive error. The model learns a type from what a
+  human reader sees already: its Haddocks and its type, constructor and field
+  names. Properties written as pure Haskell functions, example values and
+  documentation for the model alone guide it further. A response that fails to
+  parse or breaks a property is retried. The package includes
   the prompt monad and its effect interface
   ("Control.Monad.Prompt.Effect"), deriving via
   <https://hackage.haskell.org/package/base/docs/GHC-Generics.html#t:Generically Generically>,
@@ -21,9 +24,8 @@ description:
   <https://hackage.haskell.org/package/shroom-class shroom-class>, which this
   package re-exports.
 
-  A tool call is an effect that the model triggers. The program decides what a
-  tool may do and the model decides when to call it, and a program can only
-  offer the tools its type lists.
+  A tool call is like an effect that the model triggers. The program's type
+  decides which tools the model may use, and the model decides when and how.
 
   shroom ships no backend for a real model.
   <https://hackage.haskell.org/package/shroom-baikai shroom-baikai> supplies
