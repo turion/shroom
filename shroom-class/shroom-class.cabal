@@ -7,10 +7,12 @@ description:
   <https://hackage.haskell.org/package/shroom-class/docs/Data-Shroom-Class.html#t:Describable Describable>
   names a type for a model, and
   <https://hackage.haskell.org/package/shroom-class/docs/Data-Shroom-Class.html#t:Surveyable Surveyable>
-  adds the properties its values must satisfy, with examples. Template Haskell
+  adds the properties its values must satisfy, as pure Haskell functions, and
+  example values. Template Haskell
   derives
   <https://hackage.haskell.org/package/shroom-class/docs/Data-Shroom-Class.html#t:Describable Describable>
-  from Haddock comments, so the documentation of a type is the description the
+  from Haddock comments and type, constructor and field names, so what a human
+  reader sees of a type is the description the
   model reads, and an empty
   <https://hackage.haskell.org/package/shroom-class/docs/Data-Shroom-Class.html#t:Surveyable Surveyable>
   instance does the rest. The package has no prompting runtime and depends on
