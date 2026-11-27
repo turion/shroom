@@ -8,16 +8,24 @@ If the model makes something up, it'll be a properly structured something.
 
 ## What is it?
 
-**shroom** is a Haskell library for structured LLM prompting. You write a
-program against `effectful`'s `Prompt` effect using `context` and `prompt`,
+**shroom** is a Haskell library for structured, typed LLM prompting.
+It allows LLMs to understand the types you have defined in Haskell,
+and generate good values for them.
+
+You write a program against `effectful`'s `Prompt` effect using `context` and `prompt`,
 pick a backend from `shroom-baikai` — the real Claude API, a model on your
 own machine via Ollama, or any other OpenAI- or Anthropic-compatible host —
 and get back a typed Haskell value, or a `Text` error explaining what went
 wrong.
 
-A model may also want to call a tool, such as a web search or a lookup in your data, to complete an
-answer. Tools run in your program, so a tool is an effect that the model triggers: your program
-decides what it may do, the model decides when, and a program can only offer the tools its type lists.
+To create good values, `shroom` automatically uses all information that is visible for humans already,
+such as Haddocks, type names, constructor and field names.
+You can guide the LLM even further by adding properties in the form of pure Haskell functions,
+example values, or additional agent-only documentation.
+
+The LLM may also want to call a tool, for example a web search, to complete an answer.
+Tools run in your program, so a tool is like an effect that the model triggers:
+Your program decides on the type level which tools it allows, the LLM decides when and how to use them.
 
 ```haskell
 {-# LANGUAGE DeriveAnyClass, DeriveGeneric, OverloadedStrings, TemplateHaskell, TypeFamilies #-}
